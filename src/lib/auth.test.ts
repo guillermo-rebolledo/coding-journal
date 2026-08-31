@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { auth, githubProfileToUser } from "@/lib/auth";
+import { auth, getTrustedOrigins, githubProfileToUser } from "@/lib/auth";
 
 describe("GitHub authentication boundary", () => {
   it("creates a non-routable identity when GitHub keeps the email private", () => {
@@ -21,5 +21,39 @@ describe("GitHub authentication boundary", () => {
         "/account-info",
       ]),
     );
+  });
+
+  it("trusts only the exact Vercel deployment origins", () => {
+    expect(
+      getTrustedOrigins({
+        BETTER_AUTH_URL: "https://coding-journal.vercel.app/",
+        VERCEL_URL:
+          "coding-journal-4m9g89bve-guillermo-ortizs-projects.vercel.app",
+        VERCEL_BRANCH_URL:
+          "coding-journal-git-main-guillermo-ortizs-projects.vercel.app",
+        VERCEL_PROJECT_PRODUCTION_URL: "coding-journal.vercel.app",
+      }),
+    ).toEqual([
+      "https://coding-journal.vercel.app",
+      "https://coding-journal-4m9g89bve-guillermo-ortizs-projects.vercel.app",
+      "https://coding-journal-git-main-guillermo-ortizs-projects.vercel.app",
+    ]);
+  });
+
+  it("rejects malformed and non-Vercel deployment hosts", () => {
+    expect(
+      getTrustedOrigins({
+        BETTER_AUTH_URL: "https://coding-journal.vercel.app",
+        VERCEL_URL: "attacker.example.com",
+        VERCEL_BRANCH_URL: "https://coding-journal.vercel.app/redirect",
+        VERCEL_PROJECT_PRODUCTION_URL: "coding-journal.vercel.app:444",
+      }),
+    ).toEqual(["https://coding-journal.vercel.app"]);
+    expect(
+      getTrustedOrigins({
+        BETTER_AUTH_URL: "https://coding-journal.vercel.app",
+        VERCEL_URL: "*.vercel.app",
+      }),
+    ).toEqual(["https://coding-journal.vercel.app"]);
   });
 });

@@ -65,10 +65,12 @@ pnpm exec shadcn add @materialcn/<component>
 
 1. Import the repository into Vercel and connect a Neon project.
 2. Add `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GITHUB_CLIENT_ID`, and `GITHUB_CLIENT_SECRET` to Production, Preview, and Development as appropriate.
-3. Set `BETTER_AUTH_URL` to the canonical deployment origin, without a trailing slash.
+3. Set `BETTER_AUTH_URL` to the stable canonical deployment origin, without a trailing slash. Do not use a generated per-deployment URL.
 4. Add `https://<your-domain>/api/auth/callback/github` to the GitHub App callback URLs.
 5. Run `pnpm db:migrate:production` with the production `DATABASE_URL` before the first deployment and whenever a new migration lands.
 6. Deploy with the standard `pnpm build` command.
+
+Coding Journal adds Vercel’s exact deployment, branch, and production URLs to Better Auth’s trusted origins from Vercel’s system environment variables. It does not trust a broad `*.vercel.app` wildcard.
 
 Never expose GitHub credentials or provider tokens through `NEXT_PUBLIC_*` variables. Better Auth encrypts OAuth tokens before database storage, and browser-facing token endpoints are disabled.
 

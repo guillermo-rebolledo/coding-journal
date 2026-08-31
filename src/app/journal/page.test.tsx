@@ -136,7 +136,7 @@ describe("protected journal boundary", () => {
       screen.getByRole("heading", { name: "Your day is ready to take shape" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: "Connect repositories" }),
+      screen.getByRole("link", { name: "Review repository access" }),
     ).toBeInTheDocument();
   });
 

@@ -94,7 +94,7 @@ test("best-effort Today keeps its completeness and next action clear on a phone"
     page.getByRole("heading", { name: "Your day is ready to take shape" }),
   ).toBeVisible();
 
-  await page.getByRole("link", { name: "Connect repositories" }).click();
+  await page.getByRole("link", { name: "Review repository access" }).click();
   await expect(
     page.getByRole("heading", { name: "Choose what your journal can see" }),
   ).toBeVisible();

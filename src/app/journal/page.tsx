@@ -175,7 +175,7 @@ function Today({ name, timeZone }: { name: string; timeZone: string }) {
           href="/journal?setup=repositories"
           className={cn(buttonVariants({ size: "lg" }), "mt-7")}
         >
-          Connect repositories
+          Review repository access
         </Link>
       </section>
     </>

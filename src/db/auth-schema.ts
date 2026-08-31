@@ -92,9 +92,7 @@ export const journalOnboarding = pgTable("journal_onboarding", {
     .primaryKey()
     .references(() => user.id, { onDelete: "cascade" }),
   timeZone: text("time_zone"),
-  githubAccessMode: text("github_access_mode").$type<
-    "best-effort" | "installed"
-  >(),
+  githubAccessMode: text("github_access_mode").$type<"best-effort">(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()

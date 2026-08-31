@@ -2,8 +2,9 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import { journalOnboarding } from "@/db/auth-schema";
+import type { IanaTimeZone } from "@/lib/time-zone";
 
-export type GitHubAccessMode = "best-effort" | "installed";
+export type GitHubAccessMode = "best-effort";
 
 export type JournalOnboarding = {
   timeZone: string | null;
@@ -37,22 +38,29 @@ export async function getJournalOnboarding(
   );
 }
 
-export async function saveJournalTimeZone(userId: string, timeZone: string) {
+type OnboardingPatch = Partial<
+  Pick<typeof journalOnboarding.$inferInsert, "timeZone" | "githubAccessMode">
+>;
+
+async function upsertJournalOnboarding(userId: string, patch: OnboardingPatch) {
   await db
     .insert(journalOnboarding)
-    .values({ userId, timeZone })
+    .values({ userId, ...patch })
     .onConflictDoUpdate({
       target: journalOnboarding.userId,
-      set: { timeZone, updatedAt: new Date() },
+      set: { ...patch, updatedAt: new Date() },
     });
 }
 
+export async function saveJournalTimeZone(
+  userId: string,
+  timeZone: IanaTimeZone,
+) {
+  await upsertJournalOnboarding(userId, { timeZone });
+}
+
 export async function chooseBestEffortMode(userId: string) {
-  await db
-    .insert(journalOnboarding)
-    .values({ userId, githubAccessMode: "best-effort" })
-    .onConflictDoUpdate({
-      target: journalOnboarding.userId,
-      set: { githubAccessMode: "best-effort", updatedAt: new Date() },
-    });
+  await upsertJournalOnboarding(userId, {
+    githubAccessMode: "best-effort",
+  });
 }

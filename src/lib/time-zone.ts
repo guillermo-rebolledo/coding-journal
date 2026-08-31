@@ -1,12 +1,16 @@
-export function normalizeTimeZone(value: unknown): string | null {
+declare const ianaTimeZone: unique symbol;
+
+export type IanaTimeZone = string & { readonly [ianaTimeZone]: true };
+
+export function normalizeTimeZone(value: unknown): IanaTimeZone | null {
   if (typeof value !== "string") return null;
 
   const timeZone = value.trim();
-  if (!timeZone) return null;
+  if (!timeZone || /^[+-]\d{2}:\d{2}$/.test(timeZone)) return null;
 
   try {
     new Intl.DateTimeFormat("en-US", { timeZone }).format();
-    return timeZone;
+    return timeZone as IanaTimeZone;
   } catch {
     return null;
   }

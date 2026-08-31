@@ -8,6 +8,7 @@ describe("journal time zone", () => {
       "America/Mexico_City",
     );
     expect(normalizeTimeZone("Not/A_Time_Zone")).toBeNull();
+    expect(normalizeTimeZone("+01:00")).toBeNull();
     expect(normalizeTimeZone(42)).toBeNull();
   });
 

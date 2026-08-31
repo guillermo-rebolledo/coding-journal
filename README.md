@@ -15,6 +15,8 @@ Coding Journal turns a developer’s GitHub activity into a calm daily record. T
 Use Node 24 and pnpm through Corepack:
 
 ```sh
+nvm install
+nvm use
 corepack enable
 pnpm install
 cp .env.example .env.local
@@ -23,6 +25,8 @@ pnpm dev
 ```
 
 Generate `BETTER_AUTH_SECRET` with `openssl rand -base64 32`. Create a Neon database and put its pooled, SSL-enabled connection string in `DATABASE_URL`.
+
+Next.js and Drizzle use the same environment-file precedence: existing process variables, then `.env.local`, then `.env`. Keep a single authoritative `DATABASE_URL` locally so the app and migrations cannot point at different databases. The first `pnpm db:migrate` creates the Better Auth tables, including `verification`; run it before attempting GitHub sign-in.
 
 Configure the shared GitHub App with:
 
@@ -43,8 +47,10 @@ pnpm test         # deterministic application-boundary tests
 pnpm test:e2e     # mobile and desktop browser smoke tests
 pnpm build        # production build
 pnpm db:generate  # generate migrations after schema changes
-pnpm db:migrate   # apply committed migrations
+pnpm db:migrate   # load Next.js env files and apply committed migrations
 ```
+
+If sign-in reports `relation "verification" does not exist`, confirm that `DATABASE_URL` targets the intended Neon database, run `pnpm db:migrate`, and restart the development server.
 
 ## MaterialCN registry
 

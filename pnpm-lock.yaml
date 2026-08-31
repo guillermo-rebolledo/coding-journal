@@ -23,6 +23,9 @@ importers:
       '@neondatabase/serverless':
         specifier: 1.1.0
         version: 1.1.0
+      '@next/env':
+        specifier: 16.3.4
+        version: 16.3.4
       better-auth:
         specifier: 1.7.2
         version: 1.7.2(drizzle-kit@0.31.4)(drizzle-orm@0.45.2(@neondatabase/serverless@1.1.0)(kysely@0.29.5))(next@16.3.4(@babel/core@7.29.7)(@playwright/test@1.55.1)(@types/node@24.3.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@3.2.6(@types/node@24.3.0)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.32.0))

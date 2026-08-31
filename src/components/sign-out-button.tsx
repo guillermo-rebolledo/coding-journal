@@ -29,9 +29,15 @@ export function SignOutButton() {
 
   return (
     <div className="grid justify-items-end gap-2">
-      <Button variant="outline" size="lg" onClick={signOut} loading={loading}>
+      <Button
+        variant="outline"
+        size="icon-lg"
+        onClick={signOut}
+        loading={loading}
+        className="sm:w-auto sm:px-6"
+      >
         <LogOut aria-hidden />
-        Sign out
+        <span className="sr-only sm:not-sr-only">Sign out</span>
       </Button>
       {error ? (
         <p role="alert" className="text-m3-body-sm text-destructive">

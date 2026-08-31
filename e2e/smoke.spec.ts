@@ -45,7 +45,7 @@ for (const theme of ["Light", "Dark"] as const) {
 
     await page.goto("/journal");
     await expect(
-      page.getByRole("heading", { name: "Welcome, Ada." }),
+      page.getByRole("heading", { name: "Today, Monday, August 31" }),
     ).toBeVisible();
 
     await page.getByRole("button", { name: "Choose color theme" }).click();
@@ -70,3 +70,33 @@ for (const theme of ["Light", "Dark"] as const) {
     await expect(page).toHaveURL(/\/sign-in\?next=%2Fjournal$/);
   });
 }
+
+test("best-effort Today keeps its completeness and next action clear on a phone", async ({
+  context,
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await context.addCookies([
+    {
+      name: "coding-journal-e2e-session",
+      value: "valid",
+      domain: "localhost",
+      path: "/",
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
+
+  await page.goto("/journal");
+  await expect(page.getByText("America/Mexico_City")).toBeVisible();
+  await expect(page.getByText("Best-effort journal")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Your day is ready to take shape" }),
+  ).toBeVisible();
+
+  await page.getByRole("link", { name: "Review repository access" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Choose what your journal can see" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to Today" })).toBeVisible();
+});

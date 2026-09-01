@@ -206,6 +206,9 @@ describe("GitHub webhook repository with Postgres", () => {
       workflows: 0,
       deployments: 0,
       packages: 0,
+      projects: 0,
+      gists: 0,
+      social: 0,
     });
     expect(journal.activities).toEqual([
       expect.objectContaining({

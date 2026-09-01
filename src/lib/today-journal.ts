@@ -17,6 +17,7 @@ import { JournalNotFoundError } from "@/lib/journal-errors";
 
 function e2eJournal(userId: string, timeZone: string, now: Date): TodayJournal {
   const localDate = getLocalDayWindow(now, timeZone).localDate;
+  const awaitingReconciliation = userId === "e2e-user";
   const activities =
     userId === "e2e-all"
       ? ([
@@ -65,9 +66,10 @@ function e2eJournal(userId: string, timeZone: string, now: Date): TodayJournal {
     localDate,
     timeZone,
     status: "complete",
-    refreshedAt: now,
-    storedAt: now,
-    lastAttemptAt: now,
+    refreshedAt: awaitingReconciliation ? null : now,
+    ...(awaitingReconciliation
+      ? { awaitingReconciliation: true }
+      : { storedAt: now, lastAttemptAt: now }),
     metrics: computeActivityMetrics(activities),
     activities,
   };

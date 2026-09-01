@@ -3,7 +3,8 @@ type RequiredEnvName =
   | "BETTER_AUTH_SECRET"
   | "BETTER_AUTH_URL"
   | "GITHUB_CLIENT_ID"
-  | "GITHUB_CLIENT_SECRET";
+  | "GITHUB_CLIENT_SECRET"
+  | "GITHUB_APP_SLUG";
 
 export function getRequiredEnv(name: RequiredEnvName): string {
   const value = process.env[name];

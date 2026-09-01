@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { journalOnboarding } from "@/db/auth-schema";
 import type { IanaTimeZone } from "@/lib/time-zone";
 
-export type GitHubAccessMode = "best-effort";
+export type GitHubAccessMode = "best-effort" | "app";
 
 export type JournalOnboarding = {
   timeZone: string | null;

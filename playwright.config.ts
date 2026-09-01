@@ -30,6 +30,7 @@ export default defineConfig({
           BETTER_AUTH_URL: baseURL,
           GITHUB_CLIENT_ID: "test-client-id",
           GITHUB_CLIENT_SECRET: "test-client-secret",
+          GITHUB_APP_SLUG: "coding-journal-test",
           E2E_AUTH_MODE: "true",
         },
       },

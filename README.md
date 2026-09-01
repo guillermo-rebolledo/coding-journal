@@ -32,7 +32,18 @@ Configure the shared GitHub App with:
 
 - Homepage URL: `http://localhost:3000`
 - Callback URL: `http://localhost:3000/api/auth/callback/github`
+- Setup URL: `http://localhost:3000/api/github/callback`
+- Redirect on update: enabled
 - Account permission → Email addresses: Read-only
+- Repository permission → Contents: Read-only
+- Repository permission → Metadata: Read-only (GitHub grants this automatically)
+
+Set `GITHUB_APP_SLUG` to the slug in the app's public URL. Keep every other
+repository permission at read-only or no access. Coding Journal rejects an
+installation that reports write, administration, secrets, security, or billing
+access. Enable expiring user access tokens in the GitHub App: Better Auth keeps
+the user and refresh tokens encrypted at rest and refreshes them only on the
+server. Coding Journal does not persist GitHub installation access tokens.
 
 The email permission lets Better Auth retrieve verified private addresses. If GitHub still omits an address, Coding Journal creates a non-routable `.invalid` identity; no password or deliverable fallback mailbox is required.
 
@@ -64,9 +75,9 @@ pnpm exec shadcn add @materialcn/<component>
 ## Deploying to Vercel
 
 1. Import the repository into Vercel and connect a Neon project.
-2. Add `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GITHUB_CLIENT_ID`, and `GITHUB_CLIENT_SECRET` to Production, Preview, and Development as appropriate.
+2. Add `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and `GITHUB_APP_SLUG` to Production, Preview, and Development as appropriate.
 3. Set `BETTER_AUTH_URL` to the stable canonical deployment origin, without a trailing slash. Do not use a generated per-deployment URL.
-4. Add `https://<your-domain>/api/auth/callback/github` to the GitHub App callback URLs.
+4. Add `https://<your-domain>/api/auth/callback/github` to the GitHub App callback URLs and `https://<your-domain>/api/github/callback` as its setup URL. Enable redirect on update.
 5. Run `pnpm db:migrate:production` with the production `DATABASE_URL` before the first deployment and whenever a new migration lands.
 6. Deploy with the standard `pnpm build` command.
 

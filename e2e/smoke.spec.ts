@@ -100,3 +100,37 @@ test("best-effort Today keeps its completeness and next action clear on a phone"
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "Back to Today" })).toBeVisible();
 });
+
+test("Settings keeps GitHub access guidance within the viewport", async ({
+  context,
+  page,
+}) => {
+  await context.addCookies([
+    {
+      name: "coding-journal-e2e-session",
+      value: "valid",
+      domain: "localhost",
+      path: "/",
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
+
+  await page.goto("/settings");
+  await expect(
+    page.getByRole("heading", { name: "GitHub access" }),
+  ).toBeVisible();
+  await expect(page.getByText("Skipped", { exact: true })).toBeVisible();
+  await expect(page.getByText("Preview source")).toBeVisible();
+  await expect(page.getByText("Reconciliation only")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Install GitHub App" }),
+  ).toHaveAttribute("href", "/api/github/install?from=settings");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    )
+    .toBe(true);
+});

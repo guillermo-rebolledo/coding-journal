@@ -38,6 +38,12 @@ const githubBoundary = vi.hoisted(() => ({
   fetch: vi.fn(),
 }));
 
+const summaryBoundary = vi.hoisted(() => ({
+  findBySnapshotHash: vi.fn(),
+  getUsage: vi.fn(),
+  save: vi.fn(),
+}));
+
 const navigation = vi.hoisted(() => ({
   redirect: vi.fn((url: string) => {
     throw new Error(`NEXT_REDIRECT:${url}`);
@@ -56,6 +62,10 @@ vi.mock("@/lib/journal", () => ({
 
 vi.mock("@/lib/github-activity-repository", () => ({
   githubActivityRepository: activityRepositoryBoundary,
+}));
+
+vi.mock("@/lib/journal-summary-repository", () => ({
+  journalSummaryRepository: summaryBoundary,
 }));
 
 vi.mock("@/lib/github-user-token", () => ({
@@ -113,6 +123,13 @@ describe("protected journal boundary", () => {
     authBoundary.getSession.mockReset();
     authBoundary.signOut.mockReset();
     navigation.replace.mockReset();
+    summaryBoundary.findBySnapshotHash.mockReset();
+    summaryBoundary.findBySnapshotHash.mockResolvedValue(null);
+    summaryBoundary.getUsage.mockResolvedValue({
+      userDaily: 0,
+      globalDaily: 0,
+      monthlyCostUsd: 0,
+    });
     navigation.refresh.mockReset();
     journalBoundary.getOnboarding.mockReset();
     installationBoundary.getInstallations.mockReset();

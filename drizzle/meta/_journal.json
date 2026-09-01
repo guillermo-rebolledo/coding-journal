@@ -71,6 +71,20 @@
       "when": 1788289975885,
       "tag": "0009_big_madame_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788302165047,
+      "tag": "0010_elite_unus",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788302483595,
+      "tag": "0011_lovely_norman_osborn",
+      "breakpoints": true
     }
   ]
 }

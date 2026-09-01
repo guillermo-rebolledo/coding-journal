@@ -1,3 +1,4 @@
+import type { ActivityKind } from "../lib/github-activity";
 import { relations } from "drizzle-orm";
 import {
   boolean,
@@ -228,7 +229,7 @@ export const githubActivity = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     localDate: text("local_date").notNull(),
-    kind: text("kind").$type<"push" | "commit">().notNull(),
+    kind: text("kind").$type<ActivityKind>().notNull(),
     deduplicationKey: text("deduplication_key").notNull(),
     actorId: text("actor_id").notNull(),
     actorLogin: text("actor_login").notNull(),
@@ -240,6 +241,8 @@ export const githubActivity = pgTable(
       .$type<"github-events" | "github-repository-commits" | "github-webhook">()
       .notNull(),
     subjectId: text("subject_id").notNull(),
+    subjectNumber: integer("subject_number"),
+    subjectTitle: text("subject_title"),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
     observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
     authoredBeforeDay: boolean("authored_before_day").default(false).notNull(),

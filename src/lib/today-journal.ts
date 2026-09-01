@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { StoredGitHubInstallation } from "@/lib/github-installation";
 import { githubActivityRepository } from "@/lib/github-activity-repository";
 import {
+  computeActivityMetrics,
   describeError,
   getLocalDayWindow,
   reconcileGitHubActivity,
@@ -17,7 +18,7 @@ function emptyE2EJournal(timeZone: string, now: Date): TodayJournal {
     timeZone,
     status: "complete",
     refreshedAt: now,
-    metrics: { pushes: 0, commits: 0 },
+    metrics: computeActivityMetrics([]),
     activities: [],
   };
 }

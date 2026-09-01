@@ -6,6 +6,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { db } from "@/db";
 import { githubActivity, journalReconciliation } from "@/db/auth-schema";
+import { computeActivityMetrics } from "@/lib/github-activity";
 import type {
   ActivityRecord,
   ReconciliationStore,
@@ -179,12 +180,7 @@ export function createGitHubActivityRepository<
       timeZone: state.timeZone,
       status: state.status,
       refreshedAt: state.refreshedAt,
-      metrics: {
-        pushes: activities.filter((activity) => activity.kind === "push")
-          .length,
-        commits: activities.filter((activity) => activity.kind === "commit")
-          .length,
-      },
+      metrics: computeActivityMetrics(activities),
       activities: activities.map((activity) => ({
         deduplicationKey: activity.deduplicationKey,
         localDate: activity.localDate,
@@ -197,6 +193,8 @@ export function createGitHubActivityRepository<
         visibility: activity.visibility,
         source: activity.source,
         subjectId: activity.subjectId,
+        subjectNumber: activity.subjectNumber,
+        subjectTitle: activity.subjectTitle,
         occurredAt: activity.occurredAt,
         observedAt: activity.observedAt,
         authoredBeforeDay: activity.authoredBeforeDay,

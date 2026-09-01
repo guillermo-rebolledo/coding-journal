@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  computeActivityMetrics,
   getLocalDayWindow,
   reconcileGitHubActivity,
   type ActivityRecord,
@@ -35,7 +36,7 @@ class MemoryStore implements ReconciliationStore {
     this.journals.set(`${userId}:${journal.localDate}`, {
       ...journal,
       activities: [],
-      metrics: { pushes: 0, commits: 0 },
+      metrics: computeActivityMetrics([]),
     });
   }
 
@@ -46,7 +47,7 @@ class MemoryStore implements ReconciliationStore {
       status: "loading" as const,
       refreshedAt: null,
       activities: [],
-      metrics: { pushes: 0, commits: 0 },
+      metrics: computeActivityMetrics([]),
     };
     const activities = [...this.activities.values()]
       .filter((activity) => activity.localDate === localDate)
@@ -57,12 +58,7 @@ class MemoryStore implements ReconciliationStore {
     return {
       ...state,
       activities,
-      metrics: {
-        pushes: activities.filter((activity) => activity.kind === "push")
-          .length,
-        commits: activities.filter((activity) => activity.kind === "commit")
-          .length,
-      },
+      metrics: computeActivityMetrics(activities),
     };
   }
 }
@@ -157,8 +153,24 @@ describe("GitHub current-day reconciliation", () => {
       store,
     });
 
-    expect(first.metrics).toEqual({ pushes: 1, commits: 1 });
-    expect(repeated.metrics).toEqual({ pushes: 1, commits: 1 });
+    expect(first.metrics).toEqual({
+      pushes: 1,
+      commits: 1,
+      issues: 0,
+      pullRequests: 0,
+      reviews: 0,
+      merges: 0,
+      comments: 0,
+    });
+    expect(repeated.metrics).toEqual({
+      pushes: 1,
+      commits: 1,
+      issues: 0,
+      pullRequests: 0,
+      reviews: 0,
+      merges: 0,
+      comments: 0,
+    });
     expect(repeated.status).toBe("complete");
     expect(repeated.activities).toEqual([
       expect.objectContaining({
@@ -222,7 +234,15 @@ describe("GitHub current-day reconciliation", () => {
     });
 
     expect(journal.status).toBe("partial");
-    expect(journal.metrics).toEqual({ pushes: 0, commits: 1 });
+    expect(journal.metrics).toEqual({
+      pushes: 0,
+      commits: 1,
+      issues: 0,
+      pullRequests: 0,
+      reviews: 0,
+      merges: 0,
+      comments: 0,
+    });
     expect(journal.activities[0]).toEqual(
       expect.objectContaining({
         kind: "commit",
@@ -354,9 +374,171 @@ describe("GitHub current-day reconciliation", () => {
       expect.objectContaining({
         status: "error",
         refreshedAt: null,
-        metrics: { pushes: 0, commits: 0 },
+        metrics: computeActivityMetrics([]),
         activities: [],
       }),
     );
+  });
+});
+
+describe("GitHub collaboration reconciliation from the events feed", () => {
+  const window = { now: new Date("2026-03-08T18:00:00Z") };
+
+  function collaborationEvent(
+    id: string,
+    type: string,
+    payload: unknown,
+    overrides: Record<string, unknown> = {},
+  ) {
+    return {
+      id,
+      type,
+      actor: { id: 7, login: "ada" },
+      repo: { id: 42, name: "acme/private-engine" },
+      public: false,
+      created_at: "2026-03-08T15:00:00Z",
+      payload,
+      ...overrides,
+    };
+  }
+
+  it("normalizes issue and pull-request activity, keeps only the actor's work, and never retains bodies", async () => {
+    const store = new MemoryStore();
+    const issue = {
+      number: 41,
+      title: "Reconciliation misses reopened issues",
+      body: "PRIVATE-ISSUE-BODY",
+      created_at: "2026-03-08T14:30:00Z",
+      closed_at: null,
+      updated_at: "2026-03-08T14:30:00Z",
+    };
+    const pullRequest = {
+      number: 52,
+      title: "Track issue and pull-request collaboration",
+      body: "PRIVATE-PR-BODY",
+      merged: true,
+      created_at: "2026-03-08T14:00:00Z",
+      closed_at: "2026-03-08T14:40:00Z",
+      merged_at: "2026-03-08T14:40:00Z",
+      updated_at: "2026-03-08T14:40:00Z",
+    };
+    const events = [
+      collaborationEvent("event-1", "IssuesEvent", { action: "opened", issue }),
+      // The same action can appear twice in the feed; it must collapse.
+      collaborationEvent("event-1b", "IssuesEvent", {
+        action: "opened",
+        issue,
+      }),
+      collaborationEvent("event-2", "IssueCommentEvent", {
+        action: "created",
+        issue: {
+          number: 52,
+          title: "Track issue and pull-request collaboration",
+          pull_request: { url: "https://api.github.com/..." },
+        },
+        comment: {
+          id: 9001,
+          body: "PRIVATE-COMMENT-BODY",
+          created_at: "2026-03-08T14:35:00Z",
+        },
+      }),
+      collaborationEvent("event-3", "PullRequestEvent", {
+        action: "closed",
+        pull_request: pullRequest,
+      }),
+      collaborationEvent("event-4", "PullRequestReviewEvent", {
+        action: "created",
+        pull_request: pullRequest,
+        review: {
+          id: 7001,
+          state: "approved",
+          body: "PRIVATE-REVIEW-BODY",
+          submitted_at: "2026-03-08T14:36:00Z",
+        },
+      }),
+      collaborationEvent("event-5", "PullRequestReviewCommentEvent", {
+        action: "created",
+        pull_request: pullRequest,
+        comment: {
+          id: 8001,
+          body: "PRIVATE-DIFF-COMMENT",
+          diff_hunk: "PRIVATE-DIFF-HUNK",
+          created_at: "2026-03-08T14:37:00Z",
+        },
+      }),
+      // Another participant's event never reaches the journal.
+      collaborationEvent(
+        "event-6",
+        "IssuesEvent",
+        { action: "opened", issue: { ...issue, number: 43 } },
+        { actor: { id: 8, login: "grace" } },
+      ),
+      // Unsupported actions carry no journal activity.
+      collaborationEvent("event-7", "IssuesEvent", {
+        action: "labeled",
+        issue,
+      }),
+      // Content that occurred before the local day stays out of Today.
+      collaborationEvent("event-8", "IssueCommentEvent", {
+        action: "created",
+        issue: { number: 41, title: "Old thread" },
+        comment: { id: 9500, created_at: "2026-03-07T12:00:00Z" },
+      }),
+    ];
+    const fetchFixture = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
+      if (url.includes("/users/ada/events")) return jsonResponse(events);
+      throw new Error(`Unexpected fixture request: ${url}`);
+    });
+
+    const journal = await reconcileGitHubActivity({
+      userId: "user-1",
+      timeZone: "America/New_York",
+      accessMode: "best-effort",
+      installationIds: [],
+      accessToken: "fixture-token",
+      now: window.now,
+      fetchImplementation: fetchFixture as typeof fetch,
+      store,
+    });
+
+    expect(journal.status).toBe("complete");
+    expect(journal.metrics).toEqual({
+      pushes: 0,
+      commits: 0,
+      issues: 1,
+      pullRequests: 0,
+      reviews: 1,
+      merges: 1,
+      comments: 2,
+    });
+    expect(
+      journal.activities.map((activity) => activity.deduplicationKey),
+    ).toEqual([
+      "github:issue-opened:42:41",
+      "github:pull-request-comment:42:9001",
+      "github:pull-request-review:42:7001",
+      "github:pull-request-review-comment:42:8001",
+      "github:pull-request-merged:42:52",
+    ]);
+    expect(journal.activities[0]).toEqual(
+      expect.objectContaining({
+        kind: "issue-opened",
+        actorId: "7",
+        actorLogin: "ada",
+        repositoryId: "42",
+        repositoryName: "acme/private-engine",
+        evidenceUrl: "https://github.com/acme/private-engine/issues/41",
+        visibility: "private",
+        source: "github-events",
+        subjectId: "41",
+        subjectNumber: 41,
+        subjectTitle: "Reconciliation misses reopened issues",
+        occurredAt: new Date("2026-03-08T14:30:00Z"),
+        authoredBeforeDay: false,
+      }),
+    );
+    expect(JSON.stringify(journal)).not.toContain("PRIVATE");
   });
 });

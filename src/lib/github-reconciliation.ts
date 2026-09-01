@@ -42,7 +42,7 @@ const githubApiVersion = "2026-03-10";
 const githubEventsPageSize = 100;
 // The events feed exposes at most 300 events; page 4 answers 422.
 const githubEventsMaxPages = 3;
-const reconciliationCooldownMs = 15 * 60 * 1000;
+export const reconciliationCooldownMs = 15 * 60 * 1000;
 
 export type TodayJournal = {
   localDate: string;

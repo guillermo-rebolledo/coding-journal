@@ -42,7 +42,10 @@ import {
 } from "@/lib/github-installation";
 import { getGitHubJournalCompleteness } from "@/lib/github-completeness";
 import { getJournalOnboarding } from "@/lib/journal";
-import type { TodayJournal } from "@/lib/github-reconciliation";
+import {
+  reconciliationCooldownMs,
+  type TodayJournal,
+} from "@/lib/github-reconciliation";
 import { getJournalSession } from "@/lib/session";
 import { getStoredTodayJournal } from "@/lib/today-journal";
 import { cn } from "@/lib/utils";
@@ -396,7 +399,9 @@ function JournalActivity({
       }).format(journal.storedAt)
     : freshness;
   const nextSyncAt = journal.lastAttemptAt
-    ? new Date(journal.lastAttemptAt.getTime() + 15 * 60 * 1000).toISOString()
+    ? new Date(
+        journal.lastAttemptAt.getTime() + reconciliationCooldownMs,
+      ).toISOString()
     : null;
 
   return (

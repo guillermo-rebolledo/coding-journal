@@ -5,7 +5,11 @@ import { redirect } from "next/navigation";
 
 import { githubActivityRepository } from "@/lib/github-activity-repository";
 import { getGitHubInstallations } from "@/lib/github-installation";
-import { getLocalDayWindow } from "@/lib/github-reconciliation";
+import {
+  getLocalDayWindow,
+  reconciliationCooldownMs,
+} from "@/lib/github-reconciliation";
+import { JournalNotFoundError } from "@/lib/journal-errors";
 import { chooseBestEffortMode, saveJournalTimeZone } from "@/lib/journal";
 import { getJournalOnboarding } from "@/lib/journal";
 import { getJournalSession } from "@/lib/session";
@@ -18,8 +22,6 @@ export type RefreshActionResult = {
   message: string;
   nextSyncAt: string | null;
 };
-
-const reconciliationCooldownMs = 15 * 60 * 1000;
 
 async function requireUser() {
   const session = await getJournalSession(await headers());
@@ -75,10 +77,7 @@ export async function refreshTodayJournal(): Promise<RefreshActionResult> {
         localDate,
       );
     } catch (error) {
-      if (
-        !(error instanceof Error) ||
-        error.message !== "The journal reconciliation has not been started."
-      ) {
+      if (!(error instanceof JournalNotFoundError)) {
         throw error;
       }
       // A first refresh has no stored day yet; reconciliation initializes it.
@@ -106,10 +105,17 @@ export async function refreshTodayJournal(): Promise<RefreshActionResult> {
     now,
   });
   if (journal.rateLimitedUntil) {
+    const cooldownEndsAt = journal.lastAttemptAt
+      ? new Date(journal.lastAttemptAt.getTime() + reconciliationCooldownMs)
+      : new Date(now.getTime() + reconciliationCooldownMs);
+    const nextSyncAt =
+      journal.rateLimitedUntil > cooldownEndsAt
+        ? journal.rateLimitedUntil
+        : cooldownEndsAt;
     return {
       outcome: "rate-limited",
       message: "Stored activity reloaded. GitHub rate limit reached.",
-      nextSyncAt: journal.rateLimitedUntil.toISOString(),
+      nextSyncAt: nextSyncAt.toISOString(),
     };
   }
 

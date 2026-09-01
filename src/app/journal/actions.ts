@@ -16,6 +16,12 @@ import { getJournalOnboarding } from "@/lib/journal";
 import { getJournalSession } from "@/lib/session";
 import { normalizeTimeZone } from "@/lib/time-zone";
 import { getTodayJournal } from "@/lib/today-journal";
+import {
+  generateJournalSummary,
+  type SummaryResult,
+} from "@/lib/journal-summary";
+import { journalSummaryRepository } from "@/lib/journal-summary-repository";
+import { openAiSummaryProvider } from "@/lib/openai-summary";
 
 export type TimeZoneActionState = { error: string | null };
 export type RefreshActionResult = {
@@ -101,6 +107,25 @@ export async function refreshTodayJournal(): Promise<RefreshActionResult> {
     installations,
     now,
   });
+  let summaryResult: SummaryResult | null = null;
+  if (journal.status !== "error" && !isE2EJournalUser(session.user.id)) {
+    summaryResult = await generateJournalSummary({
+      userId: session.user.id,
+      localDate: journal.localDate,
+      activities: journal.activities,
+      store: journalSummaryRepository,
+      provider: openAiSummaryProvider,
+      now,
+      limits: {
+        globalDaily: Number(process.env.SUMMARY_GLOBAL_DAILY_LIMIT) || 1_000,
+        monthlySpendUsd:
+          Number(process.env.SUMMARY_MONTHLY_SPEND_LIMIT_USD) || 100,
+        maximumInputBytes:
+          Number(process.env.SUMMARY_MAXIMUM_INPUT_BYTES) || 16_000,
+        queueConcurrency: Number(process.env.SUMMARY_QUEUE_CONCURRENCY) || 5,
+      },
+    });
+  }
   if (journal.rateLimitedUntil) {
     const cooldownEndsAt = journal.lastAttemptAt
       ? new Date(journal.lastAttemptAt.getTime() + reconciliationCooldownMs)
@@ -118,14 +143,32 @@ export async function refreshTodayJournal(): Promise<RefreshActionResult> {
 
   return {
     outcome: journal.status === "error" ? "unavailable" : "reconciled",
-    message:
-      journal.status === "error"
-        ? "Stored activity reloaded. GitHub could not sync right now."
-        : "Stored activity reloaded and GitHub reconciliation finished.",
+    message: refreshMessage(journal.status, summaryResult),
     nextSyncAt: journal.lastAttemptAt
       ? new Date(
           journal.lastAttemptAt.getTime() + reconciliationCooldownMs,
         ).toISOString()
       : new Date(now.getTime() + reconciliationCooldownMs).toISOString(),
   };
+}
+
+function refreshMessage(
+  journalStatus: "loading" | "complete" | "partial" | "error",
+  summary: SummaryResult | null,
+) {
+  if (journalStatus === "error")
+    return "Stored activity reloaded. GitHub could not sync right now.";
+  const base = "Stored activity reloaded and GitHub reconciliation finished.";
+  if (summary?.status !== "unavailable") return base;
+  if (summary.reason === "cooldown")
+    return `${base} The narrative is cooling down.`;
+  if (summary.reason === "daily-exhausted")
+    return `${base} Today's narrative allowance is exhausted.`;
+  if (summary.reason === "global-paused")
+    return `${base} Narrative generation is globally paused.`;
+  if (summary.reason === "budget-exhausted")
+    return `${base} The monthly narrative budget is exhausted.`;
+  if (summary.reason === "input-too-large" || summary.reason === "queue-busy")
+    return `${base} Narrative generation is temporarily paused by a service limit.`;
+  return base;
 }

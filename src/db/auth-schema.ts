@@ -1,5 +1,6 @@
 import type { ActivityKind, ActivityStatus } from "../lib/github-activity";
 import type { StoredSecondarySourceFreshness } from "../lib/github-secondary";
+import type { SummaryOutput } from "../lib/journal-summary";
 import { relations } from "drizzle-orm";
 import {
   boolean,
@@ -278,6 +279,63 @@ export const githubActivity = pgTable(
   ],
 );
 
+export const journalSummary = pgTable(
+  "journal_summary",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    localDate: text("local_date").notNull(),
+    snapshotHash: text("snapshot_hash").notNull(),
+    model: text("model").notNull(),
+    output: jsonb("output").$type<SummaryOutput>().notNull(),
+    inputTokens: integer("input_tokens").default(0).notNull(),
+    outputTokens: integer("output_tokens").default(0).notNull(),
+    estimatedCostMicrousd: integer("estimated_cost_microusd")
+      .default(0)
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("journal_summary_user_snapshot_uidx").on(
+      table.userId,
+      table.snapshotHash,
+    ),
+    index("journal_summary_user_date_idx").on(table.userId, table.localDate),
+    index("journal_summary_created_at_idx").on(table.createdAt),
+  ],
+);
+
+export const journalSummaryGeneration = pgTable(
+  "journal_summary_generation",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    localDate: text("local_date").notNull(),
+    snapshotHash: text("snapshot_hash").notNull(),
+    status: text("status")
+      .$type<"active" | "complete" | "failed" | "rejected">()
+      .notNull(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("journal_summary_generation_user_snapshot_uidx").on(
+      table.userId,
+      table.snapshotHash,
+    ),
+    index("journal_summary_generation_usage_idx").on(
+      table.userId,
+      table.localDate,
+      table.claimedAt,
+    ),
+  ],
+);
+
 export const userRelations = relations(user, ({ many, one }) => ({
   sessions: many(session),
   accounts: many(account),
@@ -286,6 +344,8 @@ export const userRelations = relations(user, ({ many, one }) => ({
   githubInstallationStates: many(githubInstallationState),
   githubActivities: many(githubActivity),
   journalReconciliations: many(journalReconciliation),
+  journalSummaries: many(journalSummary),
+  journalSummaryGenerations: many(journalSummaryGeneration),
 }));
 
 export const githubActivityRelations = relations(githubActivity, ({ one }) => ({
@@ -300,6 +360,23 @@ export const journalReconciliationRelations = relations(
   ({ one }) => ({
     user: one(user, {
       fields: [journalReconciliation.userId],
+      references: [user.id],
+    }),
+  }),
+);
+
+export const journalSummaryRelations = relations(journalSummary, ({ one }) => ({
+  user: one(user, {
+    fields: [journalSummary.userId],
+    references: [user.id],
+  }),
+}));
+
+export const journalSummaryGenerationRelations = relations(
+  journalSummaryGeneration,
+  ({ one }) => ({
+    user: one(user, {
+      fields: [journalSummaryGeneration.userId],
       references: [user.id],
     }),
   }),

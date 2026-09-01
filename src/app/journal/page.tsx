@@ -41,6 +41,7 @@ import {
   type StoredGitHubInstallation,
 } from "@/lib/github-installation";
 import { getGitHubJournalCompleteness } from "@/lib/github-completeness";
+import { isE2EJournalUser } from "@/lib/e2e-fixtures";
 import { getJournalOnboarding } from "@/lib/journal";
 import {
   reconciliationCooldownMs,
@@ -48,6 +49,12 @@ import {
 } from "@/lib/github-reconciliation";
 import { getJournalSession } from "@/lib/session";
 import { getStoredTodayJournal } from "@/lib/today-journal";
+import {
+  buildSummarySnapshot,
+  summaryEvidenceLinks,
+  type JournalSummary,
+} from "@/lib/journal-summary";
+import { journalSummaryRepository } from "@/lib/journal-summary-repository";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Journal" };
@@ -200,11 +207,13 @@ function Today({
   timeZone,
   installations,
   journal,
+  summary,
 }: {
   name: string;
   timeZone: string;
   installations: StoredGitHubInstallation[];
   journal: TodayJournal;
+  summary: JournalSummary | null;
 }) {
   const localDate = {
     iso: journal.localDate,
@@ -258,7 +267,11 @@ function Today({
         </div>
       </div>
 
-      <JournalActivity journal={journal} timeZone={timeZone} />
+      <JournalActivity
+        journal={journal}
+        summary={summary}
+        timeZone={timeZone}
+      />
     </>
   );
 }
@@ -379,9 +392,11 @@ const metricCards: Array<{
 
 function JournalActivity({
   journal,
+  summary,
   timeZone,
 }: {
   journal: TodayJournal;
+  summary: JournalSummary | null;
   timeZone: string;
 }) {
   const freshness = journal.refreshedAt
@@ -403,6 +418,9 @@ function JournalActivity({
         journal.lastAttemptAt.getTime() + reconciliationCooldownMs,
       ).toISOString()
     : null;
+  const evidence = new Map(
+    summaryEvidenceLinks(journal.activities).map((item) => [item.id, item]),
+  );
 
   return (
     <div className="mt-10">
@@ -468,6 +486,70 @@ function JournalActivity({
         <div className="sm:col-span-3">
           <JournalRefresh nextSyncAt={nextSyncAt} timeZone={timeZone} />
         </div>
+      </section>
+
+      <section
+        aria-labelledby="summary-heading"
+        className="mt-5 rounded-m3-2xl bg-card p-5 shadow-m3-1 sm:p-7"
+      >
+        <p className="text-m3-label-lg-emphasized text-primary">
+          DAILY NARRATIVE
+        </p>
+        <h2 id="summary-heading" className="mt-2 text-m3-headline-sm">
+          Your day, distilled
+        </h2>
+        {summary ? (
+          <div className="mt-4 grid gap-6">
+            <p className="max-w-3xl text-m3-body-lg">
+              {summary.output.overview}
+            </p>
+            {summary.output.accomplishments.length ? (
+              <div>
+                <h3 className="text-m3-title-md-emphasized">Accomplishments</h3>
+                <div className="mt-3 grid gap-3">
+                  {summary.output.accomplishments.map((claim, index) => {
+                    const repository = evidence.get(claim.evidenceIds[0] ?? "");
+                    return (
+                      <article
+                        key={`${claim.repositoryId}-${index}`}
+                        className="rounded-m3-lg bg-m3-surface-container-low p-4"
+                      >
+                        <p className="text-m3-label-md text-muted-foreground">
+                          {repository?.repositoryName ?? "Repository"}
+                        </p>
+                        <p className="mt-1 text-m3-body-md">{claim.summary}</p>
+                        <EvidenceLinks
+                          ids={claim.evidenceIds}
+                          evidence={evidence}
+                        />
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+            {summary.output.collaboration.length ? (
+              <SummaryClaims
+                title="Reviews and collaboration"
+                claims={summary.output.collaboration}
+                evidence={evidence}
+              />
+            ) : null}
+            {summary.output.inProgress.length ? (
+              <SummaryClaims
+                title="In progress"
+                claims={summary.output.inProgress}
+                evidence={evidence}
+              />
+            ) : null}
+          </div>
+        ) : (
+          <p className="mt-3 max-w-2xl text-m3-body-md text-muted-foreground">
+            The deterministic journal remains available. A narrative will appear
+            after a successful refresh when AI generation and allowance are
+            available.
+          </p>
+        )}
       </section>
 
       <div
@@ -599,6 +681,62 @@ function JournalActivity({
   );
 }
 
+function EvidenceLinks({
+  ids,
+  evidence,
+}: {
+  ids: string[];
+  evidence: Map<string, ReturnType<typeof summaryEvidenceLinks>[number]>;
+}) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-3">
+      {ids.flatMap((id) => {
+        const item = evidence.get(id);
+        return item
+          ? [
+              <a
+                key={id}
+                href={item.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-m3-label-md-emphasized text-primary underline underline-offset-4"
+              >
+                View evidence
+              </a>,
+            ]
+          : [];
+      })}
+    </div>
+  );
+}
+
+function SummaryClaims({
+  title,
+  claims,
+  evidence,
+}: {
+  title: string;
+  claims: Array<{ summary: string; evidenceIds: string[] }>;
+  evidence: Map<string, ReturnType<typeof summaryEvidenceLinks>[number]>;
+}) {
+  return (
+    <div>
+      <h3 className="text-m3-title-md-emphasized">{title}</h3>
+      <div className="mt-2 grid gap-3">
+        {claims.map((claim, index) => (
+          <article
+            key={`${title}-${index}`}
+            className="rounded-m3-lg bg-m3-surface-container-low p-4"
+          >
+            <p className="text-m3-body-md">{claim.summary}</p>
+            <EvidenceLinks ids={claim.evidenceIds} evidence={evidence} />
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default async function JournalPage({
   searchParams = Promise.resolve({}),
 }: {
@@ -627,6 +765,13 @@ export default async function JournalPage({
           installations,
         })
       : null;
+  const summary =
+    today && !isE2EJournalUser(session.user.id)
+      ? await journalSummaryRepository.findBySnapshotHash(
+          session.user.id,
+          buildSummarySnapshot(today.activities).hash,
+        )
+      : null;
 
   return (
     <JournalFrame>
@@ -643,6 +788,7 @@ export default async function JournalPage({
           timeZone={onboarding.timeZone}
           installations={installations}
           journal={today}
+          summary={summary}
         />
       ) : null}
     </JournalFrame>

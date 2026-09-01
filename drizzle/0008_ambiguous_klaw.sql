@@ -1,0 +1,1 @@
+ALTER TABLE "github_activity" ADD COLUMN "status_occurred_at" timestamp with time zone;

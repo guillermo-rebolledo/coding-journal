@@ -268,9 +268,12 @@ describe("protected journal boundary", () => {
         repositorySelection: "selected",
         repositoryCount: 3,
         permissions: {
+          actions: "read",
           contents: "read",
+          deployments: "read",
           discussions: "read",
           metadata: "read",
+          packages: "read",
         },
         status: "active",
       },
@@ -302,7 +305,13 @@ describe("protected journal boundary", () => {
         accountType: "Organization",
         repositorySelection: "all",
         repositoryCount: 8,
-        permissions: { contents: "read", metadata: "read" },
+        permissions: {
+          actions: "read",
+          contents: "read",
+          deployments: "read",
+          metadata: "read",
+          packages: "read",
+        },
         status: "active",
       },
     ]);
@@ -335,7 +344,13 @@ describe("protected journal boundary", () => {
         accountType: "Organization",
         repositorySelection: "all",
         repositoryCount: 8,
-        permissions: { discussions: "read", metadata: "read" },
+        permissions: {
+          actions: "read",
+          deployments: "read",
+          discussions: "read",
+          metadata: "read",
+          packages: "read",
+        },
         status: "active",
       },
     ]);
@@ -371,9 +386,12 @@ describe("protected journal boundary", () => {
         repositorySelection: "all",
         repositoryCount: 8,
         permissions: {
+          actions: "read",
           contents: "read",
+          deployments: "read",
           discussions: "read",
           metadata: "read",
+          packages: "read",
         },
         status: "active",
       },
@@ -383,7 +401,13 @@ describe("protected journal boundary", () => {
         accountType: "Organization",
         repositorySelection: "selected",
         repositoryCount: 2,
-        permissions: { contents: "read", metadata: "read" },
+        permissions: {
+          actions: "read",
+          contents: "read",
+          deployments: "read",
+          metadata: "read",
+          packages: "read",
+        },
         status: "active",
       },
     ]);
@@ -723,6 +747,102 @@ describe("protected journal boundary", () => {
       "https://github.com/acme/private-engine/discussions/73#discussioncomment-8801",
     );
     expect(screen.getAllByText("Private repository")).toHaveLength(2);
+  });
+
+  it("shows attributable operations with status and package narrative policy", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
+    authBoundary.getSession.mockResolvedValue({
+      session: { id: "session-1", token: "server-only-token" },
+      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
+    });
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "app",
+    });
+    storedJournal = {
+      localDate: "2026-08-31",
+      timeZone: "America/Mexico_City",
+      status: "complete",
+      refreshedAt: new Date("2026-08-31T12:00:00Z"),
+    };
+    const common = {
+      localDate: "2026-08-31",
+      actorId: "7",
+      actorLogin: "ada",
+      repositoryId: "42",
+      repositoryName: "acme/private-engine",
+      visibility: "private" as const,
+      source: "github-webhook" as const,
+      subjectNumber: null,
+      observedAt: new Date("2026-08-31T11:30:01Z"),
+      authoredBeforeDay: false,
+      installationId: "99",
+      attributed: true,
+    };
+    const activities: ActivityRecord[] = [
+      {
+        ...common,
+        kind: "workflow-run",
+        deduplicationKey: "github:workflow-run:42:501:1",
+        subjectId: "501",
+        subjectTitle: "Deploy production",
+        evidenceUrl:
+          "https://github.com/acme/private-engine/actions/runs/501/attempts/1",
+        occurredAt: new Date("2026-08-31T11:00:00Z"),
+        status: "success",
+      },
+      {
+        ...common,
+        kind: "deployment",
+        deduplicationKey: "github:deployment:42:801",
+        subjectId: "801",
+        subjectTitle: "production",
+        evidenceUrl: "https://github.com/acme/private-engine/deployments",
+        occurredAt: new Date("2026-08-31T11:10:00Z"),
+        status: "failure",
+      },
+      {
+        ...common,
+        kind: "package-published",
+        deduplicationKey: "github:package-published:42:701",
+        subjectId: "701",
+        subjectTitle: "coding-journal · 1.0.0",
+        evidenceUrl: "https://github.com/acme/private-engine/packages",
+        occurredAt: new Date("2026-08-31T11:20:00Z"),
+        status: "success",
+        narrativeEligible: true,
+      },
+      {
+        ...common,
+        kind: "package-deleted",
+        deduplicationKey:
+          "github:package-deleted:42:701:2026-08-31T11:25:00.000Z",
+        subjectId: "701",
+        subjectTitle: "coding-journal · 1.0.0",
+        evidenceUrl: "https://github.com/acme/private-engine/packages",
+        occurredAt: new Date("2026-08-31T11:25:00Z"),
+        status: "cancelled",
+        narrativeEligible: false,
+      },
+    ];
+    storedActivities = new Map(
+      activities.map((activity) => [activity.deduplicationKey, activity]),
+    );
+    activityRepositoryBoundary.tryStart.mockResolvedValue(false);
+
+    render(
+      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+    );
+
+    expect(screen.getByText("1 workflow run")).toBeInTheDocument();
+    expect(screen.getByText("1 deployment")).toBeInTheDocument();
+    expect(screen.getByText("1 package update")).toBeInTheDocument();
+    expect(screen.getAllByText("Succeeded")).toHaveLength(2);
+    expect(screen.getByText("Failed")).toBeInTheDocument();
+    expect(screen.getByText("Excluded from narrative")).toBeInTheDocument();
+    expect(screen.getByText("Ran workflow")).toBeInTheDocument();
+    expect(screen.getByText("Published package")).toBeInTheDocument();
   });
 
   it("keeps sign-out available after onboarding", async () => {

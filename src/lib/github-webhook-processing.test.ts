@@ -29,7 +29,34 @@ class MemoryStore implements WebhookDeliveryStore {
     }
     for (const record of records) {
       const key = `${userId}:${record.deduplicationKey}`;
-      if (!this.activities.has(key)) this.activities.set(key, record);
+      const existing = this.activities.get(key);
+      if (!existing) {
+        this.activities.set(key, record);
+        continue;
+      }
+      const statusRank = {
+        pending: 0,
+        approved: 1,
+        success: 2,
+        failure: 2,
+        cancelled: 2,
+      } as const;
+      const keepExistingStatus =
+        existing.status &&
+        (!record.status ||
+          statusRank[existing.status] > statusRank[record.status]);
+      this.activities.set(key, {
+        ...existing,
+        ...record,
+        ...(keepExistingStatus ? { status: existing.status } : {}),
+        ...(record.attributed
+          ? {}
+          : {
+              actorId: existing.actorId,
+              actorLogin: existing.actorLogin,
+            }),
+        attributed: Boolean(existing.attributed || record.attributed),
+      });
     }
   }
 
@@ -134,6 +161,110 @@ describe("GitHub webhook queue processing", () => {
     });
     expect(store.deliveryStatuses.get("delivery-9")).toBe("processed");
     expect(store.deliveryStatuses.get("delivery-10")).toBe("processed");
+  });
+
+  it("persists a manual workflow outcome through the operations contract", async () => {
+    const store = new MemoryStore();
+
+    await processWebhookDeliveryMessage(
+      {
+        version: 1,
+        deliveryId: "workflow-delivery-1",
+        installationId: "99",
+        receivedAt: "2026-03-08T15:05:00.000Z",
+        operation: {
+          kind: "workflow-run",
+          deduplicationKey: "github:workflow-run:42:501:1",
+          attributionKey: "github:workflow-run:42:501:1",
+          attribution: "direct",
+          repositoryId: "42",
+          repositoryName: "acme/private-engine",
+          private: true,
+          actorId: "7",
+          actorLogin: "ada",
+          subjectId: "501",
+          title: "Deploy production",
+          occurredAt: "2026-03-08T15:00:00.000Z",
+          status: "success",
+          evidenceUrl:
+            "https://github.com/acme/private-engine/actions/runs/501/attempts/1",
+          narrativeEligible: true,
+        },
+      },
+      { deliveryCount: 1 },
+      store,
+    );
+
+    expect(
+      store.activities.get("user-1:github:workflow-run:42:501:1"),
+    ).toMatchObject({
+      kind: "workflow-run",
+      status: "success",
+      attributed: true,
+    });
+  });
+
+  it("attaches an out-of-order automated outcome to its user's approval", async () => {
+    const store = new MemoryStore();
+    const operation = {
+      kind: "workflow-run" as const,
+      deduplicationKey: "github:workflow-run:42:501:1",
+      attributionKey: "github:workflow-run:42:501:1",
+      repositoryId: "42",
+      repositoryName: "acme/private-engine",
+      private: true,
+      subjectId: "501",
+      title: "Deploy production",
+      occurredAt: "2026-03-08T15:00:00.000Z",
+      evidenceUrl:
+        "https://github.com/acme/private-engine/actions/runs/501/attempts/1",
+      narrativeEligible: true,
+    };
+
+    await processWebhookDeliveryMessage(
+      {
+        version: 1,
+        deliveryId: "workflow-outcome-1",
+        installationId: "99",
+        receivedAt: "2026-03-08T15:05:00.000Z",
+        operation: {
+          ...operation,
+          attribution: "linked",
+          actorId: "15",
+          actorLogin: "github-actions[bot]",
+          status: "success",
+        },
+      },
+      { deliveryCount: 1 },
+      store,
+    );
+    await processWebhookDeliveryMessage(
+      {
+        version: 1,
+        deliveryId: "workflow-approval-1",
+        installationId: "99",
+        receivedAt: "2026-03-08T15:03:00.000Z",
+        operation: {
+          ...operation,
+          attribution: "direct",
+          actorId: "7",
+          actorLogin: "ada",
+          status: "approved",
+        },
+      },
+      { deliveryCount: 1 },
+      store,
+    );
+
+    expect(store.activities.size).toBe(1);
+    expect(
+      store.activities.get("user-1:github:workflow-run:42:501:1"),
+    ).toMatchObject({
+      actorId: "7",
+      actorLogin: "ada",
+      status: "success",
+      attributed: true,
+    });
   });
 
   it("persists a private discussion comment without its body", async () => {

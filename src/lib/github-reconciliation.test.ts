@@ -164,6 +164,9 @@ describe("GitHub current-day reconciliation", () => {
       reviews: 0,
       merges: 0,
       comments: 0,
+      workflows: 0,
+      deployments: 0,
+      packages: 0,
     });
     expect(repeated.metrics).toEqual({
       pushes: 1,
@@ -176,6 +179,9 @@ describe("GitHub current-day reconciliation", () => {
       reviews: 0,
       merges: 0,
       comments: 0,
+      workflows: 0,
+      deployments: 0,
+      packages: 0,
     });
     expect(repeated.status).toBe("complete");
     expect(repeated.activities).toEqual([
@@ -251,6 +257,9 @@ describe("GitHub current-day reconciliation", () => {
       reviews: 0,
       merges: 0,
       comments: 0,
+      workflows: 0,
+      deployments: 0,
+      packages: 0,
     });
     expect(journal.activities[0]).toEqual(
       expect.objectContaining({
@@ -527,6 +536,9 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
       reviews: 1,
       merges: 1,
       comments: 2,
+      workflows: 0,
+      deployments: 0,
+      packages: 0,
     });
     expect(
       journal.activities.map((activity) => activity.deduplicationKey),

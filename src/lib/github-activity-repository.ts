@@ -163,6 +163,7 @@ export function createGitHubActivityRepository<
         where: and(
           eq(githubActivity.userId, userId),
           eq(githubActivity.localDate, localDate),
+          eq(githubActivity.attributed, true),
         ),
         orderBy: [
           asc(githubActivity.occurredAt),
@@ -199,6 +200,10 @@ export function createGitHubActivityRepository<
         observedAt: activity.observedAt,
         authoredBeforeDay: activity.authoredBeforeDay,
         installationId: activity.installationId,
+        status: activity.status,
+        narrativeEligible: activity.narrativeEligible,
+        attributionKeys: activity.attributionKeys ?? undefined,
+        attributed: activity.attributed,
       })),
     };
   }

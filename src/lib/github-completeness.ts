@@ -21,7 +21,12 @@ export type GitHubInstallationCompleteness =
   | { kind: "disconnected"; label: "Disconnected" }
   | { kind: "unavailable"; label: "Temporarily unavailable" };
 
-export type MissingActivityPermission = "contents" | "discussions";
+export type MissingActivityPermission =
+  | "contents"
+  | "discussions"
+  | "actions"
+  | "deployments"
+  | "packages";
 
 function getMissingActivityPermissions(
   permissions: Record<string, string> | null,
@@ -29,6 +34,9 @@ function getMissingActivityPermissions(
   return [
     ...(permissions?.contents === "read" ? [] : (["contents"] as const)),
     ...(permissions?.discussions === "read" ? [] : (["discussions"] as const)),
+    ...(permissions?.actions === "read" ? [] : (["actions"] as const)),
+    ...(permissions?.deployments === "read" ? [] : (["deployments"] as const)),
+    ...(permissions?.packages === "read" ? [] : (["packages"] as const)),
   ];
 }
 
@@ -41,6 +49,15 @@ export function describeMissingActivity(
       : []),
     ...(missingPermissions.includes("discussions")
       ? ["Discussions unavailable"]
+      : []),
+    ...(missingPermissions.includes("actions")
+      ? ["Workflow runs unavailable"]
+      : []),
+    ...(missingPermissions.includes("deployments")
+      ? ["Deployments unavailable"]
+      : []),
+    ...(missingPermissions.includes("packages")
+      ? ["Packages unavailable"]
       : []),
   ].join(" · ");
 }

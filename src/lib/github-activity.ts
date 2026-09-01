@@ -28,7 +28,29 @@ export const collaborationKinds = [
 
 export type CollaborationKind = (typeof collaborationKinds)[number];
 
-export type ActivityKind = "push" | "commit" | CollaborationKind;
+export const operationsKinds = [
+  "workflow-run",
+  "deployment",
+  "package-published",
+  "package-updated",
+  "package-deleted",
+  "package-restored",
+] as const;
+
+export type OperationsKind = (typeof operationsKinds)[number];
+
+export type ActivityKind =
+  | "push"
+  | "commit"
+  | CollaborationKind
+  | OperationsKind;
+
+export type ActivityStatus =
+  | "pending"
+  | "approved"
+  | "success"
+  | "failure"
+  | "cancelled";
 
 export type ActivityRecord = {
   deduplicationKey: string;
@@ -48,6 +70,12 @@ export type ActivityRecord = {
   observedAt: Date;
   authoredBeforeDay: boolean;
   installationId: string | null;
+  status?: ActivityStatus | null;
+  statusOccurredAt?: Date | null;
+  narrativeEligible?: boolean;
+  attributionKey?: string | null;
+  attributionKeys?: string[];
+  attributed?: boolean;
 };
 
 export type ActivityMetrics = {
@@ -61,6 +89,9 @@ export type ActivityMetrics = {
   reviews: number;
   merges: number;
   comments: number;
+  workflows: number;
+  deployments: number;
+  packages: number;
 };
 
 const metricKinds: Record<keyof ActivityMetrics, ActivityKind[]> = {
@@ -87,6 +118,9 @@ const metricKinds: Record<keyof ActivityMetrics, ActivityKind[]> = {
     "pull-request-comment",
     "pull-request-review-comment",
   ],
+  workflows: ["workflow-run"],
+  deployments: ["deployment"],
+  packages: ["package-published", "package-updated"],
 };
 
 export function computeActivityMetrics(

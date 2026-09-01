@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { db } from "@/db";
@@ -150,16 +150,85 @@ export function createGitHubWebhookRepository<
 
   async function recordActivity(userId: string, records: ActivityRecord[]) {
     if (records.length === 0) return;
-    // First write wins: a record already ingested by reconciliation (or a
-    // concurrent consumer) stays canonical.
     await database
       .insert(githubActivity)
       .values(
-        records.map((record) => ({ id: randomUUID(), userId, ...record })),
+        records.map((record) => {
+          const { attributionKey, ...storedRecord } = record;
+          return {
+            id: randomUUID(),
+            userId,
+            ...storedRecord,
+            narrativeEligible: record.narrativeEligible ?? true,
+            attributionKeys:
+              record.attributionKeys ??
+              (attributionKey ? [attributionKey] : null),
+            attributed: record.attributed ?? true,
+          };
+        }),
       )
-      .onConflictDoNothing({
+      .onConflictDoUpdate({
         target: [githubActivity.userId, githubActivity.deduplicationKey],
+        set: {
+          observedAt: sql`GREATEST(${githubActivity.observedAt}, excluded.observed_at)`,
+          status: sql`CASE
+            WHEN excluded.status IS NULL THEN ${githubActivity.status}
+            WHEN ${githubActivity.status} IS NULL THEN excluded.status
+            WHEN excluded.status_occurred_at IS NULL THEN ${githubActivity.status}
+            WHEN ${githubActivity.statusOccurredAt} IS NULL THEN excluded.status
+            WHEN excluded.status_occurred_at >= ${githubActivity.statusOccurredAt} THEN excluded.status
+            ELSE ${githubActivity.status}
+          END`,
+          statusOccurredAt: sql`CASE
+            WHEN excluded.status_occurred_at IS NULL THEN ${githubActivity.statusOccurredAt}
+            WHEN ${githubActivity.statusOccurredAt} IS NULL THEN excluded.status_occurred_at
+            ELSE GREATEST(${githubActivity.statusOccurredAt}, excluded.status_occurred_at)
+          END`,
+          actorId: sql`CASE WHEN excluded.attributed THEN excluded.actor_id ELSE ${githubActivity.actorId} END`,
+          actorLogin: sql`CASE WHEN excluded.attributed THEN excluded.actor_login ELSE ${githubActivity.actorLogin} END`,
+          subjectTitle: sql`COALESCE(${githubActivity.subjectTitle}, excluded.subject_title)`,
+          narrativeEligible: sql`${githubActivity.narrativeEligible} AND excluded.narrative_eligible`,
+          attributionKeys: sql`COALESCE(${githubActivity.attributionKeys}, excluded.attribution_keys)`,
+          attributed: sql`${githubActivity.attributed} OR excluded.attributed`,
+        },
       });
+
+    // Operational outcomes may arrive before the merge, release, or manual
+    // workflow that makes them attributable. Resolve those safe candidates on
+    // every related write so either event order converges on the same result.
+    const correlated = await database
+      .select({
+        id: githubActivity.id,
+        kind: githubActivity.kind,
+        actorId: githubActivity.actorId,
+        actorLogin: githubActivity.actorLogin,
+        attributionKeys: githubActivity.attributionKeys,
+        attributed: githubActivity.attributed,
+      })
+      .from(githubActivity)
+      .where(
+        and(
+          eq(githubActivity.userId, userId),
+          isNotNull(githubActivity.attributionKeys),
+        ),
+      );
+    const origins = correlated.filter((record) => record.attributed);
+    for (const pending of correlated.filter((record) => !record.attributed)) {
+      const origin = origins.find((candidate) =>
+        candidate.attributionKeys?.some((key) =>
+          pending.attributionKeys?.includes(key),
+        ),
+      );
+      if (!origin) continue;
+      await database
+        .update(githubActivity)
+        .set({
+          actorId: origin.actorId,
+          actorLogin: origin.actorLogin,
+          attributed: true,
+        })
+        .where(eq(githubActivity.id, pending.id));
+    }
   }
 
   return {

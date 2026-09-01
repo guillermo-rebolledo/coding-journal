@@ -203,6 +203,9 @@ describe("GitHub webhook repository with Postgres", () => {
       reviews: 0,
       merges: 0,
       comments: 0,
+      workflows: 0,
+      deployments: 0,
+      packages: 0,
     });
     expect(journal.activities).toEqual([
       expect.objectContaining({
@@ -332,5 +335,262 @@ describe("GitHub webhook repository with Postgres", () => {
         eq(activity.deduplicationKey, record.deduplicationKey),
     });
     expect(rows).toHaveLength(1);
+  });
+
+  it("hides an early automated outcome until its user's approval arrives", async () => {
+    const localDate = "2026-03-09";
+    const now = new Date("2026-03-09T18:00:00Z");
+    if (
+      await activityRepository.tryStart(
+        "webhook-user",
+        localDate,
+        now,
+        new Date("2026-03-09T17:45:00Z"),
+        "America/New_York",
+      )
+    ) {
+      await activityRepository.finish(
+        "webhook-user",
+        {
+          localDate,
+          timeZone: "America/New_York",
+          status: "complete",
+          refreshedAt: now,
+        },
+        [],
+      );
+    }
+    const operation = {
+      kind: "workflow-run" as const,
+      deduplicationKey: "github:workflow-run:42:777:1",
+      attributionKey: "github:workflow-run:42:777:1",
+      repositoryId: "42",
+      repositoryName: "acme/private-engine",
+      private: true,
+      subjectId: "777",
+      title: "Deploy production",
+      occurredAt: "2026-03-09T15:00:00.000Z",
+      evidenceUrl:
+        "https://github.com/acme/private-engine/actions/runs/777/attempts/1",
+      narrativeEligible: true,
+    };
+
+    await processWebhookDeliveryMessage(
+      {
+        version: 1,
+        deliveryId: "workflow-outcome-db",
+        installationId: "99",
+        receivedAt: "2026-03-09T15:05:00.000Z",
+        operation: {
+          ...operation,
+          attribution: "linked",
+          actorId: "15",
+          actorLogin: "github-actions[bot]",
+          status: "success",
+          statusOccurredAt: "2026-03-09T15:04:00.000Z",
+        },
+      },
+      { deliveryCount: 1 },
+      repository,
+    );
+
+    expect(
+      (await activityRepository.read("webhook-user", localDate)).activities,
+    ).toEqual([]);
+
+    await processWebhookDeliveryMessage(
+      {
+        version: 1,
+        deliveryId: "workflow-approval-db",
+        installationId: "99",
+        receivedAt: "2026-03-09T15:03:00.000Z",
+        operation: {
+          ...operation,
+          attribution: "direct",
+          actorId: "7",
+          actorLogin: "ada",
+          status: "approved",
+          statusOccurredAt: "2026-03-09T15:02:00.000Z",
+        },
+      },
+      { deliveryCount: 1 },
+      repository,
+    );
+
+    expect(
+      (await activityRepository.read("webhook-user", localDate)).activities,
+    ).toEqual([
+      expect.objectContaining({
+        kind: "workflow-run",
+        actorLogin: "ada",
+        status: "success",
+        attributed: true,
+      }),
+    ]);
+
+    await processWebhookDeliveryMessage(
+      {
+        version: 1,
+        deliveryId: "workflow-stale-failure-db",
+        installationId: "99",
+        receivedAt: "2026-03-09T15:06:00.000Z",
+        operation: {
+          ...operation,
+          attribution: "linked",
+          actorId: "15",
+          actorLogin: "github-actions[bot]",
+          status: "failure",
+          statusOccurredAt: "2026-03-09T15:01:00.000Z",
+        },
+      },
+      { deliveryCount: 1 },
+      repository,
+    );
+
+    expect(
+      (await activityRepository.read("webhook-user", localDate)).activities,
+    ).toEqual([
+      expect.objectContaining({ status: "success", actorLogin: "ada" }),
+    ]);
+  });
+
+  it("reveals only the deployment outcome linked to the user's merge", async () => {
+    const localDate = "2026-03-10";
+    const now = new Date("2026-03-10T18:00:00Z");
+    if (
+      await activityRepository.tryStart(
+        "webhook-user",
+        localDate,
+        now,
+        new Date("2026-03-10T17:45:00Z"),
+        "America/New_York",
+      )
+    ) {
+      await activityRepository.finish(
+        "webhook-user",
+        {
+          localDate,
+          timeZone: "America/New_York",
+          status: "complete",
+          refreshedAt: now,
+        },
+        [],
+      );
+    }
+    const deployment = (id: string, sha: string) => ({
+      version: 1 as const,
+      deliveryId: `deployment-${id}`,
+      installationId: "99",
+      receivedAt: "2026-03-10T15:05:00.000Z",
+      operation: {
+        kind: "deployment" as const,
+        deduplicationKey: `github:deployment:42:${id}`,
+        attributionKey: `github:commit:42:${sha}`,
+        attributionKeys: [`github:commit:42:${sha}`],
+        attribution: "linked" as const,
+        repositoryId: "42",
+        repositoryName: "acme/private-engine",
+        private: true,
+        actorId: "15",
+        actorLogin: "github-actions[bot]",
+        subjectId: id,
+        title: "production",
+        occurredAt: "2026-03-10T15:00:00.000Z",
+        status: "success" as const,
+        evidenceUrl: "https://github.com/acme/private-engine/deployments",
+        narrativeEligible: true,
+      },
+    });
+
+    await processWebhookDeliveryMessage(
+      deployment("801", "abcdef1234567"),
+      { deliveryCount: 1 },
+      repository,
+    );
+    await processWebhookDeliveryMessage(
+      deployment("802", "deadbee123456"),
+      { deliveryCount: 1 },
+      repository,
+    );
+    await processWebhookDeliveryMessage(
+      {
+        version: 1,
+        deliveryId: "package-803",
+        installationId: "99",
+        receivedAt: "2026-03-10T15:06:00.000Z",
+        operation: {
+          kind: "package-published",
+          deduplicationKey: "github:package-published:42:803",
+          attributionKey: "github:commit:42:abcdef1234567",
+          attributionKeys: ["github:commit:42:abcdef1234567"],
+          attribution: "linked",
+          repositoryId: "42",
+          repositoryName: "acme/private-engine",
+          private: true,
+          actorId: "15",
+          actorLogin: "github-actions[bot]",
+          subjectId: "803",
+          title: "coding-journal · 2.0.0",
+          occurredAt: "2026-03-10T15:01:00.000Z",
+          status: "success",
+          statusOccurredAt: "2026-03-10T15:01:00.000Z",
+          evidenceUrl: "https://github.com/acme/private-engine/packages",
+          narrativeEligible: true,
+        },
+      },
+      { deliveryCount: 1 },
+      repository,
+    );
+    expect(
+      (await activityRepository.read("webhook-user", localDate)).activities,
+    ).toEqual([]);
+
+    await processWebhookDeliveryMessage(
+      {
+        version: 1,
+        deliveryId: "merge-origin",
+        installationId: "99",
+        receivedAt: "2026-03-10T15:04:00.000Z",
+        collaboration: {
+          repositoryId: "42",
+          repositoryName: "acme/private-engine",
+          private: true,
+          senderId: "7",
+          senderLogin: "ada",
+          subject: {
+            kind: "pull-request-merged",
+            deduplicationKey: "github:pull-request-merged:42:52",
+            subjectId: "52",
+            subjectNumber: 52,
+            title: "Ship production",
+            evidenceUrl: "https://github.com/acme/private-engine/pull/52",
+            occurredAt: "2026-03-10T14:59:00.000Z",
+            attributionKeys: ["github:commit:42:abcdef1234567"],
+          },
+        },
+      },
+      { deliveryCount: 1 },
+      repository,
+    );
+
+    const journal = await activityRepository.read("webhook-user", localDate);
+    expect(
+      journal.activities.filter((activity) => activity.kind === "deployment"),
+    ).toEqual([
+      expect.objectContaining({
+        deduplicationKey: "github:deployment:42:801",
+        actorLogin: "ada",
+      }),
+    ]);
+    expect(
+      journal.activities.filter(
+        (activity) => activity.kind === "package-published",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        deduplicationKey: "github:package-published:42:803",
+        actorLogin: "ada",
+      }),
+    ]);
   });
 });

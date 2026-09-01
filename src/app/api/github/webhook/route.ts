@@ -5,7 +5,7 @@ import {
 } from "@/lib/github-collaboration";
 import {
   extractPushDelivery,
-  pushDeliveryTopic,
+  webhookDeliveryTopic,
   validDeliveryId,
   verifyGitHubSignature,
 } from "@/lib/github-webhook";
@@ -84,7 +84,7 @@ export async function POST(request: Request) {
 
   try {
     await queuePublisher.publish(
-      pushDeliveryTopic,
+      webhookDeliveryTopic,
       extraction.message,
       deliveryId,
     );

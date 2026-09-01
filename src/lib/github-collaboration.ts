@@ -107,6 +107,14 @@ const invalid = { ok: false, reason: "invalid" } as const;
 
 const collaborationKindSet = new Set<string>(collaborationKinds);
 
+function collaborationDeduplicationKey(
+  kind: CollaborationKind,
+  repositoryId: string,
+  discriminator: string | number,
+) {
+  return `github:${kind}:${repositoryId}:${discriminator}`;
+}
+
 // Maps one observed issue or pull-request action onto its canonical subject.
 // Keys derive from content (numbers, comment/review ids, state-change times),
 // never from delivery or events-feed ids, so both sources compute the same
@@ -144,7 +152,11 @@ export function deriveCollaborationSubject(
       ok: true,
       subject: {
         kind,
-        deduplicationKey: `github:${kind}:${repository.id}:${discriminator}`,
+        deduplicationKey: collaborationDeduplicationKey(
+          kind,
+          repository.id,
+          discriminator,
+        ),
         subjectId: String(number),
         subjectNumber: number,
         title: boundSubjectTitle(issue?.title),
@@ -170,7 +182,11 @@ export function deriveCollaborationSubject(
       ok: true,
       subject: {
         kind,
-        deduplicationKey: `github:${kind}:${repository.id}:${commentId}`,
+        deduplicationKey: collaborationDeduplicationKey(
+          kind,
+          repository.id,
+          commentId,
+        ),
         subjectId: String(commentId),
         subjectNumber: number,
         title: boundSubjectTitle(issue?.title),
@@ -181,6 +197,9 @@ export function deriveCollaborationSubject(
   }
 
   if (eventType === "pull_request") {
+    // "synchronize" is deliberately unsupported: the commits it announces
+    // already reach the journal through push ingestion, and recording both
+    // would double-count the same work.
     if (
       !["opened", "closed", "reopened", "edited", "ready_for_review"].includes(
         action,
@@ -220,7 +239,11 @@ export function deriveCollaborationSubject(
       ok: true,
       subject: {
         kind,
-        deduplicationKey: `github:${kind}:${repository.id}:${discriminator}`,
+        deduplicationKey: collaborationDeduplicationKey(
+          kind,
+          repository.id,
+          discriminator,
+        ),
         subjectId: String(number),
         subjectNumber: number,
         title: boundSubjectTitle(pullRequest?.title),
@@ -252,7 +275,11 @@ export function deriveCollaborationSubject(
       ok: true,
       subject: {
         kind: "pull-request-review",
-        deduplicationKey: `github:pull-request-review:${repository.id}:${reviewId}`,
+        deduplicationKey: collaborationDeduplicationKey(
+          "pull-request-review",
+          repository.id,
+          reviewId,
+        ),
         subjectId: String(reviewId),
         subjectNumber: number,
         title: boundSubjectTitle(pullRequest?.title),
@@ -274,7 +301,11 @@ export function deriveCollaborationSubject(
     ok: true,
     subject: {
       kind: "pull-request-review-comment",
-      deduplicationKey: `github:pull-request-review-comment:${repository.id}:${commentId}`,
+      deduplicationKey: collaborationDeduplicationKey(
+        "pull-request-review-comment",
+        repository.id,
+        commentId,
+      ),
       subjectId: String(commentId),
       subjectNumber: number,
       title: boundSubjectTitle(pullRequest?.title),

@@ -145,5 +145,8 @@ describe("journal history browsing", () => {
       screen.getByRole("heading", { name: "Late corrections" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Late review note")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Redact narrative" }),
+    ).toBeInTheDocument();
   });
 });

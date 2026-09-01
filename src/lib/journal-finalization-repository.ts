@@ -84,6 +84,15 @@ function activityFromRow(
   };
 }
 
+function historicalStatus(
+  status: typeof journalFinalization.$inferSelect.status,
+  correctionCount: number,
+): JournalHistoryItem["status"] {
+  if (status === "recoverable-error") return "recoverable-error";
+  if (status === "scheduled" || status === "finalizing") return "finalizing";
+  return correctionCount > 0 ? "corrected" : "finalized";
+}
+
 export function createJournalFinalizationRepository<
   TQueryResult extends PgQueryResultHKT,
 >(database: PgDatabase<TQueryResult, typeof import("@/db/auth-schema")>) {
@@ -198,6 +207,32 @@ export function createJournalFinalizationRepository<
       );
   }
 
+  async function retry(userId: string, localDate: string, now = new Date()) {
+    const [retried] = await database
+      .update(journalFinalization)
+      .set({
+        status: "scheduled",
+        scheduledAt: now,
+        finalizationStartedAt: null,
+        lastFailure: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(journalFinalization.userId, userId),
+          eq(journalFinalization.localDate, localDate),
+          eq(journalFinalization.status, "recoverable-error"),
+        ),
+      )
+      .returning({
+        userId: journalFinalization.userId,
+        localDate: journalFinalization.localDate,
+        timeZone: journalFinalization.timeZone,
+        attemptCount: journalFinalization.attemptCount,
+      });
+    return retried ?? null;
+  }
+
   async function correctionsFor(
     userId: string,
     localDate: string,
@@ -240,14 +275,7 @@ export function createJournalFinalizationRepository<
     return {
       localDate,
       timeZone: row.timeZone,
-      status:
-        row.status === "recoverable-error"
-          ? "recoverable-error"
-          : row.status === "scheduled" || row.status === "finalizing"
-            ? "finalizing"
-            : corrections.length > 0
-              ? "corrected"
-              : "finalized",
+      status: historicalStatus(row.status, corrections.length),
       completeness: row.completeness,
       metrics: row.metrics,
       narrative: row.narrative,
@@ -275,14 +303,7 @@ export function createJournalFinalizationRepository<
         return {
           localDate: row.localDate,
           timeZone: row.timeZone,
-          status:
-            row.status === "recoverable-error"
-              ? ("recoverable-error" as const)
-              : row.status === "scheduled" || row.status === "finalizing"
-                ? ("finalizing" as const)
-                : corrections.length > 0
-                  ? ("corrected" as const)
-                  : ("finalized" as const),
+          status: historicalStatus(row.status, corrections.length),
           completeness: row.completeness,
           finalizedAt: row.finalizedAt,
           correctionCount: corrections.length,
@@ -316,6 +337,7 @@ export function createJournalFinalizationRepository<
     claim,
     finalize,
     fail,
+    retry,
     list,
     read,
     redactNarrative,
@@ -327,6 +349,11 @@ export function createJournalFinalizationRepository<
       localDate: string,
       now?: Date,
     ): Promise<boolean>;
+    retry(
+      userId: string,
+      localDate: string,
+      now?: Date,
+    ): Promise<(FinalizationCandidate & { attemptCount: number }) | null>;
   };
 }
 

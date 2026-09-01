@@ -55,6 +55,18 @@ type GenerateFinalSummary = (input: {
   activities: ActivityRecord[];
 }) => Promise<SummaryResult>;
 
+async function failAttempt(
+  store: FinalizationStore,
+  message: JournalFinalizationMessage,
+  failure: FinalizationFailure,
+  deliveryCount: number,
+  error: unknown,
+) {
+  const terminal = deliveryCount >= maximumAttempts;
+  await store.fail(message.userId, message.localDate, failure, terminal);
+  if (!terminal) throw error;
+}
+
 function idempotencyKey(candidate: FinalizationCandidate) {
   return `journal-finalization:${candidate.userId}:${candidate.localDate}`;
 }
@@ -120,26 +132,24 @@ export async function processJournalFinalization(
   try {
     journal = await reconcile(message);
   } catch (error) {
-    const terminal = deliveryCount >= maximumAttempts;
-    await store.fail(
-      message.userId,
-      message.localDate,
+    await failAttempt(
+      store,
+      message,
       "reconciliation-failed",
-      terminal,
+      deliveryCount,
+      error,
     );
-    if (!terminal) throw error;
     return;
   }
 
   if (journal.status === "error") {
-    const terminal = deliveryCount >= maximumAttempts;
-    await store.fail(
-      message.userId,
-      message.localDate,
+    await failAttempt(
+      store,
+      message,
       "reconciliation-failed",
-      terminal,
+      deliveryCount,
+      new Error("Final reconciliation was unavailable"),
     );
-    if (!terminal) throw new Error("Final reconciliation was unavailable");
     return;
   }
 
@@ -151,27 +161,19 @@ export async function processJournalFinalization(
       activities: journal.activities,
     });
   } catch (error) {
-    const terminal = deliveryCount >= maximumAttempts;
-    await store.fail(
-      message.userId,
-      message.localDate,
-      "summary-failed",
-      terminal,
-    );
-    if (!terminal) throw error;
+    await failAttempt(store, message, "summary-failed", deliveryCount, error);
     return;
   }
 
   const snapshot = buildSummarySnapshot(journal.activities);
   if (summary.status === "unavailable" && summary.reason !== "no-activity") {
-    const terminal = deliveryCount >= maximumAttempts;
-    await store.fail(
-      message.userId,
-      message.localDate,
+    await failAttempt(
+      store,
+      message,
       "summary-failed",
-      terminal,
+      deliveryCount,
+      new Error(`Summary unavailable: ${summary.reason}`),
     );
-    if (!terminal) throw new Error(`Summary unavailable: ${summary.reason}`);
     return;
   }
 

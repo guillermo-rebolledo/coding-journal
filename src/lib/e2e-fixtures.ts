@@ -106,3 +106,66 @@ export const e2eGitHubInstallations = {
     },
   ],
 } as const;
+
+const e2eHistoricalActivity: ActivityRecord = {
+  deduplicationKey: "e2e:history:issue:51",
+  localDate: "2026-08-30",
+  kind: "issue-opened",
+  actorId: "7",
+  actorLogin: "ada",
+  repositoryId: "43",
+  repositoryName: "acme/web",
+  evidenceUrl: "https://github.com/acme/web/issues/51",
+  visibility: "public",
+  source: "github-events",
+  subjectId: "51",
+  subjectNumber: 51,
+  subjectTitle: "Polish journal history",
+  occurredAt: new Date("2026-08-30T17:00:00Z"),
+  observedAt: new Date("2026-08-31T05:00:00Z"),
+  authoredBeforeDay: false,
+  installationId: null,
+};
+
+export function getE2EJournalHistory() {
+  return [
+    {
+      localDate: "2026-08-30",
+      timeZone: "America/Mexico_City",
+      status: "corrected" as const,
+      completeness: "complete" as const,
+      finalizedAt: new Date("2026-08-31T12:00:00Z"),
+      correctionCount: 1,
+    },
+  ];
+}
+
+export function getE2EHistoricalJournal(localDate: string) {
+  if (localDate !== "2026-08-30") return null;
+  const correction: ActivityRecord = {
+    ...e2eHistoricalActivity,
+    deduplicationKey: "e2e:history:comment:99",
+    kind: "issue-comment",
+    subjectId: "99",
+    subjectTitle: "Late review note",
+    observedAt: new Date("2026-08-31T13:00:00Z"),
+  };
+  return {
+    ...getE2EJournalHistory()[0]!,
+    metrics: computeActivityMetrics([e2eHistoricalActivity]),
+    narrative: {
+      overview: "Opened and refined the journal history experience.",
+      overviewEvidenceIds: ["evidence-1"],
+      accomplishments: [],
+      collaboration: [],
+      inProgress: [],
+    },
+    evidence: [e2eHistoricalActivity],
+    corrections: [correction],
+    failure: null,
+  };
+}
+import {
+  computeActivityMetrics,
+  type ActivityRecord,
+} from "@/lib/github-activity";

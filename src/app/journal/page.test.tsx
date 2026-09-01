@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ActivityRecord, TodayJournal } from "@/lib/github-reconciliation";
+
 const authBoundary = vi.hoisted(() => ({
   getSession: vi.fn(),
   signOut: vi.fn(),
@@ -12,6 +14,17 @@ const journalBoundary = vi.hoisted(() => ({
 
 const installationBoundary = vi.hoisted(() => ({
   getInstallations: vi.fn(),
+}));
+
+const activityRepositoryBoundary = vi.hoisted(() => ({
+  tryStart: vi.fn(),
+  finish: vi.fn(),
+  read: vi.fn(),
+}));
+
+const githubBoundary = vi.hoisted(() => ({
+  getToken: vi.fn(),
+  fetch: vi.fn(),
 }));
 
 const navigation = vi.hoisted(() => ({
@@ -28,6 +41,14 @@ vi.mock("@/lib/session", () => ({
 
 vi.mock("@/lib/journal", () => ({
   getJournalOnboarding: journalBoundary.getOnboarding,
+}));
+
+vi.mock("@/lib/github-activity-repository", () => ({
+  githubActivityRepository: activityRepositoryBoundary,
+}));
+
+vi.mock("@/lib/github-user-token", () => ({
+  getGitHubUserAccessToken: githubBoundary.getToken,
 }));
 
 vi.mock("@/lib/github-installation-repository", () => ({
@@ -60,8 +81,21 @@ vi.mock("next/navigation", () => ({
 import JournalPage from "@/app/journal/page";
 import { ThemeProvider } from "@/components/theme-provider";
 
+let storedJournal: Omit<TodayJournal, "activities" | "metrics"> | null;
+let storedActivities: Map<string, ActivityRecord>;
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 describe("protected journal boundary", () => {
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 
   beforeEach(() => {
     authBoundary.getSession.mockReset();
@@ -71,6 +105,62 @@ describe("protected journal boundary", () => {
     journalBoundary.getOnboarding.mockReset();
     installationBoundary.getInstallations.mockReset();
     installationBoundary.getInstallations.mockResolvedValue([]);
+    githubBoundary.getToken.mockReset();
+    githubBoundary.getToken.mockResolvedValue("fixture-token");
+    githubBoundary.fetch.mockReset();
+    githubBoundary.fetch.mockImplementation(
+      async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/user")) {
+          return jsonResponse({ id: 7, login: "ada" });
+        }
+        if (url.includes("/users/ada/events")) return jsonResponse([]);
+        if (url.includes("/user/installations/")) {
+          return jsonResponse({ total_count: 0, repositories: [] });
+        }
+        throw new Error(`Unexpected fixture request: ${url}`);
+      },
+    );
+    vi.stubGlobal("fetch", githubBoundary.fetch);
+
+    storedJournal = null;
+    storedActivities = new Map();
+    activityRepositoryBoundary.tryStart.mockReset();
+    activityRepositoryBoundary.tryStart.mockResolvedValue(true);
+    activityRepositoryBoundary.finish.mockReset();
+    activityRepositoryBoundary.finish.mockImplementation(
+      async (
+        _userId: string,
+        journal: Omit<TodayJournal, "activities" | "metrics">,
+        records: ActivityRecord[],
+      ) => {
+        storedJournal = journal;
+        for (const record of records) {
+          storedActivities.set(record.deduplicationKey, record);
+        }
+      },
+    );
+    activityRepositoryBoundary.read.mockReset();
+    activityRepositoryBoundary.read.mockImplementation(
+      async (_userId: string, localDate: string): Promise<TodayJournal> => {
+        if (!storedJournal) throw new Error("Reconciliation was not finished");
+        const activities = [...storedActivities.values()].sort(
+          (left, right) =>
+            left.occurredAt.getTime() - right.occurredAt.getTime(),
+        );
+        return {
+          ...storedJournal,
+          localDate,
+          activities,
+          metrics: {
+            pushes: activities.filter((activity) => activity.kind === "push")
+              .length,
+            commits: activities.filter((activity) => activity.kind === "commit")
+              .length,
+          },
+        };
+      },
+    );
   });
 
   it("shows a first-time user the browser-detected time zone", async () => {
@@ -188,6 +278,94 @@ describe("protected journal boundary", () => {
 
     expect(screen.getByText("Partial access")).toBeInTheDocument();
     expect(screen.getByText("3 selected repositories")).toBeInTheDocument();
+  });
+
+  it("shows trustworthy metrics and chronological evidence for today's activity", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
+    authBoundary.getSession.mockResolvedValue({
+      session: { id: "session-1", token: "server-only-token" },
+      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
+    });
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "app",
+    });
+    installationBoundary.getInstallations.mockResolvedValue([
+      {
+        installationId: "99",
+        accountLogin: "acme",
+        accountType: "Organization",
+        repositorySelection: "selected",
+        repositoryCount: 1,
+        status: "active",
+      },
+    ]);
+    githubBoundary.fetch.mockImplementation(
+      async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/user")) {
+          return jsonResponse({ id: 7, login: "ada" });
+        }
+        if (url.includes("/users/ada/events")) {
+          return jsonResponse([
+            {
+              id: "event-1",
+              type: "PushEvent",
+              actor: { id: 7, login: "ada" },
+              repo: { id: 42, name: "acme/private-engine" },
+              public: false,
+              created_at: "2026-08-31T11:00:00Z",
+              payload: {
+                before: "1111111",
+                head: "abcdef1",
+                ref: "refs/heads/main",
+              },
+            },
+          ]);
+        }
+        if (
+          url.includes("/repos/acme/private-engine/compare/1111111...abcdef1")
+        ) {
+          return jsonResponse({
+            total_commits: 1,
+            commits: [
+              {
+                sha: "abcdef1",
+                author: { id: 7, login: "ada" },
+                commit: { author: { date: "2026-08-30T20:00:00Z" } },
+              },
+            ],
+          });
+        }
+        if (url.includes("/user/installations/99/repositories")) {
+          return jsonResponse({}, 502);
+        }
+        throw new Error(`Unexpected fixture request: ${url}`);
+      },
+    );
+
+    render(
+      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+    );
+
+    expect(screen.getByText("1 push")).toBeInTheDocument();
+    expect(screen.getByText("1 commit")).toBeInTheDocument();
+    expect(screen.getByText("Partial GitHub response")).toBeInTheDocument();
+    expect(screen.getByText("Authored before today")).toBeInTheDocument();
+    expect(screen.getAllByText("acme/private-engine")).toHaveLength(2);
+    expect(
+      screen.getByRole("link", { name: "View commit evidence" }),
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/acme/private-engine/commit/abcdef1",
+    );
+    expect(
+      screen.getByRole("link", { name: "View push evidence" }),
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/acme/private-engine/compare/1111111...abcdef1",
+    );
   });
 
   it("keeps sign-out available after onboarding", async () => {

@@ -159,6 +159,37 @@ describe("GitHub webhook endpoint", () => {
     expect(neonBoundary.markDeliveryEnqueued).toHaveBeenCalled();
   });
 
+  it("accepts organization Projects preview events through the isolated contract", async () => {
+    const body = JSON.stringify({
+      action: "edited",
+      organization: { id: 84, login: "acme" },
+      sender: { id: 7, login: "ada", type: "User" },
+      installation: { id: 99 },
+      projects_v2: {
+        id: 501,
+        node_id: "PVT_kwDOA1",
+        number: 12,
+        title: "Engineering roadmap",
+        html_url: "https://github.com/orgs/acme/projects/12",
+      },
+      changes: { title: { from: "PRIVATE ROADMAP" } },
+    });
+
+    const response = await POST(webhookRequest({ body, event: "projects_v2" }));
+
+    expect(response.status).toBe(202);
+    const queued = queueBoundary.publish.mock.calls[0]?.[1];
+    expect(queued).toEqual(
+      expect.objectContaining({
+        project: expect.objectContaining({
+          kind: "project-updated",
+          completeness: "best-effort",
+        }),
+      }),
+    );
+    expect(JSON.stringify(queued)).not.toContain("PRIVATE ROADMAP");
+  });
+
   it("acknowledges a verified branch creation and enqueues only bounded metadata", async () => {
     const body = JSON.stringify({
       ref: "feature/private-roadmap",

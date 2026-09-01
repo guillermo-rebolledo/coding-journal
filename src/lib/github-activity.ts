@@ -39,11 +39,45 @@ export const operationsKinds = [
 
 export type OperationsKind = (typeof operationsKinds)[number];
 
+export const projectKinds = [
+  "project-created",
+  "project-updated",
+  "project-closed",
+  "project-reopened",
+  "project-deleted",
+  "project-item-added",
+  "project-item-archived",
+  "project-item-converted",
+  "project-item-edited",
+  "project-item-redacted",
+  "project-item-reordered",
+  "project-item-restored",
+] as const;
+
+export type ProjectKind = (typeof projectKinds)[number];
+
+export const secondaryKinds = [
+  "gist-created",
+  "gist-updated",
+  "gist-comment",
+  "gist-forked",
+  "gist-starred",
+  "repository-starred",
+  "repository-watched",
+  "repository-forked",
+  "user-followed",
+  "sponsorship-created",
+] as const;
+
+export type SecondaryKind = (typeof secondaryKinds)[number];
+
 export type ActivityKind =
   | "push"
   | "commit"
   | CollaborationKind
-  | OperationsKind;
+  | OperationsKind
+  | ProjectKind
+  | SecondaryKind;
 
 export type ActivityStatus =
   | "pending"
@@ -62,7 +96,12 @@ export type ActivityRecord = {
   repositoryName: string;
   evidenceUrl: string;
   visibility: "public" | "private";
-  source: "github-events" | "github-repository-commits" | "github-webhook";
+  source:
+    | "github-events"
+    | "github-repository-commits"
+    | "github-webhook"
+    | "github-projects-preview"
+    | "github-gists";
   subjectId: string;
   subjectNumber: number | null;
   subjectTitle: string | null;
@@ -92,6 +131,9 @@ export type ActivityMetrics = {
   workflows: number;
   deployments: number;
   packages: number;
+  projects: number;
+  gists: number;
+  social: number;
 };
 
 const metricKinds: Record<keyof ActivityMetrics, ActivityKind[]> = {
@@ -121,6 +163,21 @@ const metricKinds: Record<keyof ActivityMetrics, ActivityKind[]> = {
   workflows: ["workflow-run"],
   deployments: ["deployment"],
   packages: ["package-published", "package-updated"],
+  projects: [...projectKinds],
+  gists: [
+    "gist-created",
+    "gist-updated",
+    "gist-comment",
+    "gist-forked",
+    "gist-starred",
+  ],
+  social: [
+    "repository-starred",
+    "repository-watched",
+    "repository-forked",
+    "user-followed",
+    "sponsorship-created",
+  ],
 };
 
 export function computeActivityMetrics(

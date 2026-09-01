@@ -1,0 +1,1 @@
+ALTER TABLE "journal_reconciliation" ADD COLUMN "source_freshness" jsonb;

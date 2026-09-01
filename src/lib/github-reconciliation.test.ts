@@ -110,6 +110,7 @@ describe("GitHub current-day reconciliation", () => {
       if (url.includes("/users/ada/events")) {
         return jsonResponse([push, push]);
       }
+      if (url.includes("/gists?")) return jsonResponse([]);
       if (
         url.includes("/repos/acme/private-engine/compare/1111111...2222222")
       ) {
@@ -167,6 +168,9 @@ describe("GitHub current-day reconciliation", () => {
       workflows: 0,
       deployments: 0,
       packages: 0,
+      projects: 0,
+      gists: 0,
+      social: 0,
     });
     expect(repeated.metrics).toEqual({
       pushes: 1,
@@ -182,6 +186,9 @@ describe("GitHub current-day reconciliation", () => {
       workflows: 0,
       deployments: 0,
       packages: 0,
+      projects: 0,
+      gists: 0,
+      social: 0,
     });
     expect(repeated.status).toBe("complete");
     expect(repeated.activities).toEqual([
@@ -214,6 +221,7 @@ describe("GitHub current-day reconciliation", () => {
       const url = String(input);
       if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
       if (url.includes("/users/ada/events")) return jsonResponse({}, 502);
+      if (url.includes("/gists?")) return jsonResponse([]);
       if (url.includes("/user/installations/99/repositories")) {
         return jsonResponse({
           total_count: 1,
@@ -260,6 +268,9 @@ describe("GitHub current-day reconciliation", () => {
       workflows: 0,
       deployments: 0,
       packages: 0,
+      projects: 0,
+      gists: 0,
+      social: 0,
     });
     expect(journal.activities[0]).toEqual(
       expect.objectContaining({
@@ -272,6 +283,92 @@ describe("GitHub current-day reconciliation", () => {
     );
   });
 
+  it("reconciles Gist metadata and exposed social events with explicit best-effort freshness", async () => {
+    const store = new MemoryStore();
+    const fetchFixture = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
+      if (url.includes("/users/ada/events")) {
+        return jsonResponse([
+          {
+            id: "social-star-1",
+            type: "WatchEvent",
+            actor: { id: 7, login: "ada" },
+            repo: { id: 42, name: "acme/journal" },
+            public: true,
+            created_at: "2026-03-08T15:00:00Z",
+            payload: { action: "started" },
+          },
+        ]);
+      }
+      if (url.includes("/gists?")) {
+        return jsonResponse([
+          {
+            id: "gist-1",
+            html_url: "https://gist.github.com/ada/gist-1",
+            public: true,
+            description: "Metadata only",
+            created_at: "2026-03-08T15:10:00Z",
+            updated_at: "2026-03-08T15:20:00Z",
+            owner: { id: 7, login: "ada" },
+            files: { "private.ts": { content: "DO-NOT-STORE" } },
+          },
+        ]);
+      }
+      if (url.includes("/gists/gist-1/commits")) {
+        return jsonResponse([
+          {
+            version: "1111111",
+            committed_at: "2026-03-08T15:10:00Z",
+            user: { id: 7, login: "ada" },
+          },
+          {
+            version: "2222222",
+            committed_at: "2026-03-08T15:20:00Z",
+            user: { id: 7, login: "ada" },
+          },
+        ]);
+      }
+      if (url.includes("/gists/gist-1/comments")) {
+        return jsonResponse([
+          {
+            id: 31,
+            created_at: "2026-03-08T15:30:00Z",
+            user: { id: 7, login: "ada" },
+            body: "PRIVATE COMMENT",
+          },
+        ]);
+      }
+      throw new Error(`Unexpected fixture request: ${url}`);
+    });
+
+    const journal = await reconcileGitHubActivity({
+      userId: "user-1",
+      timeZone: "America/New_York",
+      accessMode: "best-effort",
+      installationIds: [],
+      accessToken: "fixture-token",
+      now: new Date("2026-03-08T18:00:00Z"),
+      fetchImplementation: fetchFixture as typeof fetch,
+      store,
+    });
+
+    expect(journal.metrics).toMatchObject({ gists: 3, social: 1 });
+    expect(journal.activities.map((activity) => activity.kind)).toEqual([
+      "repository-starred",
+      "gist-created",
+      "gist-updated",
+      "gist-comment",
+    ]);
+    expect(journal.activities[0]?.narrativeEligible).toBe(false);
+    expect(journal.sourceFreshness).toEqual([
+      expect.objectContaining({ source: "social", status: "best-effort" }),
+      expect.objectContaining({ source: "gists", status: "best-effort" }),
+    ]);
+    expect(JSON.stringify(journal)).not.toContain("DO-NOT-STORE");
+    expect(JSON.stringify(journal)).not.toContain("PRIVATE COMMENT");
+  });
+
   it("reports which stage failed without exposing credentials", async () => {
     const store = new MemoryStore();
     const diagnostics: ReconciliationDiagnostic[] = [];
@@ -279,6 +376,7 @@ describe("GitHub current-day reconciliation", () => {
       const url = String(input);
       if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
       if (url.includes("/users/ada/events")) return jsonResponse({}, 502);
+      if (url.includes("/gists?")) return jsonResponse([]);
       throw new Error(`Unexpected fixture request: ${url}`);
     });
 
@@ -327,6 +425,7 @@ describe("GitHub current-day reconciliation", () => {
         if (Number(page) > 3) return jsonResponse({ message: "..." }, 422);
         return jsonResponse(fullPage);
       }
+      if (url.includes("/gists?")) return jsonResponse([]);
       throw new Error(`Unexpected fixture request: ${url}`);
     });
 
@@ -355,6 +454,7 @@ describe("GitHub current-day reconciliation", () => {
       if (url.includes("/users/ada/events")) {
         return jsonResponse({ message: "Pagination is limited" }, 422);
       }
+      if (url.includes("/gists?")) return jsonResponse([]);
       throw new Error(`Unexpected fixture request: ${url}`);
     });
 
@@ -507,6 +607,7 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
       const url = String(input);
       if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
       if (url.includes("/users/ada/events")) return jsonResponse(events);
+      if (url.includes("/gists?")) return jsonResponse([]);
       if (url.includes("/user/installations/99/repositories")) {
         return jsonResponse({ total_count: 0, repositories: [] });
       }
@@ -539,6 +640,9 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
       workflows: 0,
       deployments: 0,
       packages: 0,
+      projects: 0,
+      gists: 0,
+      social: 0,
     });
     expect(
       journal.activities.map((activity) => activity.deduplicationKey),
@@ -616,6 +720,7 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
       const url = String(input);
       if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
       if (url.includes("/users/ada/events")) return jsonResponse(events);
+      if (url.includes("/gists?")) return jsonResponse([]);
       throw new Error(`Unexpected fixture request: ${url}`);
     });
 

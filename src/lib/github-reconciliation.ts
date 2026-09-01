@@ -11,6 +11,12 @@ import {
   collaborationEventForApiType,
   deriveCollaborationSubject,
 } from "@/lib/github-collaboration";
+import {
+  normalizeGistActivity,
+  normalizeSocialEvent,
+  secondarySourceFreshness,
+  type SecondarySourceFreshness,
+} from "@/lib/github-secondary";
 import { getLocalDayWindow, parseDate } from "@/lib/time-zone";
 
 // These moved to their shared homes; re-exported so existing importers of the
@@ -44,6 +50,7 @@ export type TodayJournal = {
   refreshedAt: Date | null;
   metrics: ActivityMetrics;
   activities: ActivityRecord[];
+  sourceFreshness?: SecondarySourceFreshness[];
 };
 
 export type ReconciliationStore = {
@@ -69,6 +76,8 @@ export type ReconciliationDiagnostic = {
     | "user-access-token"
     | "actor"
     | "events"
+    | "gists"
+    | "gist-metadata"
     | "push-commits"
     | "installation-repositories"
     | "repository-commits";
@@ -102,6 +111,8 @@ type GitHubEvent = {
     ref?: string;
     size?: number;
     commits?: Array<{ sha?: string }>;
+    action?: string;
+    forkee?: { id?: number; full_name?: string; html_url?: string };
   };
 };
 type GitHubCommit = {
@@ -183,6 +194,11 @@ export async function reconcileGitHubActivity({
   if (!started) return store.read(userId, window.localDate);
 
   if (!accessToken) {
+    const sourceFreshness = secondarySourceFreshness({
+      refreshedAt: now,
+      eventsSucceeded: false,
+      gistsSucceeded: false,
+    });
     await store.finish(
       userId,
       {
@@ -190,6 +206,7 @@ export async function reconcileGitHubActivity({
         timeZone,
         status: "error",
         refreshedAt: null,
+        sourceFreshness,
       },
       [],
     );
@@ -199,6 +216,7 @@ export async function reconcileGitHubActivity({
   const records = new Map<string, ActivityRecord>();
   let actor: Required<GitHubActor> | null = null;
   let eventsSucceeded = false;
+  let gistsSucceeded = false;
   let repositoryCommitsSucceeded = false;
   let degraded = false;
 
@@ -263,6 +281,17 @@ export async function reconcileGitHubActivity({
 
         const visibility = rawEvent.public ? "public" : "private";
         const eventOccurredAt = parseDate(rawEvent.created_at);
+
+        const socialRecord = normalizeSocialEvent({
+          event: rawEvent,
+          actor,
+          window,
+          observedAt: now,
+        });
+        if (socialRecord) {
+          records.set(socialRecord.deduplicationKey, socialRecord);
+          continue;
+        }
 
         const collaborationEvent = collaborationEventForApiType(rawEvent.type);
         if (collaborationEvent) {
@@ -462,6 +491,64 @@ export async function reconcileGitHubActivity({
     }
   }
 
+  if (actor) {
+    try {
+      const query = new URLSearchParams({
+        since: window.startsAt.toISOString(),
+        per_page: "100",
+      });
+      const response = await fetchJson(
+        `https://api.github.com/gists?${query}`,
+        accessToken,
+        fetchImplementation,
+      );
+      if (!Array.isArray(response))
+        throw new Error("Invalid GitHub Gists response");
+
+      for (const gist of response as Array<{ id?: unknown }>) {
+        if (typeof gist.id !== "string" || !gist.id.trim()) {
+          degraded = true;
+          continue;
+        }
+        try {
+          const gistId = encodeURIComponent(gist.id);
+          const [commits, comments] = await Promise.all([
+            fetchJson(
+              `https://api.github.com/gists/${gistId}/commits?per_page=100`,
+              accessToken,
+              fetchImplementation,
+            ),
+            fetchJson(
+              `https://api.github.com/gists/${gistId}/comments?per_page=100`,
+              accessToken,
+              fetchImplementation,
+            ),
+          ]);
+          if (!Array.isArray(commits) || !Array.isArray(comments)) {
+            throw new Error("Invalid GitHub Gist metadata response");
+          }
+          for (const record of normalizeGistActivity({
+            gist,
+            commits,
+            comments,
+            actor,
+            window,
+            observedAt: now,
+          })) {
+            records.set(record.deduplicationKey, record);
+          }
+        } catch (error) {
+          reportDiagnostic({ stage: "gist-metadata", ...describeError(error) });
+          degraded = true;
+        }
+      }
+      gistsSucceeded = true;
+    } catch (error) {
+      reportDiagnostic({ stage: "gists", ...describeError(error) });
+      degraded = true;
+    }
+  }
+
   if (accessMode === "app") {
     if (!actor || installationIds.length === 0) {
       degraded = true;
@@ -578,12 +665,18 @@ export async function reconcileGitHubActivity({
     }
   }
 
-  const successfulSource = eventsSucceeded || repositoryCommitsSucceeded;
+  const successfulSource =
+    eventsSucceeded || gistsSucceeded || repositoryCommitsSucceeded;
   const status = !successfulSource
     ? "error"
     : degraded
       ? "partial"
       : "complete";
+  const sourceFreshness = secondarySourceFreshness({
+    refreshedAt: now,
+    eventsSucceeded,
+    gistsSucceeded,
+  });
 
   await store.finish(
     userId,
@@ -592,6 +685,7 @@ export async function reconcileGitHubActivity({
       timeZone,
       status,
       refreshedAt: successfulSource ? now : null,
+      sourceFreshness,
     },
     [...records.values()],
   );

@@ -48,11 +48,11 @@ const projectActions: Record<string, ProjectKind> = {
 };
 
 const projectItemActions: Record<string, ProjectKind> = {
-  added_to_project: "project-item-added",
   archived: "project-item-archived",
   converted: "project-item-converted",
+  created: "project-item-added",
+  deleted: "project-item-deleted",
   edited: "project-item-edited",
-  redacted: "project-item-redacted",
   reordered: "project-item-reordered",
   restored: "project-item-restored",
 };

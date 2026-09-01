@@ -392,6 +392,9 @@ const activityStatusLabels = {
 } as const;
 
 function activityCoverageLabel(activity: ActivityRecord) {
+  if (activity.kind === "gist-starred") {
+    return "First observed · best-effort";
+  }
   if (activity.source === "github-projects-preview") {
     return "Preview · best-effort";
   }
@@ -592,8 +595,8 @@ const activityPresentation: Record<
     evidenceNoun: "organization projects",
     icon: LayoutDashboard,
   },
-  "project-item-redacted": {
-    label: "Redacted project item",
+  "project-item-deleted": {
+    label: "Deleted project item",
     evidenceNoun: "organization projects",
     icon: LayoutDashboard,
   },
@@ -628,7 +631,7 @@ const activityPresentation: Record<
     icon: GitFork,
   },
   "gist-starred": {
-    label: "Starred Gist",
+    label: "Observed starred Gist",
     evidenceNoun: "Gist",
     icon: Star,
   },

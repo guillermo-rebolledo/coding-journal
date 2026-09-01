@@ -82,23 +82,22 @@ export function createGitHubActivityRepository<
         records.map((record) => [record.deduplicationKey, record]),
       ).values(),
     ];
+    const reconciliationUpdate = {
+      timeZone: journal.timeZone,
+      status: journal.status,
+      ...(journal.refreshedAt ? { refreshedAt: journal.refreshedAt } : {}),
+      ...(journal.sourceFreshness
+        ? {
+            sourceFreshness: serializeSourceFreshness(journal.sourceFreshness),
+          }
+        : {}),
+      updatedAt: new Date(),
+    };
 
     if (runAtomicBatch) {
       const reconciliationQuery = database
         .update(journalReconciliation)
-        .set({
-          timeZone: journal.timeZone,
-          status: journal.status,
-          ...(journal.refreshedAt ? { refreshedAt: journal.refreshedAt } : {}),
-          ...(journal.sourceFreshness
-            ? {
-                sourceFreshness: serializeSourceFreshness(
-                  journal.sourceFreshness,
-                ),
-              }
-            : {}),
-          updatedAt: new Date(),
-        })
+        .set(reconciliationUpdate)
         .where(
           and(
             eq(journalReconciliation.userId, userId),
@@ -150,19 +149,7 @@ export function createGitHubActivityRepository<
       }
       await transaction
         .update(journalReconciliation)
-        .set({
-          timeZone: journal.timeZone,
-          status: journal.status,
-          ...(journal.refreshedAt ? { refreshedAt: journal.refreshedAt } : {}),
-          ...(journal.sourceFreshness
-            ? {
-                sourceFreshness: serializeSourceFreshness(
-                  journal.sourceFreshness,
-                ),
-              }
-            : {}),
-          updatedAt: new Date(),
-        })
+        .set(reconciliationUpdate)
         .where(
           and(
             eq(journalReconciliation.userId, userId),

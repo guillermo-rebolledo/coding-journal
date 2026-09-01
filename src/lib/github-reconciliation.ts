@@ -13,6 +13,7 @@ import {
 } from "@/lib/github-collaboration";
 import {
   normalizeGistActivity,
+  normalizeGistStarActivity,
   normalizeSocialEvent,
   secondarySourceFreshness,
   type SecondarySourceFreshness,
@@ -497,12 +498,19 @@ export async function reconcileGitHubActivity({
         since: window.startsAt.toISOString(),
         per_page: "100",
       });
-      const response = await fetchJson(
-        `https://api.github.com/gists?${query}`,
-        accessToken,
-        fetchImplementation,
-      );
-      if (!Array.isArray(response))
+      const [response, starredResponse] = await Promise.all([
+        fetchJson(
+          `https://api.github.com/gists?${query}`,
+          accessToken,
+          fetchImplementation,
+        ),
+        fetchJson(
+          "https://api.github.com/gists/starred?per_page=100",
+          accessToken,
+          fetchImplementation,
+        ),
+      ]);
+      if (!Array.isArray(response) || !Array.isArray(starredResponse))
         throw new Error("Invalid GitHub Gists response");
 
       for (const gist of response as Array<{ id?: unknown }>) {
@@ -541,6 +549,16 @@ export async function reconcileGitHubActivity({
           reportDiagnostic({ stage: "gist-metadata", ...describeError(error) });
           degraded = true;
         }
+      }
+      for (const gist of starredResponse) {
+        const record = normalizeGistStarActivity({
+          gist,
+          actor,
+          window,
+          observedAt: now,
+        });
+        if (record) records.set(record.deduplicationKey, record);
+        else degraded = true;
       }
       gistsSucceeded = true;
     } catch (error) {

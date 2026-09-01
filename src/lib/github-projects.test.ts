@@ -101,11 +101,11 @@ describe("GitHub organization Projects preview contract", () => {
     );
   });
 
-  it("normalizes supported item changes but excludes unsupported personal Projects", () => {
-    const item = extractProjectsDelivery({
+  it("normalizes the documented item create/delete actions and excludes personal Projects", () => {
+    const addedItem = extractProjectsDelivery({
       eventType: "projects_v2_item",
       payload: {
-        action: "archived",
+        action: "created",
         organization: { id: 84, login: "acme" },
         sender: { id: 7, login: "ada", type: "User" },
         installation: { id: 99 },
@@ -130,15 +130,40 @@ describe("GitHub organization Projects preview contract", () => {
       receivedAt,
     });
 
-    expect(item).toEqual(
+    const deletedItem = extractProjectsDelivery({
+      eventType: "projects_v2_item",
+      payload: {
+        action: "deleted",
+        organization: { id: 84, login: "acme" },
+        sender: { id: 7, login: "ada", type: "User" },
+        installation: { id: 99 },
+        projects_v2_item: {
+          id: 602,
+          node_id: "PVTI_kwDOB3",
+          project_node_id: "PVT_kwDOA1",
+        },
+      },
+      deliveryId: "project-item-delivery-2",
+      receivedAt,
+    });
+
+    expect(addedItem).toEqual(
       expect.objectContaining({
         ok: true,
         message: expect.objectContaining({
-          project: expect.objectContaining({ kind: "project-item-archived" }),
+          project: expect.objectContaining({ kind: "project-item-added" }),
         }),
       }),
     );
-    expect(JSON.stringify(item)).not.toContain("PRIVATE PROJECT NOTE");
+    expect(deletedItem).toEqual(
+      expect.objectContaining({
+        ok: true,
+        message: expect.objectContaining({
+          project: expect.objectContaining({ kind: "project-item-deleted" }),
+        }),
+      }),
+    );
+    expect(JSON.stringify(addedItem)).not.toContain("PRIVATE PROJECT NOTE");
     expect(personal).toEqual({ ok: false, reason: "no-activity" });
   });
 

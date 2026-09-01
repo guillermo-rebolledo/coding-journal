@@ -110,6 +110,7 @@ describe("GitHub current-day reconciliation", () => {
       if (url.includes("/users/ada/events")) {
         return jsonResponse([push, push]);
       }
+      if (url.includes("/gists/starred")) return jsonResponse([]);
       if (url.includes("/gists?")) return jsonResponse([]);
       if (
         url.includes("/repos/acme/private-engine/compare/1111111...2222222")
@@ -221,6 +222,7 @@ describe("GitHub current-day reconciliation", () => {
       const url = String(input);
       if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
       if (url.includes("/users/ada/events")) return jsonResponse({}, 502);
+      if (url.includes("/gists/starred")) return jsonResponse([]);
       if (url.includes("/gists?")) return jsonResponse([]);
       if (url.includes("/user/installations/99/repositories")) {
         return jsonResponse({
@@ -301,6 +303,18 @@ describe("GitHub current-day reconciliation", () => {
           },
         ]);
       }
+      if (url.includes("/gists/starred")) {
+        return jsonResponse([
+          {
+            id: "starred-gist-1",
+            html_url: "https://gist.github.com/grace/starred-gist-1",
+            public: true,
+            description: "Useful snippet",
+            owner: { id: 8, login: "grace" },
+            files: { "private-star.ts": { content: "DO-NOT-STORE-EITHER" } },
+          },
+        ]);
+      }
       if (url.includes("/gists?")) {
         return jsonResponse([
           {
@@ -353,12 +367,13 @@ describe("GitHub current-day reconciliation", () => {
       store,
     });
 
-    expect(journal.metrics).toMatchObject({ gists: 3, social: 1 });
+    expect(journal.metrics).toMatchObject({ gists: 4, social: 1 });
     expect(journal.activities.map((activity) => activity.kind)).toEqual([
       "repository-starred",
       "gist-created",
       "gist-updated",
       "gist-comment",
+      "gist-starred",
     ]);
     expect(journal.activities[0]?.narrativeEligible).toBe(false);
     expect(journal.sourceFreshness).toEqual([
@@ -367,6 +382,7 @@ describe("GitHub current-day reconciliation", () => {
     ]);
     expect(JSON.stringify(journal)).not.toContain("DO-NOT-STORE");
     expect(JSON.stringify(journal)).not.toContain("PRIVATE COMMENT");
+    expect(JSON.stringify(journal)).not.toContain("DO-NOT-STORE-EITHER");
   });
 
   it("reports which stage failed without exposing credentials", async () => {
@@ -376,6 +392,7 @@ describe("GitHub current-day reconciliation", () => {
       const url = String(input);
       if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
       if (url.includes("/users/ada/events")) return jsonResponse({}, 502);
+      if (url.includes("/gists/starred")) return jsonResponse([]);
       if (url.includes("/gists?")) return jsonResponse([]);
       throw new Error(`Unexpected fixture request: ${url}`);
     });
@@ -425,6 +442,7 @@ describe("GitHub current-day reconciliation", () => {
         if (Number(page) > 3) return jsonResponse({ message: "..." }, 422);
         return jsonResponse(fullPage);
       }
+      if (url.includes("/gists/starred")) return jsonResponse([]);
       if (url.includes("/gists?")) return jsonResponse([]);
       throw new Error(`Unexpected fixture request: ${url}`);
     });
@@ -454,6 +472,7 @@ describe("GitHub current-day reconciliation", () => {
       if (url.includes("/users/ada/events")) {
         return jsonResponse({ message: "Pagination is limited" }, 422);
       }
+      if (url.includes("/gists/starred")) return jsonResponse([]);
       if (url.includes("/gists?")) return jsonResponse([]);
       throw new Error(`Unexpected fixture request: ${url}`);
     });
@@ -607,6 +626,7 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
       const url = String(input);
       if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
       if (url.includes("/users/ada/events")) return jsonResponse(events);
+      if (url.includes("/gists/starred")) return jsonResponse([]);
       if (url.includes("/gists?")) return jsonResponse([]);
       if (url.includes("/user/installations/99/repositories")) {
         return jsonResponse({ total_count: 0, repositories: [] });
@@ -720,6 +740,7 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
       const url = String(input);
       if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
       if (url.includes("/users/ada/events")) return jsonResponse(events);
+      if (url.includes("/gists/starred")) return jsonResponse([]);
       if (url.includes("/gists?")) return jsonResponse([]);
       throw new Error(`Unexpected fixture request: ${url}`);
     });

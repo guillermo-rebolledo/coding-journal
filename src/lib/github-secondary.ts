@@ -226,6 +226,52 @@ export function normalizeGistActivity({
   return records;
 }
 
+// GitHub exposes the current set of starred Gists, but not the time each star
+// was created. Record the stable metadata the first time reconciliation sees
+// it; the canonical deduplication key prevents later refreshes from recounting
+// the same star.
+export function normalizeGistStarActivity({
+  gist,
+  actor,
+  window,
+  observedAt,
+}: {
+  gist: GistMetadata;
+  actor: { id: number; login: string };
+  window: LocalDayWindow;
+  observedAt: Date;
+}): ActivityRecord | null {
+  if (
+    !nonEmptyString(gist.id) ||
+    !validGistUrl(gist.html_url) ||
+    typeof gist.public !== "boolean"
+  ) {
+    return null;
+  }
+
+  const gistId = gist.id.trim();
+  return {
+    deduplicationKey: `github:gist-starred:${gistId}`,
+    localDate: window.localDate,
+    kind: "gist-starred",
+    actorId: String(actor.id),
+    actorLogin: actor.login,
+    repositoryId: `gists:${actor.id}`,
+    repositoryName: `${actor.login}/Gists`,
+    evidenceUrl: gist.html_url,
+    visibility: gist.public ? "public" : "private",
+    source: "github-gists",
+    subjectId: gistId,
+    subjectNumber: null,
+    subjectTitle: boundedDescription(gist.description),
+    occurredAt: observedAt,
+    observedAt,
+    authoredBeforeDay: false,
+    installationId: null,
+    narrativeEligible: false,
+  };
+}
+
 export function normalizeSocialEvent({
   event,
   actor,
@@ -309,7 +355,7 @@ export function secondarySourceFreshness({
       status: eventsSucceeded ? "best-effort" : "unavailable",
       refreshedAt: eventsSucceeded ? refreshedAt : null,
       detail: eventsSucceeded
-        ? "GitHub's activity feed may be delayed by up to 6 hours; follows, watches, and sponsorships are shown only when GitHub exposes them."
+        ? "GitHub's activity feed may be delayed by up to 6 hours. It exposes repository stars and forks; follows, watches, and sponsorships are unavailable from this source."
         : "GitHub's delayed activity feed was unavailable during this refresh.",
     },
     {
@@ -318,7 +364,7 @@ export function secondarySourceFreshness({
       status: gistsSucceeded ? "best-effort" : "unavailable",
       refreshedAt: gistsSucceeded ? refreshedAt : null,
       detail: gistsSucceeded
-        ? "Metadata-only reconciliation; Gist stars have no reliable action timestamp and may be unavailable."
+        ? "Metadata-only reconciliation. Gist stars are recorded when first observed because GitHub does not expose the action timestamp."
         : "Gist metadata reconciliation was unavailable during this refresh.",
     },
   ];

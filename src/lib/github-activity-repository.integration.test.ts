@@ -85,6 +85,9 @@ describe("GitHub activity repository with Postgres", () => {
         metrics: {
           pushes: 1,
           commits: 0,
+          refs: 0,
+          releases: 0,
+          discussions: 0,
           issues: 0,
           pullRequests: 0,
           reviews: 0,

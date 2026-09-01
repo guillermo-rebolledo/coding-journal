@@ -10,11 +10,18 @@ import { getLocalDayWindow, parseDate } from "@/lib/time-zone";
 // the journal no longer reconciles; they are acknowledged but never enqueued.
 const staleDeliveryMs = 7 * 24 * 60 * 60 * 1000;
 
-// Titles are the only free text the journal keeps for issues and pull
-// requests. Bodies, diffs, patches, and comments are never retained.
+// Titles and ref/tag names are the only free text this activity contract
+// keeps. Bodies, diffs, patches, release assets, and comments are never
+// retained.
 export const subjectTitleMaxLength = 120;
+const refNameMaxLength = 255;
 
 export const collaborationWebhookEvents = [
+  "create",
+  "delete",
+  "release",
+  "discussion",
+  "discussion_comment",
   "issues",
   "issue_comment",
   "pull_request",
@@ -26,6 +33,10 @@ export type CollaborationWebhookEvent =
   (typeof collaborationWebhookEvents)[number];
 
 const eventsApiCollaborationTypes: Record<string, CollaborationWebhookEvent> = {
+  CreateEvent: "create",
+  DeleteEvent: "delete",
+  ReleaseEvent: "release",
+  DiscussionEvent: "discussion",
   IssuesEvent: "issues",
   IssueCommentEvent: "issue_comment",
   PullRequestEvent: "pull_request",
@@ -51,7 +62,7 @@ export type CollaborationSubject = {
   kind: CollaborationKind;
   deduplicationKey: string;
   subjectId: string;
-  subjectNumber: number;
+  subjectNumber: number | null;
   title: string | null;
   evidenceUrl: string;
   occurredAt: Date;
@@ -63,6 +74,24 @@ export type CollaborationDerivation =
 
 type CollaborationPayload = {
   action?: unknown;
+  ref?: unknown;
+  ref_type?: unknown;
+  pusher_type?: unknown;
+  release?: {
+    id?: unknown;
+    tag_name?: unknown;
+    name?: unknown;
+    draft?: unknown;
+    published_at?: unknown;
+    updated_at?: unknown;
+  } | null;
+  discussion?: {
+    number?: unknown;
+    title?: unknown;
+    created_at?: unknown;
+    updated_at?: unknown;
+  } | null;
+  answer?: { id?: unknown } | null;
   issue?: {
     number?: unknown;
     title?: unknown;
@@ -123,11 +152,168 @@ export function deriveCollaborationSubject(
   eventType: CollaborationWebhookEvent,
   payload: unknown,
   repository: { id: string; name: string },
+  fallbackOccurredAt?: Date,
 ): CollaborationDerivation {
   if (typeof payload !== "object" || payload === null) return invalid;
   const collaboration = payload as CollaborationPayload;
   const action = collaboration.action;
+
+  if (eventType === "create" || eventType === "delete") {
+    if (collaboration.pusher_type !== "user") return unsupported;
+    if (
+      (collaboration.ref_type !== "branch" &&
+        collaboration.ref_type !== "tag") ||
+      typeof collaboration.ref !== "string" ||
+      !collaboration.ref.trim() ||
+      collaboration.ref.trim().length > refNameMaxLength ||
+      !fallbackOccurredAt
+    ) {
+      return invalid;
+    }
+    const ref = collaboration.ref.trim();
+    const kind =
+      `${collaboration.ref_type}-${eventType === "create" ? "created" : "deleted"}` as CollaborationKind;
+    const day = fallbackOccurredAt.toISOString().slice(0, 10);
+    return {
+      ok: true,
+      subject: {
+        kind,
+        deduplicationKey: collaborationDeduplicationKey(
+          kind,
+          repository.id,
+          `${encodeURIComponent(ref)}:${day}`,
+        ),
+        subjectId: ref,
+        subjectNumber: null,
+        title: boundSubjectTitle(ref),
+        evidenceUrl: `https://github.com/${repository.name}/${collaboration.ref_type === "branch" ? "branches" : "tags"}`,
+        occurredAt: fallbackOccurredAt,
+      },
+    };
+  }
+
   if (typeof action !== "string") return invalid;
+
+  if (eventType === "release") {
+    if (
+      !["created", "published", "released", "prereleased", "edited"].includes(
+        action,
+      )
+    ) {
+      return unsupported;
+    }
+    const release = collaboration.release;
+    if (
+      !positiveInteger(release?.id) ||
+      typeof release.tag_name !== "string" ||
+      !release.tag_name.trim() ||
+      release.tag_name.trim().length > refNameMaxLength ||
+      typeof release.draft !== "boolean"
+    ) {
+      return invalid;
+    }
+    if (release.draft) return unsupported;
+    const kind: CollaborationKind =
+      action === "edited" ? "release-updated" : "release-published";
+    const occurredAt = parseDate(
+      kind === "release-updated" ? release.updated_at : release.published_at,
+    );
+    if (!occurredAt) return invalid;
+    const discriminator =
+      kind === "release-published"
+        ? String(release.id)
+        : `${release.id}:${occurredAt.toISOString()}`;
+    const tag = release.tag_name.trim();
+    return {
+      ok: true,
+      subject: {
+        kind,
+        deduplicationKey: collaborationDeduplicationKey(
+          kind,
+          repository.id,
+          discriminator,
+        ),
+        subjectId: String(release.id),
+        subjectNumber: null,
+        title: boundSubjectTitle(release.name) ?? boundSubjectTitle(tag),
+        evidenceUrl: `https://github.com/${repository.name}/releases/tag/${encodeURIComponent(tag)}`,
+        occurredAt,
+      },
+    };
+  }
+
+  if (eventType === "discussion") {
+    if (action !== "created" && action !== "answered") return unsupported;
+    const discussion = collaboration.discussion;
+    const number = discussion?.number;
+    if (!discussion || !positiveInteger(number)) return invalid;
+    if (action === "created") {
+      const occurredAt = parseDate(discussion.created_at);
+      if (!occurredAt) return invalid;
+      return {
+        ok: true,
+        subject: {
+          kind: "discussion-created",
+          deduplicationKey: collaborationDeduplicationKey(
+            "discussion-created",
+            repository.id,
+            number,
+          ),
+          subjectId: String(number),
+          subjectNumber: number,
+          title: boundSubjectTitle(discussion.title),
+          evidenceUrl: `https://github.com/${repository.name}/discussions/${number}`,
+          occurredAt,
+        },
+      };
+    }
+    const answerId = collaboration.answer?.id;
+    const occurredAt = parseDate(discussion.updated_at) ?? fallbackOccurredAt;
+    if (!positiveInteger(answerId) || !occurredAt) return invalid;
+    return {
+      ok: true,
+      subject: {
+        kind: "discussion-answered",
+        deduplicationKey: collaborationDeduplicationKey(
+          "discussion-answered",
+          repository.id,
+          `${answerId}:${occurredAt.toISOString()}`,
+        ),
+        subjectId: String(answerId),
+        subjectNumber: number,
+        title: boundSubjectTitle(discussion.title),
+        evidenceUrl: `https://github.com/${repository.name}/discussions/${number}#discussioncomment-${answerId}`,
+        occurredAt,
+      },
+    };
+  }
+
+  if (eventType === "discussion_comment") {
+    if (action !== "created") return unsupported;
+    const discussion = collaboration.discussion;
+    const number = discussion?.number;
+    const commentId = collaboration.comment?.id;
+    if (!discussion || !positiveInteger(number) || !positiveInteger(commentId))
+      return invalid;
+    const occurredAt = parseDate(collaboration.comment?.created_at);
+    if (!occurredAt) return invalid;
+    return {
+      ok: true,
+      subject: {
+        kind: "discussion-comment",
+        deduplicationKey: collaborationDeduplicationKey(
+          "discussion-comment",
+          repository.id,
+          commentId,
+        ),
+        subjectId: String(commentId),
+        subjectNumber: number,
+        title: boundSubjectTitle(discussion.title),
+        evidenceUrl: `https://github.com/${repository.name}/discussions/${number}#discussioncomment-${commentId}`,
+        occurredAt,
+      },
+    };
+  }
 
   if (eventType === "issues") {
     if (!["opened", "closed", "reopened"].includes(action)) return unsupported;
@@ -330,7 +516,7 @@ export type CollaborationDeliveryMessage = {
       kind: CollaborationKind;
       deduplicationKey: string;
       subjectId: string;
-      subjectNumber: number;
+      subjectNumber: number | null;
       title: string | null;
       evidenceUrl: string;
       occurredAt: string;
@@ -385,10 +571,15 @@ export function extractCollaborationDelivery({
     return { ok: false, reason: "no-activity" };
   }
 
-  const derivation = deriveCollaborationSubject(eventType, payload, {
-    id: String(repository.id),
-    name: repository.full_name,
-  });
+  const derivation = deriveCollaborationSubject(
+    eventType,
+    payload,
+    {
+      id: String(repository.id),
+      name: repository.full_name,
+    },
+    receivedAt,
+  );
   if (!derivation.ok) {
     return derivation.reason === "invalid"
       ? { ok: false, reason: "malformed" }
@@ -453,12 +644,17 @@ export function parseCollaborationDeliveryMessage(
     !collaborationKindSet.has(subject.kind) ||
     typeof subject.deduplicationKey !== "string" ||
     subject.deduplicationKey.length === 0 ||
+    subject.deduplicationKey.length > 1024 ||
     typeof subject.subjectId !== "string" ||
-    !positiveInteger(subject.subjectNumber) ||
+    subject.subjectId.length === 0 ||
+    subject.subjectId.length > refNameMaxLength ||
+    (subject.subjectNumber !== null &&
+      !positiveInteger(subject.subjectNumber)) ||
     (subject.title !== null &&
       (typeof subject.title !== "string" ||
         subject.title.length > subjectTitleMaxLength)) ||
     typeof subject.evidenceUrl !== "string" ||
+    subject.evidenceUrl.length > 2048 ||
     !subject.evidenceUrl.startsWith("https://github.com/") ||
     !parseDate(subject.occurredAt)
   ) {

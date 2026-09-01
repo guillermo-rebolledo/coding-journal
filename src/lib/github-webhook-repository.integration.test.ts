@@ -195,6 +195,9 @@ describe("GitHub webhook repository with Postgres", () => {
     expect(journal.metrics).toEqual({
       pushes: 1,
       commits: 1,
+      refs: 0,
+      releases: 0,
+      discussions: 0,
       issues: 0,
       pullRequests: 0,
       reviews: 0,

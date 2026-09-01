@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  deriveCollaborationSubject,
   extractCollaborationDelivery,
   normalizeCollaborationMessage,
   parseCollaborationDeliveryMessage,
@@ -78,6 +79,182 @@ function extractedMessage(
 }
 
 describe("GitHub collaboration delivery extraction", () => {
+  it("normalizes branch and tag lifecycle activity without retaining payload details", () => {
+    const branch = extractedMessage("create", {
+      ...envelope,
+      ref: "feature/private-roadmap",
+      ref_type: "branch",
+      pusher_type: "user",
+      description: "PRIVATE-REPOSITORY-DESCRIPTION",
+    });
+    expect(branch.collaboration.subject).toMatchObject({
+      kind: "branch-created",
+      subjectId: "feature/private-roadmap",
+      subjectNumber: null,
+      title: "feature/private-roadmap",
+      evidenceUrl: "https://github.com/acme/private-engine/branches",
+    });
+
+    const tag = extractedMessage("delete", {
+      ...envelope,
+      ref: "v2.0.0",
+      ref_type: "tag",
+      pusher_type: "user",
+    });
+    expect(tag.collaboration.subject).toMatchObject({
+      kind: "tag-deleted",
+      subjectId: "v2.0.0",
+      subjectNumber: null,
+      title: "v2.0.0",
+      evidenceUrl: "https://github.com/acme/private-engine/tags",
+    });
+    expect(JSON.stringify(branch)).not.toContain("PRIVATE");
+  });
+
+  it("normalizes release publication and updates without retaining bodies or assets", () => {
+    const release = {
+      id: 501,
+      tag_name: "v2.0.0",
+      name: "Version 2",
+      body: "PRIVATE-RELEASE-NOTES",
+      draft: false,
+      published_at: "2026-03-08T14:20:00Z",
+      updated_at: "2026-03-08T14:40:00Z",
+      assets: [{ name: "private-debug-symbols.zip" }],
+    };
+    const published = extractedMessage("release", {
+      ...envelope,
+      action: "published",
+      release,
+    });
+    expect(published.collaboration.subject).toMatchObject({
+      kind: "release-published",
+      deduplicationKey: "github:release-published:42:501",
+      subjectId: "501",
+      subjectNumber: null,
+      title: "Version 2",
+      evidenceUrl: "https://github.com/acme/private-engine/releases/tag/v2.0.0",
+      occurredAt: "2026-03-08T14:20:00.000Z",
+    });
+
+    const updated = extractedMessage("release", {
+      ...envelope,
+      action: "edited",
+      release,
+    });
+    expect(updated.collaboration.subject).toMatchObject({
+      kind: "release-updated",
+      deduplicationKey:
+        "github:release-updated:42:501:2026-03-08T14:40:00.000Z",
+    });
+    expect(JSON.stringify([published, updated])).not.toContain("PRIVATE");
+    expect(JSON.stringify([published, updated])).not.toContain("assets");
+  });
+
+  it("normalizes discussion creation, comments, and answers without retaining content", () => {
+    const discussion = {
+      number: 73,
+      title: "How should reconciliation report gaps?",
+      body: "PRIVATE-DISCUSSION-BODY",
+      created_at: "2026-03-08T14:10:00Z",
+      updated_at: "2026-03-08T14:45:00Z",
+    };
+    const created = extractedMessage("discussion", {
+      ...envelope,
+      action: "created",
+      discussion,
+    });
+    const commented = extractedMessage("discussion_comment", {
+      ...envelope,
+      action: "created",
+      discussion,
+      comment: {
+        id: 8801,
+        body: "PRIVATE-DISCUSSION-COMMENT",
+        created_at: "2026-03-08T14:30:00Z",
+      },
+    });
+    const answered = extractedMessage("discussion", {
+      ...envelope,
+      action: "answered",
+      discussion,
+      answer: { id: 8801, body: "PRIVATE-ANSWER" },
+    });
+
+    expect(created.collaboration.subject).toMatchObject({
+      kind: "discussion-created",
+      deduplicationKey: "github:discussion-created:42:73",
+      subjectNumber: 73,
+    });
+    expect(commented.collaboration.subject).toMatchObject({
+      kind: "discussion-comment",
+      deduplicationKey: "github:discussion-comment:42:8801",
+      evidenceUrl:
+        "https://github.com/acme/private-engine/discussions/73#discussioncomment-8801",
+    });
+    expect(answered.collaboration.subject).toMatchObject({
+      kind: "discussion-answered",
+      subjectId: "8801",
+      subjectNumber: 73,
+    });
+    expect(JSON.stringify([created, commented, answered])).not.toContain(
+      "PRIVATE",
+    );
+  });
+
+  it("excludes reactions and deploy-key ref changes entirely", () => {
+    expect(
+      extract("create", {
+        ...envelope,
+        ref: "automation",
+        ref_type: "branch",
+        pusher_type: "deploy_key",
+      }),
+    ).toEqual({ ok: false, reason: "no-activity" });
+    expect(
+      extract("discussion", {
+        ...envelope,
+        action: "labeled",
+        discussion: { number: 73 },
+        reaction: { content: "+1" },
+      }),
+    ).toEqual({ ok: false, reason: "no-activity" });
+    expect(
+      extract("release", {
+        ...envelope,
+        action: "edited",
+        release: {
+          id: 501,
+          tag_name: "v2.0.0",
+          draft: true,
+          updated_at: "2026-03-08T14:40:00Z",
+        },
+      }),
+    ).toEqual({ ok: false, reason: "no-activity" });
+  });
+
+  it("uses the same content keys for webhook and reconciliation overlap", () => {
+    const refPayload = {
+      ref: "feature/journal",
+      ref_type: "branch",
+      pusher_type: "user",
+    };
+    const fromWebhook = extractedMessage("create", {
+      ...envelope,
+      ...refPayload,
+    }).collaboration.subject.deduplicationKey;
+    const fromEvents = deriveCollaborationSubject(
+      "create",
+      refPayload,
+      { id: "42", name: "acme/private-engine" },
+      new Date("2026-03-08T15:00:00Z"),
+    );
+
+    expect(fromEvents.ok && fromEvents.subject.deduplicationKey).toBe(
+      fromWebhook,
+    );
+  });
+
   it("projects an opened issue into a minimal queue message", () => {
     expect(extract("issues", issuePayload())).toEqual({
       ok: true,
@@ -506,6 +683,30 @@ describe("GitHub collaboration normalization", () => {
         githubAccountId: "8",
       }),
     ).toEqual([]);
+  });
+
+  it("preserves public repository visibility", () => {
+    const publicMessage = extractedMessage("discussion_comment", {
+      ...envelope,
+      repository: {
+        id: 42,
+        full_name: "acme/open-engine",
+        private: false,
+      },
+      action: "created",
+      discussion: {
+        number: 73,
+        title: "Public design question",
+      },
+      comment: { id: 8801, created_at: "2026-03-08T14:35:00Z" },
+    });
+
+    expect(normalizeCollaborationMessage(publicMessage, user)[0]).toMatchObject(
+      {
+        repositoryName: "acme/open-engine",
+        visibility: "public",
+      },
+    );
   });
 
   it("dates the record on the user's local day, not UTC", () => {

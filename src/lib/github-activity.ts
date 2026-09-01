@@ -3,6 +3,15 @@
 // these, so overlapping observations collapse on identical deduplication keys.
 
 export const collaborationKinds = [
+  "branch-created",
+  "branch-deleted",
+  "tag-created",
+  "tag-deleted",
+  "release-published",
+  "release-updated",
+  "discussion-created",
+  "discussion-comment",
+  "discussion-answered",
   "issue-opened",
   "issue-closed",
   "issue-reopened",
@@ -44,6 +53,9 @@ export type ActivityRecord = {
 export type ActivityMetrics = {
   pushes: number;
   commits: number;
+  refs: number;
+  releases: number;
+  discussions: number;
   issues: number;
   pullRequests: number;
   reviews: number;
@@ -54,6 +66,13 @@ export type ActivityMetrics = {
 const metricKinds: Record<keyof ActivityMetrics, ActivityKind[]> = {
   pushes: ["push"],
   commits: ["commit"],
+  refs: ["branch-created", "branch-deleted", "tag-created", "tag-deleted"],
+  releases: ["release-published", "release-updated"],
+  discussions: [
+    "discussion-created",
+    "discussion-comment",
+    "discussion-answered",
+  ],
   issues: ["issue-opened", "issue-closed", "issue-reopened"],
   pullRequests: [
     "pull-request-opened",

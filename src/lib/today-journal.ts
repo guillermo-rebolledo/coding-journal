@@ -106,6 +106,8 @@ export async function getTodayJournal({
   accessMode,
   installations,
   now = new Date(),
+  localDate,
+  accessToken: suppliedAccessToken,
 }: {
   requestHeaders: Headers;
   userId: string;
@@ -113,6 +115,8 @@ export async function getTodayJournal({
   accessMode: "best-effort" | "app";
   installations: StoredGitHubInstallation[];
   now?: Date;
+  localDate?: string;
+  accessToken?: string | null;
 }) {
   if (isE2EJournalUser(userId)) {
     return e2eJournal(userId, timeZone, now);
@@ -130,12 +134,15 @@ export async function getTodayJournal({
     }
   };
 
-  let accessToken: string | null = null;
-  try {
-    accessToken = await getGitHubUserAccessToken(requestHeaders, userId);
-  } catch (error) {
-    // The reconciliation result deliberately carries the provider error state.
-    reportDiagnostic({ stage: "user-access-token", ...describeError(error) });
+  let accessToken = suppliedAccessToken;
+  if (accessToken === undefined) {
+    try {
+      accessToken = await getGitHubUserAccessToken(requestHeaders, userId);
+    } catch (error) {
+      // The reconciliation result deliberately carries the provider error state.
+      reportDiagnostic({ stage: "user-access-token", ...describeError(error) });
+      accessToken = null;
+    }
   }
   if (!accessToken) {
     reportDiagnostic({
@@ -156,6 +163,7 @@ export async function getTodayJournal({
     ),
     accessToken,
     now,
+    localDate,
     store: githubActivityRepository,
     reportDiagnostic,
   });

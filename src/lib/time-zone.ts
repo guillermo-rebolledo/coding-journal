@@ -54,11 +54,26 @@ function firstInstantOnOrAfter(localDate: string, timeZone: string) {
 export function getLocalDayWindow(now: Date, timeZone: string): LocalDayWindow {
   const localDate = getLocalDate(now, timeZone).iso;
 
+  return getLocalDayWindowForDate(localDate, timeZone);
+}
+
+export function getLocalDayWindowForDate(
+  localDate: string,
+  timeZone: string,
+): LocalDayWindow {
   return {
     localDate,
     startsAt: firstInstantOnOrAfter(localDate, timeZone),
     endsAt: firstInstantOnOrAfter(addCalendarDay(localDate), timeZone),
   };
+}
+
+export function getFinalizationDueAt(localDate: string, timeZone: string) {
+  const nextMidnight = firstInstantOnOrAfter(
+    addCalendarDay(localDate),
+    timeZone,
+  );
+  return new Date(nextMidnight.getTime() + 6 * 60 * 60 * 1000);
 }
 
 export function getLocalDate(now: Date, timeZone: string) {

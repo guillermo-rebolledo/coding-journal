@@ -18,7 +18,11 @@ import {
   secondarySourceFreshness,
   type SecondarySourceFreshness,
 } from "@/lib/github-secondary";
-import { getLocalDayWindow, parseDate } from "@/lib/time-zone";
+import {
+  getLocalDayWindow,
+  getLocalDayWindowForDate,
+  parseDate,
+} from "@/lib/time-zone";
 
 // These moved to their shared homes; re-exported so existing importers of the
 // reconciliation module keep working.
@@ -210,6 +214,7 @@ export async function reconcileGitHubActivity({
   installationIds,
   accessToken,
   now,
+  localDate,
   fetchImplementation = fetch,
   store,
   reportDiagnostic = () => {},
@@ -220,11 +225,14 @@ export async function reconcileGitHubActivity({
   installationIds: string[];
   accessToken: string | null;
   now: Date;
+  localDate?: string;
   fetchImplementation?: typeof fetch;
   store: ReconciliationStore;
   reportDiagnostic?: DiagnosticReporter;
 }): Promise<TodayJournal> {
-  const window = getLocalDayWindow(now, timeZone);
+  const window = localDate
+    ? getLocalDayWindowForDate(localDate, timeZone)
+    : getLocalDayWindow(now, timeZone);
   const started = await store.tryStart(
     userId,
     window.localDate,

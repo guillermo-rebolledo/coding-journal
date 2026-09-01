@@ -22,3 +22,15 @@ export async function getGitHubUserAccessToken(
 
   return result.accessToken;
 }
+
+export async function getGitHubUserAccessTokenForJob(userId: string) {
+  const githubAccount = await db.query.account.findFirst({
+    columns: { id: true },
+    where: and(eq(account.userId, userId), eq(account.providerId, "github")),
+  });
+  if (!githubAccount) return null;
+  const result = await auth.api.getAccessToken({
+    body: { accountId: githubAccount.id, userId },
+  });
+  return result.accessToken;
+}

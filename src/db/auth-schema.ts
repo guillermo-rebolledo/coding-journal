@@ -1,4 +1,9 @@
-import type { ActivityKind, ActivityStatus } from "../lib/github-activity";
+import type {
+  ActivityKind,
+  ActivityMetrics,
+  ActivityRecord,
+  ActivityStatus,
+} from "../lib/github-activity";
 import type { StoredSecondarySourceFreshness } from "../lib/github-secondary";
 import type { SummaryOutput } from "../lib/journal-summary";
 import { relations } from "drizzle-orm";
@@ -336,6 +341,56 @@ export const journalSummaryGeneration = pgTable(
   ],
 );
 
+export const journalFinalization = pgTable(
+  "journal_finalization",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    localDate: text("local_date").notNull(),
+    timeZone: text("time_zone").notNull(),
+    status: text("status")
+      .$type<"scheduled" | "finalizing" | "finalized" | "recoverable-error">()
+      .notNull(),
+    completeness: text("completeness").$type<
+      "loading" | "complete" | "partial" | "error"
+    >(),
+    metrics: jsonb("metrics").$type<ActivityMetrics>(),
+    narrative: jsonb("narrative").$type<SummaryOutput>(),
+    snapshotHash: text("snapshot_hash"),
+    evidenceKeys: jsonb("evidence_keys").$type<string[]>(),
+    evidence: jsonb("evidence").$type<ActivityRecord[]>(),
+    lastFailure: text("last_failure").$type<
+      "reconciliation-failed" | "summary-failed"
+    >(),
+    attemptCount: integer("attempt_count").default(0).notNull(),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+    finalizationStartedAt: timestamp("finalization_started_at", {
+      withTimezone: true,
+    }),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+    narrativeRedactedAt: timestamp("narrative_redacted_at", {
+      withTimezone: true,
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("journal_finalization_user_date_uidx").on(
+      table.userId,
+      table.localDate,
+    ),
+    index("journal_finalization_history_idx").on(table.userId, table.localDate),
+    index("journal_finalization_status_idx").on(table.status),
+  ],
+);
+
 export const userRelations = relations(user, ({ many, one }) => ({
   sessions: many(session),
   accounts: many(account),
@@ -346,6 +401,7 @@ export const userRelations = relations(user, ({ many, one }) => ({
   journalReconciliations: many(journalReconciliation),
   journalSummaries: many(journalSummary),
   journalSummaryGenerations: many(journalSummaryGeneration),
+  journalFinalizations: many(journalFinalization),
 }));
 
 export const githubActivityRelations = relations(githubActivity, ({ one }) => ({
@@ -377,6 +433,16 @@ export const journalSummaryGenerationRelations = relations(
   ({ one }) => ({
     user: one(user, {
       fields: [journalSummaryGeneration.userId],
+      references: [user.id],
+    }),
+  }),
+);
+
+export const journalFinalizationRelations = relations(
+  journalFinalization,
+  ({ one }) => ({
+    user: one(user, {
+      fields: [journalFinalization.userId],
       references: [user.id],
     }),
   }),

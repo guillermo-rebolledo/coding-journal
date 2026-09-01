@@ -96,7 +96,7 @@ for the complete local, Vercel, GitHub App, and GitHub Actions setup and rotatio
 guide.
 
 1. Import the repository into Vercel and connect a Neon project.
-2. Add `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_APP_SLUG`, and `GITHUB_WEBHOOK_SECRET` to Production, Preview, and Development as appropriate.
+2. Add `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_APP_SLUG`, `GITHUB_WEBHOOK_SECRET`, and `CRON_SECRET` to Production, Preview, and Development as appropriate.
 3. Set `BETTER_AUTH_URL` to the stable canonical deployment origin, without a trailing slash. Do not use a generated per-deployment URL.
 4. Add `https://<your-domain>/api/auth/callback/github` to the GitHub App callback URLs and `https://<your-domain>/api/github/callback` as its setup URL. Enable redirect on update.
 5. Run `pnpm db:migrate:production` with the production `DATABASE_URL` before the first deployment and whenever a new migration lands.

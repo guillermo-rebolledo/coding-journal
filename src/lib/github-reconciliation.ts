@@ -1,6 +1,9 @@
 import { getLocalDate } from "@/lib/time-zone";
 
 const githubApiVersion = "2026-03-10";
+const githubEventsPageSize = 100;
+// The events feed exposes at most 300 events; page 4 answers 422.
+const githubEventsMaxPages = 3;
 const reconciliationCooldownMs = 15 * 60 * 1000;
 
 export type ActivityRecord = {
@@ -180,6 +183,16 @@ export function validSha(value: unknown): value is string {
   return typeof value === "string" && /^[a-fA-F0-9]{7,64}$/.test(value);
 }
 
+export class GitHubRequestError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`GitHub request failed (${status})`);
+    this.name = "GitHubRequestError";
+    this.status = status;
+  }
+}
+
 async function fetchJson(
   url: string,
   accessToken: string,
@@ -189,8 +202,7 @@ async function fetchJson(
     headers: githubHeaders(accessToken),
     cache: "no-store",
   });
-  if (!response.ok)
-    throw new Error(`GitHub request failed (${response.status})`);
+  if (!response.ok) throw new GitHubRequestError(response.status);
   return response.json() as Promise<unknown>;
 }
 
@@ -273,15 +285,29 @@ export async function reconcileGitHubActivity({
   if (actor) {
     try {
       const rawEvents: GitHubEvent[] = [];
-      for (let page = 1; page <= 10; page += 1) {
-        const response = await fetchJson(
-          `https://api.github.com/users/${encodeURIComponent(actor.login)}/events?per_page=100&page=${page}`,
-          accessToken,
-          fetchImplementation,
-        );
+      for (let page = 1; page <= githubEventsMaxPages; page += 1) {
+        let response: unknown;
+        try {
+          response = await fetchJson(
+            `https://api.github.com/users/${encodeURIComponent(actor.login)}/events?per_page=${githubEventsPageSize}&page=${page}`,
+            accessToken,
+            fetchImplementation,
+          );
+        } catch (error) {
+          // Past the feed's pagination limit GitHub answers 422. Keep the
+          // events collected so far rather than losing the whole pass.
+          if (error instanceof GitHubRequestError && error.status === 422) {
+            reportDiagnostic({ stage: "events", ...describeError(error) });
+            degraded = true;
+            break;
+          }
+          throw error;
+        }
         if (!Array.isArray(response)) throw new Error("Invalid GitHub events");
         rawEvents.push(...(response as GitHubEvent[]));
-        if (response.length < 100) break;
+        if (response.length < githubEventsPageSize) break;
+        // A full final page means GitHub is still withholding older events.
+        if (page === githubEventsMaxPages) degraded = true;
       }
 
       for (const rawEvent of rawEvents) {

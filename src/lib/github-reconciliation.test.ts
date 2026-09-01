@@ -156,6 +156,9 @@ describe("GitHub current-day reconciliation", () => {
     expect(first.metrics).toEqual({
       pushes: 1,
       commits: 1,
+      refs: 0,
+      releases: 0,
+      discussions: 0,
       issues: 0,
       pullRequests: 0,
       reviews: 0,
@@ -165,6 +168,9 @@ describe("GitHub current-day reconciliation", () => {
     expect(repeated.metrics).toEqual({
       pushes: 1,
       commits: 1,
+      refs: 0,
+      releases: 0,
+      discussions: 0,
       issues: 0,
       pullRequests: 0,
       reviews: 0,
@@ -237,6 +243,9 @@ describe("GitHub current-day reconciliation", () => {
     expect(journal.metrics).toEqual({
       pushes: 0,
       commits: 1,
+      refs: 0,
+      releases: 0,
+      discussions: 0,
       issues: 0,
       pullRequests: 0,
       reviews: 0,
@@ -507,6 +516,9 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
     expect(journal.metrics).toEqual({
       pushes: 0,
       commits: 0,
+      refs: 0,
+      releases: 0,
+      discussions: 0,
       issues: 1,
       pullRequests: 0,
       reviews: 1,
@@ -540,5 +552,80 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
       }),
     );
     expect(JSON.stringify(journal)).not.toContain("PRIVATE");
+  });
+
+  it("normalizes refs, published releases, and available Discussions while excluding reactions", async () => {
+    const store = new MemoryStore();
+    const events = [
+      collaborationEvent("event-ref", "CreateEvent", {
+        ref: "feature/journal",
+        ref_type: "branch",
+        pusher_type: "user",
+        description: "PRIVATE-REPOSITORY-DESCRIPTION",
+      }),
+      collaborationEvent("event-release", "ReleaseEvent", {
+        action: "published",
+        release: {
+          id: 501,
+          tag_name: "v2.0.0",
+          name: "Version 2",
+          body: "PRIVATE-RELEASE-NOTES",
+          draft: false,
+          published_at: "2026-03-08T15:10:00Z",
+          updated_at: "2026-03-08T15:10:00Z",
+          assets: [{ name: "PRIVATE-ASSET" }],
+        },
+      }),
+      collaborationEvent("event-discussion", "DiscussionEvent", {
+        action: "created",
+        discussion: {
+          number: 73,
+          title: "How should reconciliation report gaps?",
+          body: "PRIVATE-DISCUSSION-BODY",
+          created_at: "2026-03-08T15:20:00Z",
+          updated_at: "2026-03-08T15:20:00Z",
+        },
+      }),
+      collaborationEvent("event-reaction", "ReactionEvent", {
+        action: "created",
+        reaction: { id: 901, content: "+1" },
+      }),
+      collaborationEvent(
+        "event-other-actor",
+        "DeleteEvent",
+        { ref: "old", ref_type: "branch", pusher_type: "user" },
+        { actor: { id: 8, login: "mallory" } },
+      ),
+    ];
+    const fetchFixture = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
+      if (url.includes("/users/ada/events")) return jsonResponse(events);
+      throw new Error(`Unexpected fixture request: ${url}`);
+    });
+
+    const journal = await reconcileGitHubActivity({
+      userId: "user-1",
+      timeZone: "America/New_York",
+      accessMode: "best-effort",
+      installationIds: [],
+      accessToken: "fixture-token",
+      now: window.now,
+      fetchImplementation: fetchFixture as typeof fetch,
+      store,
+    });
+
+    expect(journal.metrics).toMatchObject({
+      refs: 1,
+      releases: 1,
+      discussions: 1,
+    });
+    expect(journal.activities.map((activity) => activity.kind)).toEqual([
+      "branch-created",
+      "release-published",
+      "discussion-created",
+    ]);
+    expect(JSON.stringify(journal)).not.toContain("PRIVATE");
+    expect(JSON.stringify(journal)).not.toContain("reaction");
   });
 });

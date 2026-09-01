@@ -510,6 +510,96 @@ describe("protected journal boundary", () => {
     expect(document.body.textContent).not.toContain("PRIVATE");
   });
 
+  it("presents refs, releases, and Discussions as distinct private activity", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
+    authBoundary.getSession.mockResolvedValue({
+      session: { id: "session-1", token: "server-only-token" },
+      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
+    });
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "best-effort",
+    });
+    storedJournal = {
+      localDate: "2026-08-31",
+      timeZone: "America/Mexico_City",
+      status: "complete",
+      refreshedAt: new Date("2026-08-31T12:00:00Z"),
+    };
+    const common = {
+      localDate: "2026-08-31",
+      actorId: "7",
+      actorLogin: "ada",
+      repositoryId: "42",
+      repositoryName: "acme/private-engine",
+      visibility: "private" as const,
+      source: "github-webhook" as const,
+      subjectNumber: null,
+      observedAt: new Date("2026-08-31T11:30:01Z"),
+      authoredBeforeDay: false,
+      installationId: "99",
+    };
+    const activities: ActivityRecord[] = [
+      {
+        ...common,
+        kind: "branch-created",
+        deduplicationKey:
+          "github:branch-created:42:feature%2Fjournal:2026-08-31",
+        subjectId: "feature/journal",
+        subjectTitle: "feature/journal",
+        evidenceUrl: "https://github.com/acme/private-engine/branches",
+        occurredAt: new Date("2026-08-31T11:00:00Z"),
+      },
+      {
+        ...common,
+        kind: "release-published",
+        deduplicationKey: "github:release-published:42:501",
+        subjectId: "501",
+        subjectTitle: "Version 2",
+        evidenceUrl:
+          "https://github.com/acme/private-engine/releases/tag/v2.0.0",
+        occurredAt: new Date("2026-08-31T11:10:00Z"),
+      },
+      {
+        ...common,
+        kind: "discussion-comment",
+        deduplicationKey: "github:discussion-comment:42:8801",
+        subjectId: "8801",
+        subjectNumber: 73,
+        subjectTitle: "How should reconciliation report gaps?",
+        evidenceUrl:
+          "https://github.com/acme/private-engine/discussions/73#discussioncomment-8801",
+        occurredAt: new Date("2026-08-31T11:20:00Z"),
+      },
+    ];
+    storedActivities = new Map(
+      activities.map((activity) => [activity.deduplicationKey, activity]),
+    );
+    activityRepositoryBoundary.tryStart.mockResolvedValue(false);
+
+    render(
+      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+    );
+
+    expect(screen.getByText("1 ref change")).toBeInTheDocument();
+    expect(screen.getByText("1 release update")).toBeInTheDocument();
+    expect(screen.getByText("1 discussion update")).toBeInTheDocument();
+    expect(screen.getByText("Created branch")).toBeInTheDocument();
+    expect(screen.getByText("Published release")).toBeInTheDocument();
+    expect(screen.getByText("Commented on discussion #73")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "View answer evidence" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "View comment evidence" }),
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/acme/private-engine/discussions/73#discussioncomment-8801",
+    );
+    expect(screen.getAllByText("Private repository")).toHaveLength(3);
+  });
+
   it("keeps sign-out available after onboarding", async () => {
     authBoundary.getSession.mockResolvedValue({
       session: { id: "session-1", token: "server-only-token" },

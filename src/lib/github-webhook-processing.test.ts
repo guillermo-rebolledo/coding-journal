@@ -136,6 +136,47 @@ describe("GitHub webhook queue processing", () => {
     expect(store.deliveryStatuses.get("delivery-10")).toBe("processed");
   });
 
+  it("persists a private discussion comment without its body", async () => {
+    const store = new MemoryStore();
+
+    await processWebhookDeliveryMessage(
+      {
+        version: 1,
+        deliveryId: "delivery-discussion",
+        installationId: "99",
+        receivedAt: "2026-03-08T15:00:05.000Z",
+        collaboration: {
+          repositoryId: "42",
+          repositoryName: "acme/private-engine",
+          private: true,
+          senderId: "7",
+          senderLogin: "ada",
+          subject: {
+            kind: "discussion-comment",
+            deduplicationKey: "github:discussion-comment:42:8801",
+            subjectId: "8801",
+            subjectNumber: 73,
+            title: "How should reconciliation report gaps?",
+            evidenceUrl:
+              "https://github.com/acme/private-engine/discussions/73#discussioncomment-8801",
+            occurredAt: "2026-03-08T14:30:00.000Z",
+          },
+        },
+      },
+      { deliveryCount: 1 },
+      store,
+    );
+
+    expect(
+      store.activities.get("user-1:github:discussion-comment:42:8801"),
+    ).toMatchObject({
+      kind: "discussion-comment",
+      visibility: "private",
+      subjectNumber: 73,
+      subjectTitle: "How should reconciliation report gaps?",
+    });
+  });
+
   it("skips collaboration actions from participants who are not the journal user", async () => {
     const store = new MemoryStore();
 

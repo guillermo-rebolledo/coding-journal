@@ -159,6 +159,51 @@ describe("GitHub webhook endpoint", () => {
     expect(neonBoundary.markDeliveryEnqueued).toHaveBeenCalled();
   });
 
+  it("acknowledges a verified branch creation and enqueues only bounded metadata", async () => {
+    const body = JSON.stringify({
+      ref: "feature/private-roadmap",
+      ref_type: "branch",
+      pusher_type: "user",
+      description: "PRIVATE-REPOSITORY-DESCRIPTION",
+      repository: { id: 42, full_name: "acme/private-engine", private: true },
+      sender: { id: 7, login: "ada", type: "User" },
+      installation: { id: 99 },
+    });
+
+    const response = await POST(webhookRequest({ body, event: "create" }));
+
+    expect(response.status).toBe(202);
+    const message = queueBoundary.publish.mock.calls[0]?.[1];
+    expect(message).toEqual(
+      expect.objectContaining({
+        collaboration: expect.objectContaining({
+          subject: expect.objectContaining({
+            kind: "branch-created",
+            subjectId: "feature/private-roadmap",
+            subjectNumber: null,
+          }),
+        }),
+      }),
+    );
+    expect(JSON.stringify(message)).not.toContain("PRIVATE");
+  });
+
+  it("excludes reaction deliveries before queueing", async () => {
+    const body = JSON.stringify({
+      action: "created",
+      reaction: { id: 901, content: "+1" },
+      repository: { id: 42, full_name: "acme/private-engine", private: true },
+      sender: { id: 7, login: "ada", type: "User" },
+      installation: { id: 99 },
+    });
+
+    const response = await POST(webhookRequest({ body, event: "reaction" }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ status: "ignored" });
+    expect(queueBoundary.publish).not.toHaveBeenCalled();
+  });
+
   it("records unsupported collaboration actions as ignored without enqueueing them", async () => {
     const body = JSON.stringify({
       action: "synchronize",

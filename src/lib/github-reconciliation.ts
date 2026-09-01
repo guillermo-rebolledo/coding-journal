@@ -262,6 +262,7 @@ export async function reconcileGitHubActivity({
         }
 
         const visibility = rawEvent.public ? "public" : "private";
+        const eventOccurredAt = parseDate(rawEvent.created_at);
 
         const collaborationEvent = collaborationEventForApiType(rawEvent.type);
         if (collaborationEvent) {
@@ -269,6 +270,7 @@ export async function reconcileGitHubActivity({
             collaborationEvent,
             payload,
             { id: String(rawEvent.repo.id), name: repositoryName },
+            eventOccurredAt ?? undefined,
           );
           if (!derivation.ok) continue;
           const { subject } = derivation;
@@ -303,7 +305,7 @@ export async function reconcileGitHubActivity({
           continue;
         }
 
-        const occurredAt = parseDate(rawEvent.created_at);
+        const occurredAt = eventOccurredAt;
         if (
           rawEvent.type !== "PushEvent" ||
           !occurredAt ||

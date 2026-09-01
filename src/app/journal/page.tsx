@@ -17,8 +17,10 @@ import {
   MessageSquare,
   MessagesSquare,
   RotateCcw,
+  Rocket,
   Settings,
   ShieldCheck,
+  Tag,
   Upload,
   type LucideIcon,
 } from "lucide-react";
@@ -299,6 +301,24 @@ const metricCards: Array<{
     icon: GitCommitHorizontal,
   },
   {
+    key: "refs",
+    singular: "ref change",
+    detail: "Branches and tags you created or deleted",
+    icon: GitBranch,
+  },
+  {
+    key: "releases",
+    singular: "release update",
+    detail: "Releases you published or updated",
+    icon: Rocket,
+  },
+  {
+    key: "discussions",
+    singular: "discussion update",
+    detail: "Comments and answers require GitHub App access",
+    icon: MessagesSquare,
+  },
+  {
     key: "issues",
     singular: "issue update",
     detail: "Issues you opened, closed, or reopened",
@@ -334,6 +354,43 @@ const activityPresentation: Record<
   ActivityRecord["kind"],
   { label: string; evidenceNoun: string; icon: LucideIcon }
 > = {
+  "branch-created": {
+    label: "Created branch",
+    evidenceNoun: "branches",
+    icon: GitBranch,
+  },
+  "branch-deleted": {
+    label: "Deleted branch",
+    evidenceNoun: "branches",
+    icon: GitBranch,
+  },
+  "tag-created": { label: "Created tag", evidenceNoun: "tags", icon: Tag },
+  "tag-deleted": { label: "Deleted tag", evidenceNoun: "tags", icon: Tag },
+  "release-published": {
+    label: "Published release",
+    evidenceNoun: "release",
+    icon: Rocket,
+  },
+  "release-updated": {
+    label: "Updated release",
+    evidenceNoun: "release",
+    icon: Rocket,
+  },
+  "discussion-created": {
+    label: "Started discussion",
+    evidenceNoun: "discussion",
+    icon: MessagesSquare,
+  },
+  "discussion-comment": {
+    label: "Commented on discussion",
+    evidenceNoun: "comment",
+    icon: MessageSquare,
+  },
+  "discussion-answered": {
+    label: "Marked discussion answer",
+    evidenceNoun: "answer",
+    icon: CircleCheck,
+  },
   push: { label: "Push", evidenceNoun: "push", icon: Upload },
   commit: {
     label: "Commit",

@@ -46,6 +46,31 @@ export type ReconciliationStore = {
   read(userId: string, localDate: string): Promise<TodayJournal>;
 };
 
+// Reconciliation swallows provider failures by design; this reports what
+// failed without exposing request bodies, payloads, or credentials.
+export type ReconciliationDiagnostic = {
+  stage:
+    | "user-access-token"
+    | "actor"
+    | "events"
+    | "push-commits"
+    | "installation-repositories"
+    | "repository-commits";
+  errorName: string;
+  errorMessage: string;
+};
+
+export type DiagnosticReporter = (diagnostic: ReconciliationDiagnostic) => void;
+
+export function describeError(error: unknown) {
+  return error instanceof Error
+    ? { errorName: error.name, errorMessage: error.message }
+    : {
+        errorName: "UnknownError",
+        errorMessage: "A non-error value was thrown",
+      };
+}
+
 export type LocalDayWindow = {
   localDate: string;
   startsAt: Date;
@@ -188,6 +213,7 @@ export async function reconcileGitHubActivity({
   now,
   fetchImplementation = fetch,
   store,
+  reportDiagnostic = () => {},
 }: {
   userId: string;
   timeZone: string;
@@ -197,6 +223,7 @@ export async function reconcileGitHubActivity({
   now: Date;
   fetchImplementation?: typeof fetch;
   store: ReconciliationStore;
+  reportDiagnostic?: DiagnosticReporter;
 }): Promise<TodayJournal> {
   const window = getLocalDayWindow(now, timeZone);
   const started = await store.tryStart(
@@ -238,7 +265,8 @@ export async function reconcileGitHubActivity({
       throw new Error("GitHub actor response was invalid");
     }
     actor = { id: rawActor.id, login: rawActor.login };
-  } catch {
+  } catch (error) {
+    reportDiagnostic({ stage: "actor", ...describeError(error) });
     degraded = true;
   }
 
@@ -397,12 +425,14 @@ export async function reconcileGitHubActivity({
               installationId: null,
             });
           }
-        } catch {
+        } catch (error) {
+          reportDiagnostic({ stage: "push-commits", ...describeError(error) });
           degraded = true;
         }
       }
       eventsSucceeded = true;
-    } catch {
+    } catch (error) {
+      reportDiagnostic({ stage: "events", ...describeError(error) });
       degraded = true;
     }
   }
@@ -500,13 +530,21 @@ export async function reconcileGitHubActivity({
                   installationId,
                 });
               }
-            } catch {
+            } catch (error) {
+              reportDiagnostic({
+                stage: "repository-commits",
+                ...describeError(error),
+              });
               degraded = true;
             }
           }
 
           repositoryCommitsSucceeded = true;
-        } catch {
+        } catch (error) {
+          reportDiagnostic({
+            stage: "installation-repositories",
+            ...describeError(error),
+          });
           degraded = true;
         }
       }

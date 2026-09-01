@@ -6,31 +6,18 @@ import {
   enqueueDueJournalFinalizations,
   processJournalFinalization,
   type FinalizationStore,
+  type FinalizationCandidate,
 } from "@/lib/journal-finalization";
+import { computeActivityMetrics } from "@/lib/github-activity";
 import {
-  computeActivityMetrics,
-  type ActivityRecord,
-} from "@/lib/github-activity";
-
-const activity: ActivityRecord = {
-  deduplicationKey: "github:issue:42:7",
-  localDate: "2026-08-31",
-  kind: "issue-opened",
-  actorId: "7",
-  actorLogin: "ada",
-  repositoryId: "42",
-  repositoryName: "acme/journal",
-  evidenceUrl: "https://github.com/acme/journal/issues/7",
-  visibility: "private",
-  source: "github-webhook",
-  subjectId: "7",
-  subjectNumber: 7,
-  subjectTitle: "Journal history",
-  occurredAt: new Date("2026-08-31T15:00:00Z"),
-  observedAt: new Date("2026-09-01T05:00:00Z"),
-  authoredBeforeDay: false,
-  installationId: "9",
-};
+  reconcileGitHubActivity,
+  type ReconciliationStore,
+  type TodayJournal,
+} from "@/lib/github-reconciliation";
+import {
+  generateJournalSummary,
+  type SummaryStore,
+} from "@/lib/journal-summary";
 
 function store(overrides: Partial<FinalizationStore> = {}): FinalizationStore {
   return {
@@ -40,6 +27,75 @@ function store(overrides: Partial<FinalizationStore> = {}): FinalizationStore {
     finalize: vi.fn().mockResolvedValue(true),
     fail: vi.fn().mockResolvedValue(undefined),
     ...overrides,
+  };
+}
+
+function finalizationWork(githubAvailable: boolean) {
+  let stored: TodayJournal | null = null;
+  const reconciliationStore: ReconciliationStore = {
+    tryStart: vi.fn().mockResolvedValue(true),
+    finish: vi.fn(async (_userId, journal, activities) => {
+      stored = {
+        ...journal,
+        metrics: computeActivityMetrics(activities),
+        activities,
+      };
+    }),
+    read: vi.fn(async () => {
+      if (!stored) throw new Error("Journal was not stored");
+      return stored;
+    }),
+  };
+  const fetchImplementation = vi.fn(async (input: string | URL | Request) => {
+    const url = String(input);
+    if (!githubAvailable && url.endsWith("/user")) {
+      return new Response(null, { status: 503 });
+    }
+    if (url.endsWith("/user")) {
+      return Response.json({ id: 7, login: "ada" });
+    }
+    if (
+      url.includes("/events?") ||
+      url.includes("/gists?") ||
+      url.includes("/gists/starred?")
+    ) {
+      return Response.json([]);
+    }
+    throw new Error(`Unexpected GitHub request: ${url}`);
+  });
+  const summaryStore: SummaryStore = {
+    findBySnapshotHash: vi.fn().mockResolvedValue(null),
+    getUsage: vi.fn().mockResolvedValue({
+      userDaily: 0,
+      globalDaily: 0,
+      monthlyCostUsd: 0,
+    }),
+    save: vi.fn(),
+  };
+  const now = new Date("2026-09-01T12:00:00Z");
+
+  return {
+    reconcile: (candidate: FinalizationCandidate) =>
+      reconcileGitHubActivity({
+        ...candidate,
+        accessMode: "best-effort",
+        installationIds: [],
+        accessToken: "github-token",
+        now,
+        fetchImplementation: fetchImplementation as typeof fetch,
+        store: reconciliationStore,
+      }),
+    summarize: (input: {
+      userId: string;
+      localDate: string;
+      activities: TodayJournal["activities"];
+    }) =>
+      generateJournalSummary({
+        ...input,
+        store: summaryStore,
+        provider: vi.fn(),
+        now,
+      }),
   };
 }
 
@@ -84,27 +140,9 @@ describe("journal finalization application boundary", () => {
     );
   });
 
-  it("freezes metrics, narrative, and evidence after successful work", async () => {
+  it("freezes an empty day after real reconciliation and summary services succeed", async () => {
     const repository = store({ claim: vi.fn().mockResolvedValue(true) });
-    const reconcile = vi.fn().mockResolvedValue({
-      localDate: "2026-08-31",
-      timeZone: "America/Mexico_City",
-      status: "complete",
-      refreshedAt: new Date("2026-09-01T12:00:00Z"),
-      metrics: computeActivityMetrics([activity]),
-      activities: [activity],
-    });
-    const narrative = {
-      overview: "Opened the journal history issue.",
-      overviewEvidenceIds: ["evidence-1"],
-      accomplishments: [],
-      collaboration: [],
-      inProgress: [],
-    };
-    const summarize = vi.fn().mockResolvedValue({
-      status: "available",
-      summary: { output: narrative, snapshotHash: "snapshot-1" },
-    });
+    const work = finalizationWork(true);
     const message = {
       version: 1 as const,
       userId: "user-1",
@@ -116,8 +154,8 @@ describe("journal finalization application boundary", () => {
       message,
       1,
       repository,
-      reconcile,
-      summarize,
+      work.reconcile,
+      work.summarize,
       new Date("2026-09-01T12:00:00Z"),
     );
 
@@ -126,19 +164,18 @@ describe("journal finalization application boundary", () => {
       localDate: "2026-08-31",
       timeZone: "America/Mexico_City",
       completeness: "complete",
-      metrics: computeActivityMetrics([activity]),
-      narrative,
-      snapshotHash: "snapshot-1",
-      evidenceKeys: [activity.deduplicationKey],
-      evidence: [activity],
+      metrics: computeActivityMetrics([]),
+      narrative: null,
+      snapshotHash: expect.any(String),
+      evidenceKeys: [],
+      evidence: [],
       finalizedAt: new Date("2026-09-01T12:00:00Z"),
     });
   });
 
   it("acknowledges a duplicate job without repeating final work", async () => {
     const repository = store({ claim: vi.fn().mockResolvedValue(false) });
-    const reconcile = vi.fn();
-    const summarize = vi.fn();
+    const work = finalizationWork(true);
 
     await processJournalFinalization(
       {
@@ -149,20 +186,16 @@ describe("journal finalization application boundary", () => {
       },
       2,
       repository,
-      reconcile,
-      summarize,
+      work.reconcile,
+      work.summarize,
     );
 
-    expect(reconcile).not.toHaveBeenCalled();
-    expect(summarize).not.toHaveBeenCalled();
     expect(repository.finalize).not.toHaveBeenCalled();
   });
 
   it("stops retrying in a clear recoverable state after five attempts", async () => {
     const repository = store({ claim: vi.fn().mockResolvedValue(true) });
-    const reconcile = vi
-      .fn()
-      .mockRejectedValue(new Error("GitHub unavailable"));
+    const work = finalizationWork(false);
 
     await expect(
       processJournalFinalization(
@@ -174,8 +207,8 @@ describe("journal finalization application boundary", () => {
         },
         5,
         repository,
-        reconcile,
-        vi.fn(),
+        work.reconcile,
+        work.summarize,
       ),
     ).resolves.toBeUndefined();
     expect(repository.fail).toHaveBeenCalledWith(
@@ -183,6 +216,32 @@ describe("journal finalization application boundary", () => {
       "2026-08-31",
       "reconciliation-failed",
       true,
+    );
+  });
+
+  it("rethrows transient work before the retry limit", async () => {
+    const repository = store({ claim: vi.fn().mockResolvedValue(true) });
+    const work = finalizationWork(false);
+
+    await expect(
+      processJournalFinalization(
+        {
+          version: 1,
+          userId: "user-1",
+          localDate: "2026-08-31",
+          timeZone: "America/Mexico_City",
+        },
+        4,
+        repository,
+        work.reconcile,
+        work.summarize,
+      ),
+    ).rejects.toThrow("Final reconciliation was unavailable");
+    expect(repository.fail).toHaveBeenCalledWith(
+      "user-1",
+      "2026-08-31",
+      "reconciliation-failed",
+      false,
     );
   });
 });

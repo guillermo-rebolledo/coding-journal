@@ -91,6 +91,18 @@ describe("journal finalization repository with Postgres", () => {
         finalizedAt,
       }),
     ).resolves.toBe(true);
+    await expect(
+      repository.finalize({
+        ...candidate,
+        completeness: "error",
+        metrics: computeActivityMetrics([]),
+        narrative: null,
+        snapshotHash: "replacement-snapshot",
+        evidenceKeys: [],
+        evidence: [],
+        finalizedAt: new Date("2026-09-01T13:00:00Z"),
+      }),
+    ).resolves.toBe(false);
 
     await database.insert(githubActivity).values([
       {

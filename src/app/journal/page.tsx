@@ -41,7 +41,8 @@ import {
 } from "@/lib/github-installation";
 import { getGitHubInstallationCompleteness } from "@/lib/github-completeness";
 import { getJournalOnboarding } from "@/lib/journal";
-import type { ActivityRecord, TodayJournal } from "@/lib/github-reconciliation";
+import type { ActivityRecord } from "@/lib/github-activity";
+import type { TodayJournal } from "@/lib/github-reconciliation";
 import { getJournalSession } from "@/lib/session";
 import { getTodayJournal } from "@/lib/today-journal";
 import { cn } from "@/lib/utils";

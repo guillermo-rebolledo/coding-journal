@@ -15,7 +15,7 @@ import {
 // journal no longer reconciles; they are acknowledged but never enqueued.
 const staleDeliveryMs = 7 * 24 * 60 * 60 * 1000;
 
-export const pushDeliveryTopic = "github-webhook-deliveries";
+export const webhookDeliveryTopic = "github-webhook-deliveries";
 
 export type PushDeliveryMessage = {
   version: 1;

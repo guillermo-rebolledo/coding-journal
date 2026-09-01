@@ -119,6 +119,7 @@ describe("protected journal boundary", () => {
           return jsonResponse({ id: 7, login: "ada" });
         }
         if (url.includes("/users/ada/events")) return jsonResponse([]);
+        if (url.includes("/gists?")) return jsonResponse([]);
         if (url.includes("/user/installations/")) {
           return jsonResponse({ total_count: 0, repositories: [] });
         }
@@ -273,6 +274,7 @@ describe("protected journal boundary", () => {
           deployments: "read",
           discussions: "read",
           metadata: "read",
+          organization_projects: "read",
           packages: "read",
         },
         status: "active",
@@ -310,6 +312,7 @@ describe("protected journal boundary", () => {
           contents: "read",
           deployments: "read",
           metadata: "read",
+          organization_projects: "read",
           packages: "read",
         },
         status: "active",
@@ -349,6 +352,7 @@ describe("protected journal boundary", () => {
           deployments: "read",
           discussions: "read",
           metadata: "read",
+          organization_projects: "read",
           packages: "read",
         },
         status: "active",
@@ -363,6 +367,48 @@ describe("protected journal boundary", () => {
     expect(
       screen.getByText(
         "All granted repositories · Pushes, refs, and releases unavailable",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("marks organization Projects preview unavailable without its permission", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
+    authBoundary.getSession.mockResolvedValue({
+      session: { id: "session-1", token: "server-only-token" },
+      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
+    });
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "app",
+    });
+    installationBoundary.getInstallations.mockResolvedValue([
+      {
+        installationId: "42",
+        accountLogin: "example-org",
+        accountType: "Organization",
+        repositorySelection: "all",
+        repositoryCount: 8,
+        permissions: {
+          actions: "read",
+          contents: "read",
+          deployments: "read",
+          discussions: "read",
+          metadata: "read",
+          packages: "read",
+        },
+        status: "active",
+      },
+    ]);
+
+    render(
+      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+    );
+
+    expect(screen.getByText("Limited activity")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "All granted repositories · Organization Projects preview unavailable",
       ),
     ).toBeInTheDocument();
   });
@@ -391,6 +437,7 @@ describe("protected journal boundary", () => {
           deployments: "read",
           discussions: "read",
           metadata: "read",
+          organization_projects: "read",
           packages: "read",
         },
         status: "active",
@@ -406,6 +453,7 @@ describe("protected journal boundary", () => {
           contents: "read",
           deployments: "read",
           metadata: "read",
+          organization_projects: "read",
           packages: "read",
         },
         status: "active",
@@ -471,6 +519,7 @@ describe("protected journal boundary", () => {
             },
           ]);
         }
+        if (url.includes("/gists?")) return jsonResponse([]);
         if (
           url.includes("/repos/acme/private-engine/compare/1111111...abcdef1")
         ) {
@@ -611,6 +660,7 @@ describe("protected journal boundary", () => {
             },
           ]);
         }
+        if (url.includes("/gists?")) return jsonResponse([]);
         throw new Error(`Unexpected fixture request: ${url}`);
       },
     );
@@ -843,6 +893,125 @@ describe("protected journal boundary", () => {
     expect(screen.getByText("Excluded from narrative")).toBeInTheDocument();
     expect(screen.getByText("Ran workflow")).toBeInTheDocument();
     expect(screen.getByText("Published package")).toBeInTheDocument();
+  });
+
+  it("presents Projects, metadata-only Gists, social exclusions, and source freshness", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
+    authBoundary.getSession.mockResolvedValue({
+      session: { id: "session-1", token: "server-only-token" },
+      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
+    });
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "app",
+    });
+    storedJournal = {
+      localDate: "2026-08-31",
+      timeZone: "America/Mexico_City",
+      status: "partial",
+      refreshedAt: new Date("2026-08-31T12:00:00Z"),
+      sourceFreshness: [
+        {
+          source: "social",
+          label: "Social activity",
+          status: "best-effort",
+          refreshedAt: new Date("2026-08-31T12:00:00Z"),
+          detail: "GitHub's activity feed may be delayed by up to 6 hours.",
+        },
+        {
+          source: "gists",
+          label: "Gists",
+          status: "unavailable",
+          refreshedAt: null,
+          detail: "Gist metadata reconciliation was unavailable.",
+        },
+      ],
+    };
+    const common = {
+      localDate: "2026-08-31",
+      actorId: "7",
+      actorLogin: "ada",
+      subjectNumber: null,
+      observedAt: new Date("2026-08-31T12:00:00Z"),
+      authoredBeforeDay: false,
+      installationId: null,
+      visibility: "public" as const,
+    };
+    const activities: ActivityRecord[] = [
+      {
+        ...common,
+        kind: "project-updated",
+        deduplicationKey: "github:project-updated:PVT:501:delivery-1",
+        repositoryId: "84",
+        repositoryName: "acme/Projects",
+        evidenceUrl: "https://github.com/orgs/acme/projects/12",
+        source: "github-projects-preview",
+        subjectId: "PVT",
+        subjectNumber: 12,
+        subjectTitle: "Engineering roadmap",
+        occurredAt: new Date("2026-08-31T11:00:00Z"),
+        installationId: "99",
+      },
+      {
+        ...common,
+        kind: "gist-created",
+        deduplicationKey: "github:gist-created:gist-1",
+        repositoryId: "gists:7",
+        repositoryName: "ada/Gists",
+        evidenceUrl: "https://gist.github.com/ada/gist-1",
+        source: "github-gists",
+        subjectId: "gist-1",
+        subjectTitle: "Metadata only",
+        occurredAt: new Date("2026-08-31T11:10:00Z"),
+      },
+      {
+        ...common,
+        kind: "repository-starred",
+        deduplicationKey: "github:repository-starred:event-1",
+        repositoryId: "42",
+        repositoryName: "acme/journal",
+        evidenceUrl: "https://github.com/acme/journal",
+        source: "github-events",
+        subjectId: "42",
+        subjectTitle: "acme/journal",
+        occurredAt: new Date("2026-08-31T11:20:00Z"),
+        narrativeEligible: false,
+      },
+    ];
+    storedActivities = new Map(
+      activities.map((activity) => [activity.deduplicationKey, activity]),
+    );
+    activityRepositoryBoundary.tryStart.mockResolvedValue(false);
+
+    render(
+      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+    );
+
+    expect(screen.getByText("1 project update")).toBeInTheDocument();
+    expect(screen.getByText("1 Gist update")).toBeInTheDocument();
+    expect(screen.getByText("1 social action")).toBeInTheDocument();
+    expect(screen.getByText("Updated project #12")).toBeInTheDocument();
+    expect(screen.getByText("Created Gist")).toBeInTheDocument();
+    expect(screen.getByText("Starred repository")).toBeInTheDocument();
+    expect(screen.getByText("Preview · best-effort")).toBeInTheDocument();
+    expect(
+      screen.getByText("Reconciliation · best-effort"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Delayed source · best-effort"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Excluded from narrative")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Secondary source coverage" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Best-effort · refreshed at 6:00 AM"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Unavailable during this refresh"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/delayed by up to 6 hours/)).toBeInTheDocument();
   });
 
   it("keeps sign-out available after onboarding", async () => {

@@ -7,21 +7,28 @@ import {
   CircleDot,
   Clock3,
   FileCheck,
+  FileText,
   GitCommitHorizontal,
   GitBranch,
+  GitFork,
   GitMerge,
   GitPullRequest,
   GitPullRequestArrow,
   GitPullRequestClosed,
   LockKeyhole,
+  LayoutDashboard,
   MessageSquare,
   MessagesSquare,
+  Eye,
+  HeartHandshake,
   RotateCcw,
   Rocket,
   Settings,
   ShieldCheck,
+  Star,
   Tag,
   Upload,
+  UserPlus,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -356,6 +363,24 @@ const metricCards: Array<{
     detail: "Publications and updates count toward your journal",
     icon: Upload,
   },
+  {
+    key: "projects",
+    singular: "project update",
+    detail: "Organization Projects preview webhooks · best-effort",
+    icon: LayoutDashboard,
+  },
+  {
+    key: "gists",
+    singular: "Gist update",
+    detail: "Metadata-only reconciliation · best-effort",
+    icon: FileText,
+  },
+  {
+    key: "social",
+    singular: "social action",
+    detail: "Excluded completely from the AI narrative",
+    icon: Star,
+  },
 ];
 
 const activityStatusLabels = {
@@ -365,6 +390,25 @@ const activityStatusLabels = {
   failure: "Failed",
   cancelled: "Cancelled",
 } as const;
+
+function activityCoverageLabel(activity: ActivityRecord) {
+  if (activity.source === "github-projects-preview") {
+    return "Preview · best-effort";
+  }
+  if (activity.source === "github-gists") {
+    return "Reconciliation · best-effort";
+  }
+  if (
+    activity.kind === "repository-starred" ||
+    activity.kind === "repository-watched" ||
+    activity.kind === "repository-forked" ||
+    activity.kind === "user-followed" ||
+    activity.kind === "sponsorship-created"
+  ) {
+    return "Delayed source · best-effort";
+  }
+  return null;
+}
 
 const activityPresentation: Record<
   ActivityRecord["kind"],
@@ -503,6 +547,116 @@ const activityPresentation: Record<
     evidenceNoun: "package",
     icon: RotateCcw,
   },
+  "project-created": {
+    label: "Created project",
+    evidenceNoun: "project",
+    icon: LayoutDashboard,
+  },
+  "project-updated": {
+    label: "Updated project",
+    evidenceNoun: "project",
+    icon: LayoutDashboard,
+  },
+  "project-closed": {
+    label: "Closed project",
+    evidenceNoun: "project",
+    icon: LayoutDashboard,
+  },
+  "project-reopened": {
+    label: "Reopened project",
+    evidenceNoun: "project",
+    icon: LayoutDashboard,
+  },
+  "project-deleted": {
+    label: "Deleted project",
+    evidenceNoun: "organization projects",
+    icon: LayoutDashboard,
+  },
+  "project-item-added": {
+    label: "Added project item",
+    evidenceNoun: "organization projects",
+    icon: LayoutDashboard,
+  },
+  "project-item-archived": {
+    label: "Archived project item",
+    evidenceNoun: "organization projects",
+    icon: LayoutDashboard,
+  },
+  "project-item-converted": {
+    label: "Converted project item",
+    evidenceNoun: "organization projects",
+    icon: LayoutDashboard,
+  },
+  "project-item-edited": {
+    label: "Edited project item",
+    evidenceNoun: "organization projects",
+    icon: LayoutDashboard,
+  },
+  "project-item-redacted": {
+    label: "Redacted project item",
+    evidenceNoun: "organization projects",
+    icon: LayoutDashboard,
+  },
+  "project-item-reordered": {
+    label: "Reordered project item",
+    evidenceNoun: "organization projects",
+    icon: LayoutDashboard,
+  },
+  "project-item-restored": {
+    label: "Restored project item",
+    evidenceNoun: "organization projects",
+    icon: LayoutDashboard,
+  },
+  "gist-created": {
+    label: "Created Gist",
+    evidenceNoun: "Gist",
+    icon: FileText,
+  },
+  "gist-updated": {
+    label: "Updated Gist",
+    evidenceNoun: "Gist",
+    icon: FileText,
+  },
+  "gist-comment": {
+    label: "Commented on Gist",
+    evidenceNoun: "Gist",
+    icon: MessageSquare,
+  },
+  "gist-forked": {
+    label: "Forked Gist",
+    evidenceNoun: "Gist",
+    icon: GitFork,
+  },
+  "gist-starred": {
+    label: "Starred Gist",
+    evidenceNoun: "Gist",
+    icon: Star,
+  },
+  "repository-starred": {
+    label: "Starred repository",
+    evidenceNoun: "repository",
+    icon: Star,
+  },
+  "repository-watched": {
+    label: "Watched repository",
+    evidenceNoun: "repository",
+    icon: Eye,
+  },
+  "repository-forked": {
+    label: "Forked repository",
+    evidenceNoun: "fork",
+    icon: GitFork,
+  },
+  "user-followed": {
+    label: "Followed user",
+    evidenceNoun: "profile",
+    icon: UserPlus,
+  },
+  "sponsorship-created": {
+    label: "Started sponsorship",
+    evidenceNoun: "sponsorship",
+    icon: HeartHandshake,
+  },
 };
 
 function JournalActivity({
@@ -588,6 +742,54 @@ function JournalActivity({
         </span>
       </div>
 
+      {journal.sourceFreshness?.length ? (
+        <section
+          aria-labelledby="secondary-source-heading"
+          className="mt-8 rounded-m3-2xl bg-m3-surface-container-low p-5 sm:p-6"
+        >
+          <p className="text-m3-label-lg-emphasized text-primary">
+            BEST-EFFORT COVERAGE
+          </p>
+          <h2
+            id="secondary-source-heading"
+            className="text-m3-title-lg-emphasized mt-2"
+          >
+            Secondary source coverage
+          </h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {journal.sourceFreshness.map((source) => {
+              const sourceTime = source.refreshedAt
+                ? new Intl.DateTimeFormat("en-US", {
+                    timeZone,
+                    hour: "numeric",
+                    minute: "2-digit",
+                  }).format(source.refreshedAt)
+                : null;
+              return (
+                <article
+                  key={source.source}
+                  className="rounded-m3-xl bg-card p-4 shadow-m3-1"
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h3 className="text-m3-title-md-emphasized">
+                      {source.label}
+                    </h3>
+                    <p className="text-m3-label-md text-muted-foreground">
+                      {source.status === "best-effort" && sourceTime
+                        ? `Best-effort · refreshed at ${sourceTime}`
+                        : "Unavailable during this refresh"}
+                    </p>
+                  </div>
+                  <p className="mt-2 text-m3-body-sm text-muted-foreground">
+                    {source.detail}
+                  </p>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
       {journal.activities.length === 0 ? (
         <section
           aria-labelledby="empty-today-heading"
@@ -641,6 +843,7 @@ function JournalActivity({
           <ol className="mt-5 space-y-3">
             {journal.activities.map((activity) => {
               const presentation = activityPresentation[activity.kind];
+              const coverageLabel = activityCoverageLabel(activity);
               return (
                 <li
                   key={activity.deduplicationKey}
@@ -677,6 +880,11 @@ function JournalActivity({
                         {activity.narrativeEligible === false ? (
                           <span className="rounded-m3-full bg-m3-warning-container px-2.5 py-1 text-m3-label-sm text-m3-on-warning-container">
                             Excluded from narrative
+                          </span>
+                        ) : null}
+                        {coverageLabel ? (
+                          <span className="bg-secondary-container rounded-m3-full px-2.5 py-1 text-m3-label-sm text-secondary-foreground">
+                            {coverageLabel}
                           </span>
                         ) : null}
                       </div>

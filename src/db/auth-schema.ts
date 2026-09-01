@@ -1,4 +1,5 @@
 import type { ActivityKind, ActivityStatus } from "../lib/github-activity";
+import type { StoredSecondarySourceFreshness } from "../lib/github-secondary";
 import { relations } from "drizzle-orm";
 import {
   boolean,
@@ -205,6 +206,8 @@ export const journalReconciliation = pgTable(
       withTimezone: true,
     }).notNull(),
     refreshedAt: timestamp("refreshed_at", { withTimezone: true }),
+    sourceFreshness:
+      jsonb("source_freshness").$type<StoredSecondarySourceFreshness[]>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -238,7 +241,13 @@ export const githubActivity = pgTable(
     evidenceUrl: text("evidence_url").notNull(),
     visibility: text("visibility").$type<"public" | "private">().notNull(),
     source: text("source")
-      .$type<"github-events" | "github-repository-commits" | "github-webhook">()
+      .$type<
+        | "github-events"
+        | "github-repository-commits"
+        | "github-webhook"
+        | "github-projects-preview"
+        | "github-gists"
+      >()
       .notNull(),
     subjectId: text("subject_id").notNull(),
     subjectNumber: integer("subject_number"),

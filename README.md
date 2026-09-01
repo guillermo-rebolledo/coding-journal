@@ -41,10 +41,12 @@ Configure the shared GitHub App with:
 - Repository permission → Deployments: Read-only
 - Repository permission → Packages: Read-only
 - Repository permission → Metadata: Read-only (GitHub grants this automatically)
+- Organization permission → Projects: Read-only (preview, organization installs only)
 - Subscribe to repository events: Create, Delete, Discussion, Discussion comment,
   Deployment review, Deployment status, Issues, Issue comment, Pull request,
   Pull request review, Pull request review comment, Push, Registry package,
   Release, and Workflow run
+- Subscribe to organization events: Projects v2 and Projects v2 item (public preview)
 
 Set `GITHUB_APP_SLUG` to the slug in the app's public URL. Keep every other
 repository permission at read-only or no access. Coding Journal rejects an

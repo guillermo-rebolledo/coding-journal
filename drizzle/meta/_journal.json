@@ -64,6 +64,13 @@
       "when": 1788288599045,
       "tag": "0008_ambiguous_klaw",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788289975885,
+      "tag": "0009_big_madame_masque",
+      "breakpoints": true
     }
   ]
 }

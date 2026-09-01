@@ -163,6 +163,46 @@ describe("GitHub webhook queue processing", () => {
     expect(store.deliveryStatuses.get("delivery-10")).toBe("processed");
   });
 
+  it("persists attributable organization Project activity from a preview message", async () => {
+    const store = new MemoryStore();
+
+    await processWebhookDeliveryMessage(
+      {
+        version: 1,
+        deliveryId: "project-delivery-1",
+        installationId: "99",
+        receivedAt: "2026-03-08T15:00:05.000Z",
+        project: {
+          kind: "project-item-archived",
+          deduplicationKey:
+            "github:project-item-archived:PVT_kwDOA1:PVTI_kwDOB2:project-delivery-1",
+          organizationId: "84",
+          organizationLogin: "acme",
+          senderId: "7",
+          senderLogin: "ada",
+          projectId: "PVT_kwDOA1",
+          subjectId: "PVTI_kwDOB2",
+          subjectNumber: null,
+          title: null,
+          evidenceUrl: "https://github.com/orgs/acme/projects",
+          occurredAt: "2026-03-08T15:00:05.000Z",
+          completeness: "best-effort",
+        },
+      },
+      { deliveryCount: 1 },
+      store,
+    );
+
+    expect([...store.activities.values()]).toEqual([
+      expect.objectContaining({
+        kind: "project-item-archived",
+        repositoryName: "acme/Projects",
+        source: "github-projects-preview",
+      }),
+    ]);
+    expect(store.deliveryStatuses.get("project-delivery-1")).toBe("processed");
+  });
+
   it("persists a manual workflow outcome through the operations contract", async () => {
     const store = new MemoryStore();
 

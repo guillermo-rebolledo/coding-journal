@@ -26,17 +26,23 @@ export type MissingActivityPermission =
   | "discussions"
   | "actions"
   | "deployments"
-  | "packages";
+  | "packages"
+  | "organization-projects";
 
 function getMissingActivityPermissions(
-  permissions: Record<string, string> | null,
+  installation: Pick<GitHubConnectionView, "accountType" | "permissions">,
 ): MissingActivityPermission[] {
+  const permissions = installation.permissions;
   return [
     ...(permissions?.contents === "read" ? [] : (["contents"] as const)),
     ...(permissions?.discussions === "read" ? [] : (["discussions"] as const)),
     ...(permissions?.actions === "read" ? [] : (["actions"] as const)),
     ...(permissions?.deployments === "read" ? [] : (["deployments"] as const)),
     ...(permissions?.packages === "read" ? [] : (["packages"] as const)),
+    ...(installation.accountType !== "Organization" ||
+    permissions?.organization_projects === "read"
+      ? []
+      : (["organization-projects"] as const)),
   ];
 }
 
@@ -58,6 +64,9 @@ export function describeMissingActivity(
       : []),
     ...(missingPermissions.includes("packages")
       ? ["Packages unavailable"]
+      : []),
+    ...(missingPermissions.includes("organization-projects")
+      ? ["Organization Projects preview unavailable"]
       : []),
   ].join(" · ");
 }
@@ -84,7 +93,7 @@ export function getGitHubJournalCompleteness(
   const missingPermissions = [
     ...new Set(
       active.flatMap((installation) =>
-        getMissingActivityPermissions(installation.permissions),
+        getMissingActivityPermissions(installation),
       ),
     ),
   ];
@@ -115,9 +124,7 @@ export function getGitHubInstallationCompleteness(
   if (installation.status === "unavailable") {
     return { kind: "unavailable", label: "Temporarily unavailable" };
   }
-  const missingPermissions = getMissingActivityPermissions(
-    installation.permissions,
-  );
+  const missingPermissions = getMissingActivityPermissions(installation);
   if (installation.repositorySelection === "selected") {
     return {
       kind: "partial",

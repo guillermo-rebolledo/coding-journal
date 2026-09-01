@@ -7,6 +7,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { githubActivity, journalReconciliation } from "@/db/auth-schema";
 import { computeActivityMetrics } from "@/lib/github-activity";
+import type { StoredSecondarySourceFreshness } from "@/lib/github-secondary";
 import type {
   ActivityRecord,
   ReconciliationStore,
@@ -21,6 +22,15 @@ export function createGitHubActivityRepository<
     queries: readonly [BatchItem<"pg">, ...BatchItem<"pg">[]],
   ) => Promise<unknown>,
 ) {
+  function serializeSourceFreshness(
+    sources: TodayJournal["sourceFreshness"],
+  ): StoredSecondarySourceFreshness[] | undefined {
+    return sources?.map((source) => ({
+      ...source,
+      refreshedAt: source.refreshedAt?.toISOString() ?? null,
+    }));
+  }
+
   async function tryStart(
     userId: string,
     localDate: string,
@@ -80,6 +90,13 @@ export function createGitHubActivityRepository<
           timeZone: journal.timeZone,
           status: journal.status,
           ...(journal.refreshedAt ? { refreshedAt: journal.refreshedAt } : {}),
+          ...(journal.sourceFreshness
+            ? {
+                sourceFreshness: serializeSourceFreshness(
+                  journal.sourceFreshness,
+                ),
+              }
+            : {}),
           updatedAt: new Date(),
         })
         .where(
@@ -137,6 +154,13 @@ export function createGitHubActivityRepository<
           timeZone: journal.timeZone,
           status: journal.status,
           ...(journal.refreshedAt ? { refreshedAt: journal.refreshedAt } : {}),
+          ...(journal.sourceFreshness
+            ? {
+                sourceFreshness: serializeSourceFreshness(
+                  journal.sourceFreshness,
+                ),
+              }
+            : {}),
           updatedAt: new Date(),
         })
         .where(
@@ -181,6 +205,10 @@ export function createGitHubActivityRepository<
       timeZone: state.timeZone,
       status: state.status,
       refreshedAt: state.refreshedAt,
+      sourceFreshness: state.sourceFreshness?.map((source) => ({
+        ...source,
+        refreshedAt: source.refreshedAt ? new Date(source.refreshedAt) : null,
+      })),
       metrics: computeActivityMetrics(activities),
       activities: activities.map((activity) => ({
         deduplicationKey: activity.deduplicationKey,

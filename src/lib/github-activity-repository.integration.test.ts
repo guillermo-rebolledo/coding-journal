@@ -66,6 +66,15 @@ describe("GitHub activity repository with Postgres", () => {
         timeZone: "America/New_York",
         status: "complete",
         refreshedAt: firstAttempt,
+        sourceFreshness: [
+          {
+            source: "gists",
+            label: "Gists",
+            status: "best-effort",
+            refreshedAt: firstAttempt,
+            detail: "Metadata-only reconciliation.",
+          },
+        ],
       },
       [record, record],
     );
@@ -96,7 +105,19 @@ describe("GitHub activity repository with Postgres", () => {
           workflows: 0,
           deployments: 0,
           packages: 0,
+          projects: 0,
+          gists: 0,
+          social: 0,
         },
+        sourceFreshness: [
+          {
+            source: "gists",
+            label: "Gists",
+            status: "best-effort",
+            refreshedAt: firstAttempt,
+            detail: "Metadata-only reconciliation.",
+          },
+        ],
         activities: [
           expect.objectContaining({
             deduplicationKey: record.deduplicationKey,

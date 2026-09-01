@@ -13,6 +13,10 @@ import {
   extractOperationsDelivery,
   isOperationsWebhookEvent,
 } from "@/lib/github-operations";
+import {
+  extractProjectsDelivery,
+  isProjectsWebhookEvent,
+} from "@/lib/github-projects";
 import { githubWebhookRepository } from "@/lib/github-webhook-repository";
 import { queuePublisher } from "@/lib/queue";
 
@@ -41,7 +45,13 @@ export async function POST(request: Request) {
   const operationsEvent = isOperationsWebhookEvent(eventType)
     ? eventType
     : null;
-  if (eventType !== "push" && !collaborationEvent && !operationsEvent) {
+  const projectsEvent = isProjectsWebhookEvent(eventType) ? eventType : null;
+  if (
+    eventType !== "push" &&
+    !collaborationEvent &&
+    !operationsEvent &&
+    !projectsEvent
+  ) {
     await githubWebhookRepository.claimDelivery({
       deliveryId,
       eventType,
@@ -58,21 +68,28 @@ export async function POST(request: Request) {
   } catch {
     payload = null;
   }
-  const extraction = operationsEvent
-    ? extractOperationsDelivery({
-        eventType: operationsEvent,
+  const extraction = projectsEvent
+    ? extractProjectsDelivery({
+        eventType: projectsEvent,
         payload,
         deliveryId,
         receivedAt,
       })
-    : collaborationEvent
-      ? extractCollaborationDelivery({
-          eventType: collaborationEvent,
+    : operationsEvent
+      ? extractOperationsDelivery({
+          eventType: operationsEvent,
           payload,
           deliveryId,
           receivedAt,
         })
-      : extractPushDelivery({ payload, deliveryId, receivedAt });
+      : collaborationEvent
+        ? extractCollaborationDelivery({
+            eventType: collaborationEvent,
+            payload,
+            deliveryId,
+            receivedAt,
+          })
+        : extractPushDelivery({ payload, deliveryId, receivedAt });
 
   if (!extraction.ok) {
     await githubWebhookRepository.claimDelivery({

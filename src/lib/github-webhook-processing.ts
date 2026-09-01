@@ -13,6 +13,10 @@ import {
   normalizePushMessage,
   parsePushDeliveryMessage,
 } from "@/lib/github-webhook";
+import {
+  normalizeProjectsMessage,
+  parseProjectsDeliveryMessage,
+} from "@/lib/github-projects";
 
 const maxDeliveryAttempts = 5;
 
@@ -35,7 +39,8 @@ export async function processWebhookDeliveryMessage(
   const message =
     parsePushDeliveryMessage(rawMessage) ??
     parseCollaborationDeliveryMessage(rawMessage) ??
-    parseOperationsDeliveryMessage(rawMessage);
+    parseOperationsDeliveryMessage(rawMessage) ??
+    parseProjectsDeliveryMessage(rawMessage);
   if (!message) {
     // A message this deployment cannot read (older or newer producer) will
     // never succeed; acknowledge it without any activity effect.
@@ -63,7 +68,9 @@ export async function processWebhookDeliveryMessage(
           ? normalizePushMessage(message, user)
           : "collaboration" in message
             ? normalizeCollaborationMessage(message, user)
-            : normalizeOperationsMessage(message, user);
+            : "operation" in message
+              ? normalizeOperationsMessage(message, user)
+              : normalizeProjectsMessage(message, user);
       if (records.length === 0) continue;
       await store.recordActivity(user.userId, records);
       recorded = true;

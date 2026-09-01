@@ -67,6 +67,7 @@ export const e2eGitHubInstallations = {
         deployments: "read",
         discussions: "read",
         metadata: "read",
+        organization_projects: "read",
         packages: "read",
       },
       status: "active",

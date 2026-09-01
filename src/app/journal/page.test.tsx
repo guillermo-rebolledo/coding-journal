@@ -119,6 +119,7 @@ describe("protected journal boundary", () => {
           return jsonResponse({ id: 7, login: "ada" });
         }
         if (url.includes("/users/ada/events")) return jsonResponse([]);
+        if (url.includes("/gists/starred")) return jsonResponse([]);
         if (url.includes("/gists?")) return jsonResponse([]);
         if (url.includes("/user/installations/")) {
           return jsonResponse({ total_count: 0, repositories: [] });
@@ -519,6 +520,7 @@ describe("protected journal boundary", () => {
             },
           ]);
         }
+        if (url.includes("/gists/starred")) return jsonResponse([]);
         if (url.includes("/gists?")) return jsonResponse([]);
         if (
           url.includes("/repos/acme/private-engine/compare/1111111...abcdef1")
@@ -660,6 +662,7 @@ describe("protected journal boundary", () => {
             },
           ]);
         }
+        if (url.includes("/gists/starred")) return jsonResponse([]);
         if (url.includes("/gists?")) return jsonResponse([]);
         throw new Error(`Unexpected fixture request: ${url}`);
       },
@@ -978,6 +981,19 @@ describe("protected journal boundary", () => {
         occurredAt: new Date("2026-08-31T11:20:00Z"),
         narrativeEligible: false,
       },
+      {
+        ...common,
+        kind: "gist-starred",
+        deduplicationKey: "github:gist-starred:gist-2",
+        repositoryId: "gists:7",
+        repositoryName: "ada/Gists",
+        evidenceUrl: "https://gist.github.com/grace/gist-2",
+        source: "github-gists",
+        subjectId: "gist-2",
+        subjectTitle: "Useful snippet",
+        occurredAt: new Date("2026-08-31T11:30:00Z"),
+        narrativeEligible: false,
+      },
     ];
     storedActivities = new Map(
       activities.map((activity) => [activity.deduplicationKey, activity]),
@@ -989,10 +1005,14 @@ describe("protected journal boundary", () => {
     );
 
     expect(screen.getByText("1 project update")).toBeInTheDocument();
-    expect(screen.getByText("1 Gist update")).toBeInTheDocument();
+    expect(screen.getByText("2 Gist updates")).toBeInTheDocument();
     expect(screen.getByText("1 social action")).toBeInTheDocument();
     expect(screen.getByText("Updated project #12")).toBeInTheDocument();
     expect(screen.getByText("Created Gist")).toBeInTheDocument();
+    expect(screen.getByText("Observed starred Gist")).toBeInTheDocument();
+    expect(
+      screen.getByText("First observed · best-effort"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Starred repository")).toBeInTheDocument();
     expect(screen.getByText("Preview · best-effort")).toBeInTheDocument();
     expect(
@@ -1001,7 +1021,7 @@ describe("protected journal boundary", () => {
     expect(
       screen.getByText("Delayed source · best-effort"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Excluded from narrative")).toBeInTheDocument();
+    expect(screen.getAllByText("Excluded from narrative")).toHaveLength(2);
     expect(
       screen.getByRole("heading", { name: "Secondary source coverage" }),
     ).toBeInTheDocument();

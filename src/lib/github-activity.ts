@@ -49,7 +49,7 @@ export const projectKinds = [
   "project-item-archived",
   "project-item-converted",
   "project-item-edited",
-  "project-item-redacted",
+  "project-item-deleted",
   "project-item-reordered",
   "project-item-restored",
 ] as const;

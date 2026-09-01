@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   normalizeGistActivity,
+  normalizeGistStarActivity,
   normalizeSocialEvent,
   secondarySourceFreshness,
 } from "@/lib/github-secondary";
@@ -75,6 +76,33 @@ describe("GitHub secondary reconciliation contracts", () => {
     expect(JSON.stringify(records)).not.toContain("DO-NOT-STORE");
     expect(JSON.stringify(records)).not.toContain("PRIVATE COMMENT");
     expect(JSON.stringify(records)).not.toContain("gistusercontent");
+  });
+
+  it("records currently starred Gists as first-observed metadata without file contents", () => {
+    const record = normalizeGistStarActivity({
+      gist: {
+        id: "starred-gist-1",
+        html_url: "https://gist.github.com/grace/starred-gist-1",
+        public: true,
+        description: "Useful snippet",
+        owner: { id: 8, login: "grace" },
+        files: { "private.ts": { content: "DO-NOT-STORE" } },
+      },
+      actor,
+      window,
+      observedAt: now,
+    });
+
+    expect(record).toEqual(
+      expect.objectContaining({
+        kind: "gist-starred",
+        subjectId: "starred-gist-1",
+        evidenceUrl: "https://gist.github.com/grace/starred-gist-1",
+        occurredAt: now,
+        narrativeEligible: false,
+      }),
+    );
+    expect(JSON.stringify(record)).not.toContain("DO-NOT-STORE");
   });
 
   it("normalizes only exposed star and fork events as narrative-excluded social activity", () => {

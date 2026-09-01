@@ -338,7 +338,33 @@ const metricCards: Array<{
     detail: "Comments on issues, pull requests, and diffs",
     icon: MessageSquare,
   },
+  {
+    key: "workflows",
+    singular: "workflow run",
+    detail: "Manual dispatches, reruns, and approved runs",
+    icon: CircleCheck,
+  },
+  {
+    key: "deployments",
+    singular: "deployment",
+    detail: "Only outcomes linked to your activity",
+    icon: Rocket,
+  },
+  {
+    key: "packages",
+    singular: "package update",
+    detail: "Publications and updates count toward your journal",
+    icon: Upload,
+  },
 ];
+
+const activityStatusLabels = {
+  pending: "In progress",
+  approved: "Approved",
+  success: "Succeeded",
+  failure: "Failed",
+  cancelled: "Cancelled",
+} as const;
 
 const activityPresentation: Record<
   ActivityRecord["kind"],
@@ -446,6 +472,36 @@ const activityPresentation: Record<
     label: "Commented on a diff",
     evidenceNoun: "comment",
     icon: MessagesSquare,
+  },
+  "workflow-run": {
+    label: "Ran workflow",
+    evidenceNoun: "workflow run",
+    icon: CircleCheck,
+  },
+  deployment: {
+    label: "Deployment",
+    evidenceNoun: "deployment",
+    icon: Rocket,
+  },
+  "package-published": {
+    label: "Published package",
+    evidenceNoun: "package",
+    icon: Upload,
+  },
+  "package-updated": {
+    label: "Updated package",
+    evidenceNoun: "package",
+    icon: Upload,
+  },
+  "package-deleted": {
+    label: "Deleted package",
+    evidenceNoun: "package",
+    icon: RotateCcw,
+  },
+  "package-restored": {
+    label: "Restored package",
+    evidenceNoun: "package",
+    icon: RotateCcw,
   },
 };
 
@@ -611,6 +667,16 @@ function JournalActivity({
                         {activity.authoredBeforeDay ? (
                           <span className="rounded-m3-full bg-m3-warning-container px-2.5 py-1 text-m3-label-sm text-m3-on-warning-container">
                             Authored before today
+                          </span>
+                        ) : null}
+                        {activity.status ? (
+                          <span className="bg-secondary-container rounded-m3-full px-2.5 py-1 text-m3-label-sm text-secondary-foreground">
+                            {activityStatusLabels[activity.status]}
+                          </span>
+                        ) : null}
+                        {activity.narrativeEligible === false ? (
+                          <span className="rounded-m3-full bg-m3-warning-container px-2.5 py-1 text-m3-label-sm text-m3-on-warning-container">
+                            Excluded from narrative
                           </span>
                         ) : null}
                       </div>

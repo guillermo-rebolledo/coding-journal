@@ -332,12 +332,55 @@ describe("GitHub webhook endpoint", () => {
     expect(queueBoundary.publish).not.toHaveBeenCalled();
   });
 
+  it("enqueues a verified manual workflow run with bounded fields", async () => {
+    const body = JSON.stringify({
+      action: "completed",
+      repository: {
+        id: 42,
+        full_name: "acme/private-engine",
+        private: true,
+      },
+      sender: { id: 7, login: "ada", type: "User" },
+      installation: { id: 99 },
+      workflow_run: {
+        id: 501,
+        run_attempt: 1,
+        name: "Deploy production",
+        event: "workflow_dispatch",
+        conclusion: "success",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        triggering_actor: { id: 7, login: "ada", type: "User" },
+        logs_url: "https://api.github.com/private-logs",
+      },
+    });
+
+    const response = await POST(
+      webhookRequest({ body, event: "workflow_run" }),
+    );
+
+    expect(response.status).toBe(202);
+    expect(queueBoundary.publish).toHaveBeenCalledWith(
+      "github-webhook-deliveries",
+      expect.objectContaining({
+        operation: expect.objectContaining({
+          kind: "workflow-run",
+          status: "success",
+        }),
+      }),
+      "d0b74ba1-575e-4a52-9c1c-b8f2f4b0a111",
+    );
+    expect(
+      JSON.stringify(queueBoundary.publish.mock.calls[0]?.[1]),
+    ).not.toContain("private-logs");
+  });
+
   it("records unsupported events as ignored without enqueueing them", async () => {
-    const response = await POST(webhookRequest({ event: "workflow_run" }));
+    const response = await POST(webhookRequest({ event: "status" }));
 
     expect(response.status).toBe(200);
     expect(neonBoundary.claimDelivery).toHaveBeenCalledWith(
-      expect.objectContaining({ eventType: "workflow_run", status: "ignored" }),
+      expect.objectContaining({ eventType: "status", status: "ignored" }),
     );
     expect(queueBoundary.publish).not.toHaveBeenCalled();
   });

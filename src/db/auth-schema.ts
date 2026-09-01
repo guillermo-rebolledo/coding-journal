@@ -1,4 +1,4 @@
-import type { ActivityKind } from "../lib/github-activity";
+import type { ActivityKind, ActivityStatus } from "../lib/github-activity";
 import { relations } from "drizzle-orm";
 import {
   boolean,
@@ -247,6 +247,11 @@ export const githubActivity = pgTable(
     observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
     authoredBeforeDay: boolean("authored_before_day").default(false).notNull(),
     installationId: text("installation_id"),
+    status: text("status").$type<ActivityStatus>(),
+    statusOccurredAt: timestamp("status_occurred_at", { withTimezone: true }),
+    narrativeEligible: boolean("narrative_eligible").default(true).notNull(),
+    attributionKeys: jsonb("attribution_keys").$type<string[]>(),
+    attributed: boolean("attributed").default(true).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -257,6 +262,10 @@ export const githubActivity = pgTable(
       table.deduplicationKey,
     ),
     index("github_activity_user_date_idx").on(table.userId, table.localDate),
+    index("github_activity_user_attributed_idx").on(
+      table.userId,
+      table.attributed,
+    ),
   ],
 );
 

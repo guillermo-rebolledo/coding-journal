@@ -135,6 +135,7 @@ describe("GitHub collaboration delivery extraction", () => {
       title: "Version 2",
       evidenceUrl: "https://github.com/acme/private-engine/releases/tag/v2.0.0",
       occurredAt: "2026-03-08T14:20:00.000Z",
+      attributionKeys: ["github:ref:42:v2.0.0"],
     });
 
     const updated = extractedMessage("release", {
@@ -392,6 +393,7 @@ describe("GitHub collaboration delivery extraction", () => {
           number: 52,
           title: "Track issue and pull-request collaboration",
           merged: true,
+          merge_commit_sha: "abcdef1234567",
           created_at: "2026-03-08T14:00:00Z",
           closed_at: "2026-03-08T14:40:00Z",
           merged_at: "2026-03-08T14:40:00Z",
@@ -403,6 +405,7 @@ describe("GitHub collaboration delivery extraction", () => {
       kind: "pull-request-merged",
       deduplicationKey: "github:pull-request-merged:42:52",
       occurredAt: "2026-03-08T14:40:00.000Z",
+      attributionKeys: ["github:commit:42:abcdef1234567"],
     });
 
     const closed = extractedMessage(

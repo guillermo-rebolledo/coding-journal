@@ -1,6 +1,7 @@
 import {
   collaborationKinds,
   validRepositoryName,
+  validSha,
   type ActivityRecord,
   type CollaborationKind,
 } from "@/lib/github-activity";
@@ -66,6 +67,7 @@ export type CollaborationSubject = {
   title: string | null;
   evidenceUrl: string;
   occurredAt: Date;
+  attributionKeys?: string[];
 };
 
 export type CollaborationDerivation =
@@ -108,6 +110,7 @@ type CollaborationPayload = {
     merged_at?: unknown;
     updated_at?: unknown;
     merged?: unknown;
+    merge_commit_sha?: unknown;
   } | null;
   comment?: { id?: unknown; created_at?: unknown } | null;
   review?: {
@@ -239,6 +242,9 @@ export function deriveCollaborationSubject(
         title: boundSubjectTitle(release.name) ?? boundSubjectTitle(tag),
         evidenceUrl: `https://github.com/${repository.name}/releases/tag/${encodeURIComponent(tag)}`,
         occurredAt,
+        attributionKeys: [
+          `github:ref:${repository.id}:${encodeURIComponent(tag)}`,
+        ],
       },
     };
   }
@@ -436,6 +442,14 @@ export function deriveCollaborationSubject(
         title: boundSubjectTitle(pullRequest?.title),
         evidenceUrl: `https://github.com/${repository.name}/pull/${number}`,
         occurredAt,
+        ...(kind === "pull-request-merged" &&
+        validSha(pullRequest?.merge_commit_sha)
+          ? {
+              attributionKeys: [
+                `github:commit:${repository.id}:${pullRequest.merge_commit_sha}`,
+              ],
+            }
+          : {}),
       },
     };
   }
@@ -521,6 +535,7 @@ export type CollaborationDeliveryMessage = {
       title: string | null;
       evidenceUrl: string;
       occurredAt: string;
+      attributionKeys?: string[];
     };
   };
 };
@@ -614,6 +629,7 @@ export function extractCollaborationDelivery({
           title: subject.title,
           evidenceUrl: subject.evidenceUrl,
           occurredAt: subject.occurredAt.toISOString(),
+          attributionKeys: subject.attributionKeys,
         },
       },
     },
@@ -658,7 +674,14 @@ export function parseCollaborationDeliveryMessage(
     typeof subject.evidenceUrl !== "string" ||
     subject.evidenceUrl.length > 2048 ||
     !subject.evidenceUrl.startsWith("https://github.com/") ||
-    !parseDate(subject.occurredAt)
+    !parseDate(subject.occurredAt) ||
+    (subject.attributionKeys !== undefined &&
+      (!Array.isArray(subject.attributionKeys) ||
+        subject.attributionKeys.length === 0 ||
+        subject.attributionKeys.length > 4 ||
+        subject.attributionKeys.some(
+          (key) => typeof key !== "string" || key.length > 1024,
+        )))
   ) {
     return null;
   }
@@ -695,6 +718,7 @@ export function normalizeCollaborationMessage(
       observedAt: new Date(message.receivedAt),
       authoredBeforeDay: false,
       installationId: message.installationId,
+      attributionKeys: subject.attributionKeys,
     },
   ];
 }

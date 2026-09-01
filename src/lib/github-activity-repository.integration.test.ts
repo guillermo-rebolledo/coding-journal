@@ -93,6 +93,9 @@ describe("GitHub activity repository with Postgres", () => {
           reviews: 0,
           merges: 0,
           comments: 0,
+          workflows: 0,
+          deployments: 0,
+          packages: 0,
         },
         activities: [
           expect.objectContaining({

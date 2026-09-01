@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 
 import { BrandMark } from "@/components/brand-mark";
 import { GitHubAccessOverview } from "@/components/github-access-overview";
+import { PalettePicker } from "@/components/palette-picker";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeMenu } from "@/components/theme-menu";
 import { buttonVariants } from "@/components/ui/button-variants";
@@ -97,6 +98,20 @@ export default async function SettingsPage() {
             signed-in server boundary and are excluded from telemetry.
           </p>
         </aside>
+
+        <section aria-labelledby="appearance-heading" className="mt-14">
+          <p className="text-m3-label-lg-emphasized text-primary">APPEARANCE</p>
+          <h2 id="appearance-heading" className="mt-3 text-m3-headline-lg">
+            Theme
+          </h2>
+          <p className="mt-4 max-w-2xl text-m3-body-lg text-muted-foreground">
+            Pick the palette every screen uses, in both light and dark mode. The
+            choice applies to this browser right away.
+          </p>
+          <div className="mt-7">
+            <PalettePicker />
+          </div>
+        </section>
       </main>
     </div>
   );

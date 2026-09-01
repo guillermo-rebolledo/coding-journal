@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { and, asc, eq, lte } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { db } from "@/db";
@@ -13,7 +14,12 @@ import type {
 
 export function createGitHubActivityRepository<
   TQueryResult extends PgQueryResultHKT,
->(database: PgDatabase<TQueryResult, typeof import("@/db/auth-schema")>) {
+>(
+  database: PgDatabase<TQueryResult, typeof import("@/db/auth-schema")>,
+  runAtomicBatch?: (
+    queries: readonly [BatchItem<"pg">, ...BatchItem<"pg">[]],
+  ) => Promise<unknown>,
+) {
   async function tryStart(
     userId: string,
     localDate: string,
@@ -66,6 +72,46 @@ export function createGitHubActivityRepository<
       ).values(),
     ];
 
+    if (runAtomicBatch) {
+      const reconciliationQuery = database
+        .update(journalReconciliation)
+        .set({
+          timeZone: journal.timeZone,
+          status: journal.status,
+          ...(journal.refreshedAt ? { refreshedAt: journal.refreshedAt } : {}),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(journalReconciliation.userId, userId),
+            eq(journalReconciliation.localDate, journal.localDate),
+          ),
+        );
+
+      if (uniqueRecords.length > 0) {
+        const activityQuery = database
+          .insert(githubActivity)
+          .values(
+            uniqueRecords.map((record) => ({
+              id: randomUUID(),
+              userId,
+              ...record,
+            })),
+          )
+          .onConflictDoUpdate({
+            target: [githubActivity.userId, githubActivity.deduplicationKey],
+            set: {
+              observedAt: journal.refreshedAt ?? new Date(),
+            },
+          });
+
+        await runAtomicBatch([activityQuery, reconciliationQuery]);
+      } else {
+        await runAtomicBatch([reconciliationQuery]);
+      }
+      return;
+    }
+
     await database.transaction(async (transaction) => {
       if (uniqueRecords.length > 0) {
         await transaction
@@ -84,7 +130,6 @@ export function createGitHubActivityRepository<
             },
           });
       }
-
       await transaction
         .update(journalReconciliation)
         .set({
@@ -163,4 +208,7 @@ export function createGitHubActivityRepository<
   return { tryStart, finish, read } satisfies ReconciliationStore;
 }
 
-export const githubActivityRepository = createGitHubActivityRepository(db);
+export const githubActivityRepository = createGitHubActivityRepository(
+  db,
+  (queries) => db.batch(queries),
+);

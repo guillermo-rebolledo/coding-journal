@@ -13,7 +13,7 @@ export type ActivityRecord = {
   repositoryName: string;
   evidenceUrl: string;
   visibility: "public" | "private";
-  source: "github-events" | "github-repository-commits";
+  source: "github-events" | "github-repository-commits" | "github-webhook";
   subjectId: string;
   occurredAt: Date;
   observedAt: Date;
@@ -75,6 +75,18 @@ function firstInstantOnOrAfter(localDate: string, timeZone: string) {
   return new Date(low);
 }
 
+export function pushDeduplicationKey(
+  repositoryId: string,
+  before: string,
+  head: string,
+) {
+  return `github:push:${repositoryId}:${before}:${head}`;
+}
+
+export function commitDeduplicationKey(repositoryId: string, sha: string) {
+  return `github:commit:${repositoryId}:${sha}`;
+}
+
 export function getLocalDayWindow(now: Date, timeZone: string): LocalDayWindow {
   const localDate = getLocalDate(now, timeZone).iso;
 
@@ -126,20 +138,20 @@ function githubHeaders(accessToken: string) {
   };
 }
 
-function parseDate(value: unknown) {
+export function parseDate(value: unknown) {
   if (typeof value !== "string") return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function validRepositoryName(value: unknown): value is string {
+export function validRepositoryName(value: unknown): value is string {
   return (
     typeof value === "string" &&
     /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value)
   );
 }
 
-function validSha(value: unknown): value is string {
+export function validSha(value: unknown): value is string {
   return typeof value === "string" && /^[a-fA-F0-9]{7,64}$/.test(value);
 }
 
@@ -157,7 +169,11 @@ async function fetchJson(
   return response.json() as Promise<unknown>;
 }
 
-function pushEvidenceUrl(repositoryName: string, before: string, head: string) {
+export function pushEvidenceUrl(
+  repositoryName: string,
+  before: string,
+  head: string,
+) {
   return before && !/^0+$/.test(before)
     ? `https://github.com/${repositoryName}/compare/${before}...${head}`
     : `https://github.com/${repositoryName}/commit/${head}`;
@@ -264,7 +280,13 @@ export async function reconcileGitHubActivity({
         }
 
         const visibility = rawEvent.public ? "public" : "private";
-        const pushKey = `github:push:${rawEvent.id}`;
+        // Keyed on content, not the events API id, so webhook-ingested copies
+        // of the same push collapse into one canonical record.
+        const pushKey = pushDeduplicationKey(
+          String(rawEvent.repo.id),
+          payload.before,
+          payload.head,
+        );
         if (records.has(pushKey)) continue;
         records.set(pushKey, {
           deduplicationKey: pushKey,
@@ -352,7 +374,10 @@ export async function reconcileGitHubActivity({
             ) {
               continue;
             }
-            const commitKey = `github:commit:${rawEvent.repo.id}:${commit.sha}`;
+            const commitKey = commitDeduplicationKey(
+              String(rawEvent.repo.id),
+              commit.sha,
+            );
             if (records.has(commitKey)) continue;
             records.set(commitKey, {
               deduplicationKey: commitKey,
@@ -453,7 +478,10 @@ export async function reconcileGitHubActivity({
                 ) {
                   continue;
                 }
-                const commitKey = `github:commit:${repository.id}:${commit.sha}`;
+                const commitKey = commitDeduplicationKey(
+                  String(repository.id),
+                  commit.sha,
+                );
                 records.set(commitKey, {
                   deduplicationKey: commitKey,
                   localDate: window.localDate,

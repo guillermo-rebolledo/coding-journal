@@ -148,6 +148,43 @@ export const githubInstallation = pgTable(
       table.installationId,
     ),
     index("github_installation_userId_idx").on(table.userId),
+    index("github_installation_installationId_idx").on(table.installationId),
+  ],
+);
+
+export const githubWebhookDelivery = pgTable(
+  "github_webhook_delivery",
+  {
+    id: text("id").primaryKey(),
+    deliveryId: text("delivery_id").notNull(),
+    eventType: text("event_type").notNull(),
+    installationId: text("installation_id"),
+    status: text("status")
+      .$type<
+        | "received"
+        | "ignored"
+        | "enqueued"
+        | "enqueue-failed"
+        | "processed"
+        | "skipped"
+        | "failed"
+        | "poisoned"
+      >()
+      .notNull(),
+    errorId: text("error_id"),
+    attemptCount: integer("attempt_count").default(0).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("github_webhook_delivery_deliveryId_uidx").on(table.deliveryId),
   ],
 );
 
@@ -200,7 +237,7 @@ export const githubActivity = pgTable(
     evidenceUrl: text("evidence_url").notNull(),
     visibility: text("visibility").$type<"public" | "private">().notNull(),
     source: text("source")
-      .$type<"github-events" | "github-repository-commits">()
+      .$type<"github-events" | "github-repository-commits" | "github-webhook">()
       .notNull(),
     subjectId: text("subject_id").notNull(),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),

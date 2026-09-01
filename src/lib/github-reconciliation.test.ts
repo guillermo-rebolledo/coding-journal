@@ -498,6 +498,9 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
       const url = String(input);
       if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
       if (url.includes("/users/ada/events")) return jsonResponse(events);
+      if (url.includes("/user/installations/99/repositories")) {
+        return jsonResponse({ total_count: 0, repositories: [] });
+      }
       throw new Error(`Unexpected fixture request: ${url}`);
     });
 
@@ -632,7 +635,7 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
       userId: "user-app",
       timeZone: "America/New_York",
       accessMode: "app",
-      installationIds: [],
+      installationIds: ["99"],
       accessToken: "fixture-token",
       now: window.now,
       fetchImplementation: fetchFixture as typeof fetch,

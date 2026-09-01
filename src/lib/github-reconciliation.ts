@@ -273,6 +273,7 @@ export async function reconcileGitHubActivity({
           // collapsing a create-delete-recreate cycle.
           if (
             accessMode === "app" &&
+            installationIds.length > 0 &&
             (collaborationEvent === "create" || collaborationEvent === "delete")
           ) {
             continue;

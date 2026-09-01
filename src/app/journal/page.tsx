@@ -41,7 +41,7 @@ import {
   getGitHubInstallations,
   type StoredGitHubInstallation,
 } from "@/lib/github-installation";
-import { getGitHubInstallationCompleteness } from "@/lib/github-completeness";
+import { getGitHubJournalCompleteness } from "@/lib/github-completeness";
 import { getJournalOnboarding } from "@/lib/journal";
 import type { ActivityRecord } from "@/lib/github-activity";
 import type { TodayJournal } from "@/lib/github-reconciliation";
@@ -215,33 +215,15 @@ function Today({
     }).format(new Date(`${journal.localDate}T00:00:00Z`)),
   };
   const firstName = name.trim().split(/\s+/)[0] || "there";
-  const activeInstallation = installations.find(
-    (installation) => installation.status === "active",
-  );
   const disconnected = installations.some(
     (installation) => installation.status === "disconnected",
   );
   const pending = installations.some(
     (installation) => installation.status === "pending",
   );
-  const activeCompleteness = activeInstallation
-    ? getGitHubInstallationCompleteness(activeInstallation)
-    : null;
+  const activeCompleteness = getGitHubJournalCompleteness(installations);
   const completeness = activeCompleteness
-    ? activeCompleteness.kind === "partial"
-      ? {
-          label: activeCompleteness.label,
-          detail: `${activeCompleteness.repositoryCount} selected repositories${activeCompleteness.discussionAccess ? "" : " · Discussions unavailable"}`,
-        }
-      : activeCompleteness.kind === "limited"
-        ? {
-            label: activeCompleteness.label,
-            detail: "All granted repositories · Discussions unavailable",
-          }
-        : {
-            label: activeCompleteness.label,
-            detail: "All granted repositories",
-          }
+    ? activeCompleteness
     : pending
       ? { label: "Pending approval", detail: "Organization access not granted" }
       : disconnected
@@ -311,7 +293,7 @@ const metricCards: Array<{
   {
     key: "refs",
     singular: "ref change",
-    detail: "Branches and tags you created or deleted",
+    detail: "Events feed in best-effort; webhooks with App access",
     icon: GitBranch,
   },
   {

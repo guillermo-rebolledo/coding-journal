@@ -49,6 +49,13 @@ access. Enable expiring user access tokens in the GitHub App: Better Auth keeps
 the user and refresh tokens encrypted at rest and refreshes them only on the
 server. Coding Journal does not persist GitHub installation access tokens.
 
+Ref lifecycle coverage is source-specific: best-effort journals use GitHub's
+Events feed, while journals with an active App installation use signed create
+and delete webhooks. GitHub does not include an action timestamp or shared event
+identifier in those webhook payloads, so Coding Journal intentionally avoids
+overlapping the two sources for refs. Release publication and Discussion
+creation retain content-derived identities and deduplicate across both sources.
+
 The email permission lets Better Auth retrieve verified private addresses. If GitHub still omits an address, Coding Journal creates a non-routable `.invalid` identity; no password or deliverable fallback mailbox is required.
 
 ## Commands

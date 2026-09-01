@@ -3,11 +3,11 @@ import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button-variants";
 import { getGitHubInstallationCompleteness } from "@/lib/github-completeness";
-import type { StoredGitHubInstallation } from "@/lib/github-installation";
+import type { GitHubConnectionView } from "@/lib/github-completeness";
 import type { GitHubAccessMode } from "@/lib/journal";
 import { cn } from "@/lib/utils";
 
-function getInstallationStatus(installation: StoredGitHubInstallation) {
+function getInstallationStatus(installation: GitHubConnectionView) {
   const completeness = getGitHubInstallationCompleteness(installation);
   if (completeness.kind === "pending") {
     return {
@@ -24,6 +24,15 @@ function getInstallationStatus(installation: StoredGitHubInstallation) {
       label: completeness.label,
       detail:
         "GitHub no longer reports this installation as available. Reinstall or review access on GitHub.",
+    };
+  }
+
+  if (completeness.kind === "unavailable") {
+    return {
+      icon: AlertTriangle,
+      label: completeness.label,
+      detail:
+        "GitHub could not be reached just now. This is your last known access; try refreshing later.",
     };
   }
 
@@ -49,7 +58,7 @@ export function GitHubAccessOverview({
   installations,
 }: {
   accessMode: GitHubAccessMode | null;
-  installations: StoredGitHubInstallation[];
+  installations: GitHubConnectionView[];
 }) {
   return (
     <div className="grid gap-4">

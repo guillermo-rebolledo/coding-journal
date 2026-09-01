@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import { journalOnboarding } from "@/db/auth-schema";
+import { getE2EAccessMode } from "@/lib/e2e-fixtures";
 import type { IanaTimeZone } from "@/lib/time-zone";
 
 export type GitHubAccessMode = "best-effort" | "app";
@@ -26,10 +27,7 @@ export async function getJournalOnboarding(
   ) {
     return {
       timeZone: "America/Mexico_City",
-      githubAccessMode:
-        userId === "e2e-user" || userId === "e2e-pending"
-          ? "best-effort"
-          : "app",
+      githubAccessMode: getE2EAccessMode(userId),
     };
   }
 

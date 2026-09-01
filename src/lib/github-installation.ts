@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import type { GitHubInstallationDetails } from "@/lib/github-app";
+import { e2eGitHubInstallations } from "@/lib/e2e-fixtures";
 import {
   consumeInstallationState,
   deletePendingInstallation,
@@ -88,54 +89,10 @@ export async function getGitHubInstallations(
     process.env.E2E_AUTH_MODE === "true" &&
     userId.startsWith("e2e-")
   ) {
-    const fixtureByUser: Record<string, StoredGitHubInstallation[]> = {
-      "e2e-all": [
-        {
-          installationId: "10",
-          accountId: "20",
-          accountLogin: "ada",
-          accountType: "User",
-          repositorySelection: "all",
-          repositoryCount: 8,
-          status: "active",
-        },
-      ],
-      "e2e-partial": [
-        {
-          installationId: "42",
-          accountId: "84",
-          accountLogin: "example-org",
-          accountType: "Organization",
-          repositorySelection: "selected",
-          repositoryCount: 3,
-          status: "active",
-        },
-      ],
-      "e2e-pending": [
-        {
-          installationId: null,
-          accountId: "84",
-          accountLogin: null,
-          accountType: "Organization",
-          repositorySelection: null,
-          repositoryCount: null,
-          status: "pending",
-        },
-      ],
-      "e2e-disconnected": [
-        {
-          installationId: "11",
-          accountId: "22",
-          accountLogin: "old-org",
-          accountType: "Organization",
-          repositorySelection: "selected",
-          repositoryCount: 2,
-          status: "disconnected",
-        },
-      ],
-    };
-
-    return fixtureByUser[userId] ?? [];
+    return (
+      e2eGitHubInstallations[userId as keyof typeof e2eGitHubInstallations] ??
+      []
+    ).map((installation) => ({ ...installation }));
   }
 
   return findInstallations(userId);

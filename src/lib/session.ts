@@ -1,24 +1,5 @@
 import { auth } from "@/lib/auth";
-
-const E2E_SESSION_COOKIE = "coding-journal-e2e-session";
-const e2eSessionModes = new Set([
-  "valid",
-  "all",
-  "partial",
-  "pending",
-  "disconnected",
-]);
-
-function getE2ESessionMode(requestHeaders: Headers) {
-  const value = requestHeaders
-    .get("cookie")
-    ?.split(";")
-    .map((cookie) => cookie.trim())
-    .find((cookie) => cookie.startsWith(`${E2E_SESSION_COOKIE}=`))
-    ?.slice(E2E_SESSION_COOKIE.length + 1);
-
-  return value && e2eSessionModes.has(value) ? value : null;
-}
+import { getE2ESessionMode, getE2EUserId } from "@/lib/e2e-fixtures";
 
 export async function getJournalSession(requestHeaders: Headers) {
   const e2eMode = getE2ESessionMode(requestHeaders);
@@ -29,11 +10,12 @@ export async function getJournalSession(requestHeaders: Headers) {
   ) {
     const now = new Date("2026-08-31T12:00:00.000Z");
 
+    const userId = getE2EUserId(e2eMode);
     return {
       session: {
         id: "e2e-session",
         token: "e2e-token",
-        userId: e2eMode === "valid" ? "e2e-user" : `e2e-${e2eMode}`,
+        userId,
         expiresAt: new Date("2026-09-30T12:00:00.000Z"),
         createdAt: now,
         updatedAt: now,
@@ -41,7 +23,7 @@ export async function getJournalSession(requestHeaders: Headers) {
         userAgent: null,
       },
       user: {
-        id: e2eMode === "valid" ? "e2e-user" : `e2e-${e2eMode}`,
+        id: userId,
         name: "Ada Lovelace",
         email: "ada@example.com",
         emailVerified: true,

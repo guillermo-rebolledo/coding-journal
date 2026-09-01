@@ -6,12 +6,13 @@ import {
   type StoredGitHubInstallation,
 } from "@/lib/github-installation";
 import { getGitHubUserAccessToken } from "@/lib/github-user-token";
+import type { GitHubConnectionView } from "@/lib/github-completeness";
 
-function displayAsDisconnected(
+function displayAsUnavailable(
   installation: StoredGitHubInstallation,
-): StoredGitHubInstallation {
+): GitHubConnectionView {
   return installation.status === "active"
-    ? { ...installation, status: "disconnected" }
+    ? { ...installation, status: "unavailable" }
     : installation;
 }
 
@@ -37,9 +38,11 @@ export async function refreshGitHubConnections(
   try {
     accessToken = await getGitHubUserAccessToken(requestHeaders, userId);
   } catch {
-    return stored.map(displayAsDisconnected);
+    return stored.map(displayAsUnavailable);
   }
-  if (!accessToken) return stored.map(displayAsDisconnected);
+  if (!accessToken) return stored.map(displayAsUnavailable);
+
+  const unavailableInstallationIds = new Set<string>();
 
   for (const installation of active) {
     try {
@@ -56,9 +59,15 @@ export async function refreshGitHubConnections(
         );
       }
     } catch {
-      return stored.map(displayAsDisconnected);
+      unavailableInstallationIds.add(installation.installationId!);
     }
   }
 
-  return getGitHubInstallations(userId);
+  const refreshed = await getGitHubInstallations(userId);
+  return refreshed.map((installation) =>
+    installation.installationId &&
+    unavailableInstallationIds.has(installation.installationId)
+      ? displayAsUnavailable(installation)
+      : installation,
+  );
 }

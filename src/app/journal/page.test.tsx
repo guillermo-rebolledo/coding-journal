@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -6,6 +12,7 @@ import {
   type ActivityRecord,
   type TodayJournal,
 } from "@/lib/github-reconciliation";
+import { JournalNotFoundError } from "@/lib/journal-errors";
 
 const authBoundary = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -83,6 +90,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import JournalPage from "@/app/journal/page";
+import { refreshTodayJournal } from "@/app/journal/actions";
 import { ThemeProvider } from "@/components/theme-provider";
 
 let storedJournal: Omit<TodayJournal, "activities" | "metrics"> | null;
@@ -149,7 +157,7 @@ describe("protected journal boundary", () => {
     activityRepositoryBoundary.read.mockReset();
     activityRepositoryBoundary.read.mockImplementation(
       async (_userId: string, localDate: string): Promise<TodayJournal> => {
-        if (!storedJournal) throw new Error("Reconciliation was not finished");
+        if (!storedJournal) throw new JournalNotFoundError();
         const activities = [...storedActivities.values()].sort(
           (left, right) =>
             left.occurredAt.getTime() - right.occurredAt.getTime(),
@@ -543,6 +551,7 @@ describe("protected journal boundary", () => {
       },
     );
 
+    await refreshTodayJournal();
     render(
       <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
     );
@@ -670,6 +679,7 @@ describe("protected journal boundary", () => {
       },
     );
 
+    await refreshTodayJournal();
     render(
       <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
     );
@@ -1034,6 +1044,172 @@ describe("protected journal boundary", () => {
       screen.getByText("Unavailable during this refresh"),
     ).toBeInTheDocument();
     expect(screen.getByText(/delayed by up to 6 hours/)).toBeInTheDocument();
+  });
+
+  it("filters chronologically and groups repositories without losing evidence", async () => {
+    authBoundary.getSession.mockResolvedValue({
+      session: { id: "session-1", token: "server-only-token" },
+      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
+    });
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "best-effort",
+    });
+    storedJournal = {
+      localDate: "2026-08-31",
+      timeZone: "America/Mexico_City",
+      status: "complete",
+      refreshedAt: new Date("2026-08-31T12:00:00Z"),
+    };
+    const common = {
+      localDate: "2026-08-31",
+      actorId: "7",
+      actorLogin: "ada",
+      repositoryId: "42",
+      visibility: "public" as const,
+      source: "github-events" as const,
+      subjectNumber: null,
+      subjectTitle: null,
+      observedAt: new Date("2026-08-31T12:00:00Z"),
+      authoredBeforeDay: false,
+      installationId: null,
+    };
+    const activities: ActivityRecord[] = [
+      {
+        ...common,
+        kind: "push",
+        deduplicationKey: "push-1",
+        repositoryName: "acme/api",
+        subjectId: "push-1",
+        evidenceUrl: "https://github.com/acme/api/compare/1...2",
+        occurredAt: new Date("2026-08-31T11:00:00Z"),
+      },
+      {
+        ...common,
+        kind: "issue-opened",
+        deduplicationKey: "issue-1",
+        repositoryId: "43",
+        repositoryName: "acme/web",
+        subjectId: "51",
+        subjectNumber: 51,
+        evidenceUrl: "https://github.com/acme/web/issues/51",
+        occurredAt: new Date("2026-08-31T12:00:00Z"),
+      },
+    ];
+    storedActivities = new Map(
+      activities.map((activity) => [activity.deduplicationKey, activity]),
+    );
+
+    render(
+      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+    );
+
+    expect(screen.getAllByRole("listitem")[0]).toHaveTextContent(
+      "Opened issue #51",
+    );
+    fireEvent.change(screen.getByLabelText("Repository"), {
+      target: { value: "acme/api" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Group by repository" }),
+    );
+
+    const group = screen.getByRole("region", { name: "acme/api" });
+    expect(within(group).getAllByRole("listitem")).toHaveLength(1);
+    expect(
+      within(group).getByRole("link", { name: "View push evidence" }),
+    ).toHaveAttribute("href", "https://github.com/acme/api/compare/1...2");
+    expect(screen.getByLabelText("Repository")).toHaveValue("acme/api");
+  });
+
+  it("reloads stored data on polling and announces a manual cooldown", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-08-31T12:10:00Z"));
+    authBoundary.getSession.mockResolvedValue({
+      session: { id: "session-1", token: "server-only-token" },
+      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
+    });
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "best-effort",
+    });
+    storedJournal = {
+      localDate: "2026-08-31",
+      timeZone: "America/Mexico_City",
+      status: "complete",
+      refreshedAt: new Date("2026-08-31T12:00:00Z"),
+      lastAttemptAt: new Date("2026-08-31T12:00:00Z"),
+    };
+
+    render(
+      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Today" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "Stored activity reloaded. GitHub sync is cooling down.",
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(githubBoundary.fetch).not.toHaveBeenCalled();
+
+    navigation.refresh.mockClear();
+    vi.advanceTimersByTime(30 * 60 * 1000);
+    expect(navigation.refresh).toHaveBeenCalledOnce();
+    expect(githubBoundary.fetch).not.toHaveBeenCalled();
+  });
+
+  it("announces the later of rate-limit reset and reconciliation cooldown", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-08-31T12:20:00Z"));
+    authBoundary.getSession.mockResolvedValue({
+      session: { id: "session-1", token: "server-only-token" },
+      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
+    });
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "best-effort",
+    });
+    storedJournal = {
+      localDate: "2026-08-31",
+      timeZone: "America/Mexico_City",
+      status: "complete",
+      refreshedAt: new Date("2026-08-31T12:00:00Z"),
+      lastAttemptAt: new Date("2026-08-31T12:00:00Z"),
+    };
+    githubBoundary.fetch.mockImplementation(
+      async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/user")) {
+          return new Response("{}", {
+            status: 429,
+            headers: { "x-ratelimit-reset": "1788179100" },
+          });
+        }
+        if (url.includes("/gists/starred") || url.includes("/gists?")) {
+          return jsonResponse([]);
+        }
+        throw new Error(`Unexpected fixture request: ${url}`);
+      },
+    );
+
+    render(
+      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Today" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "Stored activity reloaded. GitHub rate limit reached.",
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      document.querySelector('time[datetime="2026-08-31T12:35:00.000Z"]'),
+    ).toBeInTheDocument();
   });
 
   it("keeps sign-out available after onboarding", async () => {

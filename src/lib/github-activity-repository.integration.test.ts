@@ -2,11 +2,12 @@
 
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
+import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import * as schema from "@/db/auth-schema";
-import { user } from "@/db/auth-schema";
+import { journalReconciliation, user } from "@/db/auth-schema";
 import { createGitHubActivityRepository } from "@/lib/github-activity-repository";
 import type { ActivityRecord } from "@/lib/github-reconciliation";
 
@@ -125,6 +126,14 @@ describe("GitHub activity repository with Postgres", () => {
         ],
       }),
     );
+
+    await testDatabase
+      .update(journalReconciliation)
+      .set({ updatedAt: new Date("2026-03-08T17:00:00Z") })
+      .where(eq(journalReconciliation.userId, "activity-user"));
+    await expect(
+      repository.read("activity-user", "2026-03-08"),
+    ).resolves.toEqual(expect.objectContaining({ storedAt: firstAttempt }));
   });
 });
 

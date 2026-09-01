@@ -12,6 +12,7 @@ import {
   type TodayJournal,
 } from "@/lib/github-reconciliation";
 import { getGitHubUserAccessToken } from "@/lib/github-user-token";
+import { JournalNotFoundError } from "@/lib/journal-errors";
 
 function e2eJournal(userId: string, timeZone: string, now: Date): TodayJournal {
   const localDate = getLocalDayWindow(now, timeZone).localDate;
@@ -68,6 +69,17 @@ function e2eJournal(userId: string, timeZone: string, now: Date): TodayJournal {
     lastAttemptAt: now,
     metrics: computeActivityMetrics(activities),
     activities,
+  };
+}
+
+function emptyStoredJournal(timeZone: string, now: Date): TodayJournal {
+  return {
+    localDate: getLocalDayWindow(now, timeZone).localDate,
+    timeZone,
+    status: "complete",
+    refreshedAt: null,
+    metrics: computeActivityMetrics([]),
+    activities: [],
   };
 }
 
@@ -167,13 +179,8 @@ export async function getStoredTodayJournal(
   try {
     return await githubActivityRepository.read(options.userId, localDate);
   } catch (error) {
-    if (
-      error instanceof Error &&
-      (error.message === "The journal reconciliation has not been started." ||
-        error.message === "Reconciliation was not finished")
-    ) {
-      return getTodayJournal(options);
-    }
+    if (error instanceof JournalNotFoundError)
+      return emptyStoredJournal(options.timeZone, options.now ?? new Date());
     throw error;
   }
 }

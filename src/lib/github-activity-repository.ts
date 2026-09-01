@@ -7,6 +7,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { githubActivity, journalReconciliation } from "@/db/auth-schema";
 import { computeActivityMetrics } from "@/lib/github-activity";
+import { JournalNotFoundError } from "@/lib/journal-errors";
 import type { StoredSecondarySourceFreshness } from "@/lib/github-secondary";
 import type {
   ActivityRecord,
@@ -184,15 +185,24 @@ export function createGitHubActivityRepository<
     ]);
 
     if (!state) {
-      throw new Error("The journal reconciliation has not been started.");
+      throw new JournalNotFoundError();
     }
+
+    const latestObservedAt = activities.reduce<Date | null>(
+      (latest, activity) =>
+        !latest || activity.observedAt > latest ? activity.observedAt : latest,
+      null,
+    );
 
     return {
       localDate,
       timeZone: state.timeZone,
       status: state.status,
       refreshedAt: state.refreshedAt,
-      storedAt: state.updatedAt,
+      storedAt:
+        latestObservedAt && latestObservedAt > state.updatedAt
+          ? latestObservedAt
+          : state.updatedAt,
       lastAttemptAt: state.lastAttemptAt,
       sourceFreshness: state.sourceFreshness?.map((source) => ({
         ...source,

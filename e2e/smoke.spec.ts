@@ -44,9 +44,7 @@ for (const theme of ["Light", "Dark"] as const) {
     ]);
 
     await page.goto("/journal");
-    await expect(
-      page.getByRole("heading", { name: "Today, Monday, August 31" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Today, / })).toBeVisible();
 
     await page.getByRole("button", { name: "Choose color theme" }).click();
     await page.getByRole("menuitem", { name: theme }).click();

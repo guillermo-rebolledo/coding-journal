@@ -551,7 +551,9 @@ describe("protected journal boundary", () => {
     expect(screen.getByText("1 commit")).toBeInTheDocument();
     expect(screen.getByText("Partial GitHub response")).toBeInTheDocument();
     expect(screen.getByText("Authored before today")).toBeInTheDocument();
-    expect(screen.getAllByText("acme/private-engine")).toHaveLength(2);
+    expect(
+      screen.getAllByText("acme/private-engine", { selector: "p" }),
+    ).toHaveLength(2);
     expect(
       screen.getByRole("link", { name: "View commit evidence" }),
     ).toHaveAttribute(

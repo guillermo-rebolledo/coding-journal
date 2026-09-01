@@ -49,6 +49,12 @@ export type TodayJournal = {
   timeZone: string;
   status: "loading" | "complete" | "partial" | "error";
   refreshedAt: Date | null;
+  /** Last persisted mutation of this day's journal. */
+  storedAt?: Date;
+  /** Last time a GitHub reconciliation claimed the cooldown window. */
+  lastAttemptAt?: Date;
+  /** Transient provider limit returned by an attempted reconciliation. */
+  rateLimitedUntil?: Date;
   metrics: ActivityMetrics;
   activities: ActivityRecord[];
   sourceFreshness?: SecondarySourceFreshness[];
@@ -84,17 +90,31 @@ export type ReconciliationDiagnostic = {
     | "repository-commits";
   errorName: string;
   errorMessage: string;
+  rateLimitResetAt?: Date;
 };
 
 export type DiagnosticReporter = (diagnostic: ReconciliationDiagnostic) => void;
 
-export function describeError(error: unknown) {
-  return error instanceof Error
-    ? { errorName: error.name, errorMessage: error.message }
-    : {
-        errorName: "UnknownError",
-        errorMessage: "A non-error value was thrown",
-      };
+export function describeError(
+  error: unknown,
+): Pick<
+  ReconciliationDiagnostic,
+  "errorName" | "errorMessage" | "rateLimitResetAt"
+> {
+  return error instanceof GitHubRequestError
+    ? {
+        errorName: error.name,
+        errorMessage: error.message,
+        ...(error.rateLimitResetAt
+          ? { rateLimitResetAt: error.rateLimitResetAt }
+          : {}),
+      }
+    : error instanceof Error
+      ? { errorName: error.name, errorMessage: error.message }
+      : {
+          errorName: "UnknownError",
+          errorMessage: "A non-error value was thrown",
+        };
 }
 
 type GitHubActor = { id?: number; login?: string };
@@ -142,11 +162,13 @@ function githubHeaders(accessToken: string) {
 
 export class GitHubRequestError extends Error {
   readonly status: number;
+  readonly rateLimitResetAt: Date | null;
 
-  constructor(status: number) {
+  constructor(status: number, rateLimitResetAt: Date | null = null) {
     super(`GitHub request failed (${status})`);
     this.name = "GitHubRequestError";
     this.status = status;
+    this.rateLimitResetAt = rateLimitResetAt;
   }
 }
 
@@ -159,7 +181,23 @@ async function fetchJson(
     headers: githubHeaders(accessToken),
     cache: "no-store",
   });
-  if (!response.ok) throw new GitHubRequestError(response.status);
+  if (!response.ok) {
+    const resetSeconds = Number(response.headers.get("x-ratelimit-reset"));
+    const retryAfterSeconds = Number(response.headers.get("retry-after"));
+    const rateLimited =
+      response.status === 429 ||
+      (response.status === 403 &&
+        (response.headers.get("x-ratelimit-remaining") === "0" ||
+          response.headers.has("retry-after")));
+    const rateLimitResetAt = rateLimited
+      ? Number.isFinite(resetSeconds) && resetSeconds > 0
+        ? new Date(resetSeconds * 1000)
+        : Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+          ? new Date(Date.now() + retryAfterSeconds * 1000)
+          : new Date(Date.now() + reconciliationCooldownMs)
+      : null;
+    throw new GitHubRequestError(response.status, rateLimitResetAt);
+  }
   return response.json() as Promise<unknown>;
 }
 

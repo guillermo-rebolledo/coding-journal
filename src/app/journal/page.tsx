@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  ArrowUpRight,
   CalendarDays,
   CircleCheck,
   CircleDashed,
@@ -10,25 +9,16 @@ import {
   FileText,
   GitCommitHorizontal,
   GitBranch,
-  GitFork,
   GitMerge,
   GitPullRequest,
-  GitPullRequestArrow,
-  GitPullRequestClosed,
-  LockKeyhole,
   LayoutDashboard,
   MessageSquare,
   MessagesSquare,
-  Eye,
-  HeartHandshake,
-  RotateCcw,
   Rocket,
   Settings,
   ShieldCheck,
   Star,
-  Tag,
   Upload,
-  UserPlus,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -38,6 +28,8 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { skipGitHubAppInstallation } from "@/app/journal/actions";
+import { JournalExplorer } from "@/app/journal/journal-explorer";
+import { JournalRefresh } from "@/app/journal/journal-refresh";
 import { TimeZoneStep } from "@/app/journal/time-zone-step";
 import { BrandMark } from "@/components/brand-mark";
 import { SignOutButton } from "@/components/sign-out-button";
@@ -50,10 +42,9 @@ import {
 } from "@/lib/github-installation";
 import { getGitHubJournalCompleteness } from "@/lib/github-completeness";
 import { getJournalOnboarding } from "@/lib/journal";
-import type { ActivityRecord } from "@/lib/github-activity";
 import type { TodayJournal } from "@/lib/github-reconciliation";
 import { getJournalSession } from "@/lib/session";
-import { getTodayJournal } from "@/lib/today-journal";
+import { getStoredTodayJournal } from "@/lib/today-journal";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Journal" };
@@ -383,285 +374,6 @@ const metricCards: Array<{
   },
 ];
 
-const activityStatusLabels = {
-  pending: "In progress",
-  approved: "Approved",
-  success: "Succeeded",
-  failure: "Failed",
-  cancelled: "Cancelled",
-} as const;
-
-function activityCoverageLabel(activity: ActivityRecord) {
-  if (activity.kind === "gist-starred") {
-    return "First observed · best-effort";
-  }
-  if (activity.source === "github-projects-preview") {
-    return "Preview · best-effort";
-  }
-  if (activity.source === "github-gists") {
-    return "Reconciliation · best-effort";
-  }
-  if (
-    activity.kind === "repository-starred" ||
-    activity.kind === "repository-watched" ||
-    activity.kind === "repository-forked" ||
-    activity.kind === "user-followed" ||
-    activity.kind === "sponsorship-created"
-  ) {
-    return "Delayed source · best-effort";
-  }
-  return null;
-}
-
-const activityPresentation: Record<
-  ActivityRecord["kind"],
-  { label: string; evidenceNoun: string; icon: LucideIcon }
-> = {
-  "branch-created": {
-    label: "Created branch",
-    evidenceNoun: "branches",
-    icon: GitBranch,
-  },
-  "branch-deleted": {
-    label: "Deleted branch",
-    evidenceNoun: "branches",
-    icon: GitBranch,
-  },
-  "tag-created": { label: "Created tag", evidenceNoun: "tags", icon: Tag },
-  "tag-deleted": { label: "Deleted tag", evidenceNoun: "tags", icon: Tag },
-  "release-published": {
-    label: "Published release",
-    evidenceNoun: "release",
-    icon: Rocket,
-  },
-  "release-updated": {
-    label: "Updated release",
-    evidenceNoun: "release",
-    icon: Rocket,
-  },
-  "discussion-created": {
-    label: "Started discussion",
-    evidenceNoun: "discussion",
-    icon: MessagesSquare,
-  },
-  "discussion-comment": {
-    label: "Commented on discussion",
-    evidenceNoun: "comment",
-    icon: MessageSquare,
-  },
-  "discussion-answered": {
-    label: "Marked discussion answer",
-    evidenceNoun: "answer",
-    icon: CircleCheck,
-  },
-  push: { label: "Push", evidenceNoun: "push", icon: Upload },
-  commit: {
-    label: "Commit",
-    evidenceNoun: "commit",
-    icon: GitCommitHorizontal,
-  },
-  "issue-opened": {
-    label: "Opened issue",
-    evidenceNoun: "issue",
-    icon: CircleDot,
-  },
-  "issue-closed": {
-    label: "Closed issue",
-    evidenceNoun: "issue",
-    icon: CircleCheck,
-  },
-  "issue-reopened": {
-    label: "Reopened issue",
-    evidenceNoun: "issue",
-    icon: RotateCcw,
-  },
-  "issue-comment": {
-    label: "Commented on issue",
-    evidenceNoun: "comment",
-    icon: MessageSquare,
-  },
-  "pull-request-opened": {
-    label: "Opened pull request",
-    evidenceNoun: "pull request",
-    icon: GitPullRequest,
-  },
-  "pull-request-updated": {
-    label: "Updated pull request",
-    evidenceNoun: "pull request",
-    icon: GitPullRequestArrow,
-  },
-  "pull-request-merged": {
-    label: "Merged pull request",
-    evidenceNoun: "pull request",
-    icon: GitMerge,
-  },
-  "pull-request-closed": {
-    label: "Closed pull request",
-    evidenceNoun: "pull request",
-    icon: GitPullRequestClosed,
-  },
-  "pull-request-reopened": {
-    label: "Reopened pull request",
-    evidenceNoun: "pull request",
-    icon: RotateCcw,
-  },
-  "pull-request-comment": {
-    label: "Commented on pull request",
-    evidenceNoun: "comment",
-    icon: MessageSquare,
-  },
-  "pull-request-review": {
-    label: "Reviewed pull request",
-    evidenceNoun: "review",
-    icon: FileCheck,
-  },
-  "pull-request-review-comment": {
-    label: "Commented on a diff",
-    evidenceNoun: "comment",
-    icon: MessagesSquare,
-  },
-  "workflow-run": {
-    label: "Ran workflow",
-    evidenceNoun: "workflow run",
-    icon: CircleCheck,
-  },
-  deployment: {
-    label: "Deployment",
-    evidenceNoun: "deployment",
-    icon: Rocket,
-  },
-  "package-published": {
-    label: "Published package",
-    evidenceNoun: "package",
-    icon: Upload,
-  },
-  "package-updated": {
-    label: "Updated package",
-    evidenceNoun: "package",
-    icon: Upload,
-  },
-  "package-deleted": {
-    label: "Deleted package",
-    evidenceNoun: "package",
-    icon: RotateCcw,
-  },
-  "package-restored": {
-    label: "Restored package",
-    evidenceNoun: "package",
-    icon: RotateCcw,
-  },
-  "project-created": {
-    label: "Created project",
-    evidenceNoun: "project",
-    icon: LayoutDashboard,
-  },
-  "project-updated": {
-    label: "Updated project",
-    evidenceNoun: "project",
-    icon: LayoutDashboard,
-  },
-  "project-closed": {
-    label: "Closed project",
-    evidenceNoun: "project",
-    icon: LayoutDashboard,
-  },
-  "project-reopened": {
-    label: "Reopened project",
-    evidenceNoun: "project",
-    icon: LayoutDashboard,
-  },
-  "project-deleted": {
-    label: "Deleted project",
-    evidenceNoun: "organization projects",
-    icon: LayoutDashboard,
-  },
-  "project-item-added": {
-    label: "Added project item",
-    evidenceNoun: "organization projects",
-    icon: LayoutDashboard,
-  },
-  "project-item-archived": {
-    label: "Archived project item",
-    evidenceNoun: "organization projects",
-    icon: LayoutDashboard,
-  },
-  "project-item-converted": {
-    label: "Converted project item",
-    evidenceNoun: "organization projects",
-    icon: LayoutDashboard,
-  },
-  "project-item-edited": {
-    label: "Edited project item",
-    evidenceNoun: "organization projects",
-    icon: LayoutDashboard,
-  },
-  "project-item-deleted": {
-    label: "Deleted project item",
-    evidenceNoun: "organization projects",
-    icon: LayoutDashboard,
-  },
-  "project-item-reordered": {
-    label: "Reordered project item",
-    evidenceNoun: "organization projects",
-    icon: LayoutDashboard,
-  },
-  "project-item-restored": {
-    label: "Restored project item",
-    evidenceNoun: "organization projects",
-    icon: LayoutDashboard,
-  },
-  "gist-created": {
-    label: "Created Gist",
-    evidenceNoun: "Gist",
-    icon: FileText,
-  },
-  "gist-updated": {
-    label: "Updated Gist",
-    evidenceNoun: "Gist",
-    icon: FileText,
-  },
-  "gist-comment": {
-    label: "Commented on Gist",
-    evidenceNoun: "Gist",
-    icon: MessageSquare,
-  },
-  "gist-forked": {
-    label: "Forked Gist",
-    evidenceNoun: "Gist",
-    icon: GitFork,
-  },
-  "gist-starred": {
-    label: "Observed starred Gist",
-    evidenceNoun: "Gist",
-    icon: Star,
-  },
-  "repository-starred": {
-    label: "Starred repository",
-    evidenceNoun: "repository",
-    icon: Star,
-  },
-  "repository-watched": {
-    label: "Watched repository",
-    evidenceNoun: "repository",
-    icon: Eye,
-  },
-  "repository-forked": {
-    label: "Forked repository",
-    evidenceNoun: "fork",
-    icon: GitFork,
-  },
-  "user-followed": {
-    label: "Followed user",
-    evidenceNoun: "profile",
-    icon: UserPlus,
-  },
-  "sponsorship-created": {
-    label: "Started sponsorship",
-    evidenceNoun: "sponsorship",
-    icon: HeartHandshake,
-  },
-};
-
 function JournalActivity({
   journal,
   timeZone,
@@ -675,6 +387,16 @@ function JournalActivity({
         hour: "numeric",
         minute: "2-digit",
       }).format(journal.refreshedAt)
+    : null;
+  const storedFreshness = journal.storedAt
+    ? new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(journal.storedAt)
+    : freshness;
+  const nextSyncAt = journal.lastAttemptAt
+    ? new Date(journal.lastAttemptAt.getTime() + 15 * 60 * 1000).toISOString()
     : null;
 
   return (
@@ -708,6 +430,40 @@ function JournalActivity({
           </article>
         ))}
       </div>
+
+      <section
+        aria-labelledby="journal-freshness-heading"
+        className="mt-5 grid gap-4 rounded-m3-xl bg-m3-surface-container-low p-5 sm:grid-cols-3 sm:p-6"
+      >
+        <div>
+          <h2
+            id="journal-freshness-heading"
+            className="text-m3-label-lg-emphasized"
+          >
+            Journal freshness
+          </h2>
+          <p className="mt-1 text-m3-body-sm text-muted-foreground">
+            Local day · {journal.localDate} · {timeZone}
+          </p>
+        </div>
+        <div>
+          <p className="text-m3-label-lg-emphasized">Last stored update</p>
+          <p className="mt-1 text-m3-body-sm text-muted-foreground">
+            {storedFreshness ?? "Waiting for stored activity"}
+          </p>
+        </div>
+        <div>
+          <p className="text-m3-label-lg-emphasized">
+            Last GitHub reconciliation
+          </p>
+          <p className="mt-1 text-m3-body-sm text-muted-foreground">
+            {freshness ?? "Not completed yet"}
+          </p>
+        </div>
+        <div className="sm:col-span-3">
+          <JournalRefresh nextSyncAt={nextSyncAt} timeZone={timeZone} />
+        </div>
+      </section>
 
       <div
         role="status"
@@ -824,120 +580,7 @@ function JournalActivity({
           </Link>
         </section>
       ) : (
-        <section aria-labelledby="today-timeline-heading" className="mt-8">
-          <div className="flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <p className="text-m3-label-lg-emphasized text-primary">
-                CHRONOLOGICAL
-              </p>
-              <h2
-                id="today-timeline-heading"
-                className="mt-2 text-m3-headline-sm"
-              >
-                Today&apos;s activity
-              </h2>
-            </div>
-            {freshness ? (
-              <p className="text-m3-body-sm text-muted-foreground">
-                Fresh as of {freshness}
-              </p>
-            ) : null}
-          </div>
-          <ol className="mt-5 space-y-3">
-            {journal.activities.map((activity) => {
-              const presentation = activityPresentation[activity.kind];
-              const coverageLabel = activityCoverageLabel(activity);
-              return (
-                <li
-                  key={activity.deduplicationKey}
-                  className="rounded-m3-xl bg-m3-surface-container-low p-5 sm:p-6"
-                >
-                  <div className="flex gap-4">
-                    <span className="bg-surface grid size-11 shrink-0 place-items-center rounded-m3-lg text-primary shadow-m3-1">
-                      <presentation.icon aria-hidden className="size-5" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-m3-title-md-emphasized">
-                          {presentation.label}
-                          {activity.subjectNumber !== null
-                            ? ` #${activity.subjectNumber}`
-                            : ""}
-                        </h3>
-                        {activity.visibility === "private" ? (
-                          <span className="bg-secondary-container inline-flex items-center gap-1 rounded-m3-full px-2.5 py-1 text-m3-label-sm text-secondary-foreground">
-                            <LockKeyhole aria-hidden className="size-3.5" />
-                            Private repository
-                          </span>
-                        ) : null}
-                        {activity.authoredBeforeDay ? (
-                          <span className="rounded-m3-full bg-m3-warning-container px-2.5 py-1 text-m3-label-sm text-m3-on-warning-container">
-                            Authored before today
-                          </span>
-                        ) : null}
-                        {activity.status ? (
-                          <span className="bg-secondary-container rounded-m3-full px-2.5 py-1 text-m3-label-sm text-secondary-foreground">
-                            {activityStatusLabels[activity.status]}
-                          </span>
-                        ) : null}
-                        {activity.narrativeEligible === false ? (
-                          <span className="rounded-m3-full bg-m3-warning-container px-2.5 py-1 text-m3-label-sm text-m3-on-warning-container">
-                            Excluded from narrative
-                          </span>
-                        ) : null}
-                        {coverageLabel ? (
-                          <span className="bg-secondary-container rounded-m3-full px-2.5 py-1 text-m3-label-sm text-secondary-foreground">
-                            {coverageLabel}
-                          </span>
-                        ) : null}
-                      </div>
-                      {activity.subjectTitle ? (
-                        <p className="mt-2 text-m3-body-md break-words">
-                          {activity.subjectTitle}
-                        </p>
-                      ) : null}
-                      <p
-                        className={cn(
-                          "break-words",
-                          activity.subjectTitle
-                            ? "mt-1 text-m3-body-sm text-muted-foreground"
-                            : "mt-2 text-m3-body-md",
-                        )}
-                      >
-                        {activity.repositoryName}
-                      </p>
-                      <p className="mt-1 text-m3-body-sm text-muted-foreground">
-                        <time dateTime={activity.occurredAt.toISOString()}>
-                          {new Intl.DateTimeFormat("en-US", {
-                            timeZone,
-                            hour: "numeric",
-                            minute: "2-digit",
-                            month: activity.authoredBeforeDay
-                              ? "short"
-                              : undefined,
-                            day: activity.authoredBeforeDay
-                              ? "numeric"
-                              : undefined,
-                          }).format(activity.occurredAt)}
-                        </time>
-                        {` · @${activity.actorLogin}`}
-                      </p>
-                      <a
-                        href={activity.evidenceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-m3-label-lg-emphasized mt-3 inline-flex min-h-11 items-center gap-2 text-primary underline-offset-4 hover:underline"
-                      >
-                        View {presentation.evidenceNoun} evidence
-                        <ArrowUpRight aria-hidden className="size-4" />
-                      </a>
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        </section>
+        <JournalExplorer activities={journal.activities} timeZone={timeZone} />
       )}
     </div>
   );
@@ -963,7 +606,7 @@ export default async function JournalPage({
     onboarding.timeZone &&
     onboarding.githubAccessMode &&
     query.setup !== "repositories"
-      ? await getTodayJournal({
+      ? await getStoredTodayJournal({
           requestHeaders,
           userId: session.user.id,
           timeZone: onboarding.timeZone,

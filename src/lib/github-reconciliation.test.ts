@@ -6,6 +6,7 @@ import {
   getLocalDayWindow,
   reconcileGitHubActivity,
   type ActivityRecord,
+  type ReconciliationDiagnostic,
   type ReconciliationStore,
   type TodayJournal,
 } from "@/lib/github-reconciliation";
@@ -231,6 +232,38 @@ describe("GitHub current-day reconciliation", () => {
         authoredBeforeDay: false,
       }),
     );
+  });
+
+  it("reports which stage failed without exposing credentials", async () => {
+    const store = new MemoryStore();
+    const diagnostics: ReconciliationDiagnostic[] = [];
+    const fetchFixture = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
+      if (url.includes("/users/ada/events")) return jsonResponse({}, 502);
+      throw new Error(`Unexpected fixture request: ${url}`);
+    });
+
+    await reconcileGitHubActivity({
+      userId: "user-1",
+      timeZone: "America/New_York",
+      accessMode: "best-effort",
+      installationIds: [],
+      accessToken: "fixture-token",
+      now: new Date("2026-03-08T18:00:00Z"),
+      fetchImplementation: fetchFixture as typeof fetch,
+      store,
+      reportDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+
+    expect(diagnostics).toEqual([
+      {
+        stage: "events",
+        errorName: "Error",
+        errorMessage: "GitHub request failed (502)",
+      },
+    ]);
+    expect(JSON.stringify(diagnostics)).not.toContain("fixture-token");
   });
 
   it("returns a recoverable error journal when GitHub is unavailable", async () => {

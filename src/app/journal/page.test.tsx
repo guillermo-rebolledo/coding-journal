@@ -10,6 +10,10 @@ const journalBoundary = vi.hoisted(() => ({
   getOnboarding: vi.fn(),
 }));
 
+const installationBoundary = vi.hoisted(() => ({
+  getInstallations: vi.fn(),
+}));
+
 const navigation = vi.hoisted(() => ({
   redirect: vi.fn((url: string) => {
     throw new Error(`NEXT_REDIRECT:${url}`);
@@ -24,6 +28,17 @@ vi.mock("@/lib/session", () => ({
 
 vi.mock("@/lib/journal", () => ({
   getJournalOnboarding: journalBoundary.getOnboarding,
+}));
+
+vi.mock("@/lib/github-installation-repository", () => ({
+  findInstallations: installationBoundary.getInstallations,
+  consumeInstallationState: vi.fn(),
+  deletePendingInstallation: vi.fn(),
+  insertInstallationState: vi.fn(),
+  insertPendingInstallation: vi.fn(),
+  markInstallationDisconnected: vi.fn(),
+  setGitHubAccessMode: vi.fn(),
+  upsertActiveInstallation: vi.fn(),
 }));
 
 vi.mock("@/lib/auth-client", () => ({
@@ -54,6 +69,8 @@ describe("protected journal boundary", () => {
     navigation.replace.mockReset();
     navigation.refresh.mockReset();
     journalBoundary.getOnboarding.mockReset();
+    installationBoundary.getInstallations.mockReset();
+    installationBoundary.getInstallations.mockResolvedValue([]);
   });
 
   it("shows a first-time user the browser-detected time zone", async () => {
@@ -107,6 +124,9 @@ describe("protected journal boundary", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/sign-in proves who you are/i)).toBeInTheDocument();
     expect(
+      screen.getByRole("link", { name: "Install GitHub App" }),
+    ).toHaveAttribute("href", "/api/github/install?from=onboarding");
+    expect(
       screen.getByRole("button", { name: "Continue in best-effort mode" }),
     ).toBeEnabled();
   });
@@ -138,6 +158,36 @@ describe("protected journal boundary", () => {
     expect(
       screen.getByRole("link", { name: "Review repository access" }),
     ).toBeInTheDocument();
+  });
+
+  it("labels selected GitHub App coverage as partial on Today", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
+    authBoundary.getSession.mockResolvedValue({
+      session: { id: "session-1", token: "server-only-token" },
+      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
+    });
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "app",
+    });
+    installationBoundary.getInstallations.mockResolvedValue([
+      {
+        installationId: "42",
+        accountLogin: "example-org",
+        accountType: "Organization",
+        repositorySelection: "selected",
+        repositoryCount: 3,
+        status: "active",
+      },
+    ]);
+
+    render(
+      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+    );
+
+    expect(screen.getByText("Partial access")).toBeInTheDocument();
+    expect(screen.getByText("3 selected repositories")).toBeInTheDocument();
   });
 
   it("keeps sign-out available after onboarding", async () => {

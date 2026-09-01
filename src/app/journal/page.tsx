@@ -2,6 +2,7 @@ import {
   CalendarDays,
   CircleDashed,
   GitBranch,
+  Settings,
   ShieldCheck,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -17,6 +18,11 @@ import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeMenu } from "@/components/theme-menu";
 import { Button } from "@/components/ui/button";
 import { buttonVariants } from "@/components/ui/button-variants";
+import {
+  getGitHubInstallations,
+  type StoredGitHubInstallation,
+} from "@/lib/github-installation";
+import { getGitHubInstallationCompleteness } from "@/lib/github-completeness";
 import { getJournalOnboarding } from "@/lib/journal";
 import { getJournalSession } from "@/lib/session";
 import { getLocalDate } from "@/lib/time-zone";
@@ -43,6 +49,17 @@ function JournalFrame({ children }: { children: ReactNode }) {
             </div>
           </div>
           <div className="flex items-start gap-2">
+            <Link
+              href="/settings"
+              aria-label="Settings"
+              className={buttonVariants({
+                variant: "ghost",
+                size: "icon-lg",
+                shape: "round",
+              })}
+            >
+              <Settings aria-hidden />
+            </Link>
             <ThemeMenu />
             <SignOutButton />
           </div>
@@ -55,7 +72,17 @@ function JournalFrame({ children }: { children: ReactNode }) {
   );
 }
 
-function RepositoryAccessStep({ canReturn }: { canReturn: boolean }) {
+function RepositoryAccessStep({
+  canReturn,
+  installations,
+}: {
+  canReturn: boolean;
+  installations: StoredGitHubInstallation[];
+}) {
+  const approvalPending = installations.some(
+    (installation) => installation.status === "pending",
+  );
+
   return (
     <section
       aria-labelledby="repository-access-heading"
@@ -84,12 +111,34 @@ function RepositoryAccessStep({ canReturn }: { canReturn: boolean }) {
           </h2>
           <p className="mt-3 text-m3-body-md text-muted-foreground">
             Selected repositories can be tracked with near-real-time, read-only
-            access. Installation and repository selection arrive in the next
-            setup step.
+            access. GitHub lets you choose selected repositories or all
+            repositories before anything is granted.
           </p>
-          <p className="mt-5 text-m3-label-lg text-muted-foreground">
-            No repository access has been granted yet.
-          </p>
+          {approvalPending ? (
+            <div
+              role="status"
+              className="bg-secondary-container mt-5 rounded-m3-lg p-4"
+            >
+              <p className="text-m3-label-lg-emphasized">Pending approval</p>
+              <p className="mt-1 text-m3-body-sm">
+                An organization owner must approve your request. You can
+                continue in best-effort mode while you wait.
+              </p>
+            </div>
+          ) : (
+            <p className="mt-5 text-m3-label-lg text-muted-foreground">
+              No repository access has been granted yet.
+            </p>
+          )}
+          <Link
+            href="/api/github/install?from=onboarding"
+            className={cn(
+              buttonVariants({ size: "lg" }),
+              "mt-6 w-full md:w-auto",
+            )}
+          >
+            Install GitHub App
+          </Link>
         </article>
 
         <article className="rounded-m3-xl bg-card p-6 shadow-m3-2 sm:p-7">
@@ -124,9 +173,44 @@ function RepositoryAccessStep({ canReturn }: { canReturn: boolean }) {
   );
 }
 
-function Today({ name, timeZone }: { name: string; timeZone: string }) {
+function Today({
+  name,
+  timeZone,
+  installations,
+}: {
+  name: string;
+  timeZone: string;
+  installations: StoredGitHubInstallation[];
+}) {
   const localDate = getLocalDate(new Date(), timeZone);
   const firstName = name.trim().split(/\s+/)[0] || "there";
+  const activeInstallation = installations.find(
+    (installation) => installation.status === "active",
+  );
+  const disconnected = installations.some(
+    (installation) => installation.status === "disconnected",
+  );
+  const pending = installations.some(
+    (installation) => installation.status === "pending",
+  );
+  const activeCompleteness = activeInstallation
+    ? getGitHubInstallationCompleteness(activeInstallation)
+    : null;
+  const completeness = activeCompleteness
+    ? activeCompleteness.kind === "partial"
+      ? {
+          label: activeCompleteness.label,
+          detail: `${activeCompleteness.repositoryCount} selected repositories`,
+        }
+      : { label: activeCompleteness.label, detail: "All granted repositories" }
+    : pending
+      ? { label: "Pending approval", detail: "Organization access not granted" }
+      : disconnected
+        ? { label: "Disconnected", detail: "Repository access unavailable" }
+        : {
+            label: "Best-effort journal",
+            detail: "Repository access not connected",
+          };
 
   return (
     <>
@@ -147,10 +231,8 @@ function Today({ name, timeZone }: { name: string; timeZone: string }) {
           role="status"
           className="bg-secondary-container w-fit rounded-m3-lg px-4 py-3 text-secondary-foreground"
         >
-          <p className="text-m3-label-lg-emphasized">Best-effort journal</p>
-          <p className="mt-1 text-m3-body-sm">
-            Repository access not connected
-          </p>
+          <p className="text-m3-label-lg-emphasized">{completeness.label}</p>
+          <p className="mt-1 text-m3-body-sm">{completeness.detail}</p>
         </div>
       </div>
 
@@ -191,8 +273,9 @@ export default async function JournalPage({
 
   if (!session) redirect("/sign-in?next=%2Fjournal");
 
-  const [onboarding, query] = await Promise.all([
+  const [onboarding, installations, query] = await Promise.all([
     getJournalOnboarding(session.user.id),
+    getGitHubInstallations(session.user.id),
     searchParams,
   ]);
 
@@ -203,9 +286,14 @@ export default async function JournalPage({
       ) : !onboarding.githubAccessMode || query.setup === "repositories" ? (
         <RepositoryAccessStep
           canReturn={Boolean(onboarding.githubAccessMode)}
+          installations={installations}
         />
       ) : (
-        <Today name={session.user.name} timeZone={onboarding.timeZone} />
+        <Today
+          name={session.user.name}
+          timeZone={onboarding.timeZone}
+          installations={installations}
+        />
       )}
     </JournalFrame>
   );

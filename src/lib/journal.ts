@@ -2,9 +2,10 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import { journalOnboarding } from "@/db/auth-schema";
+import { getE2EAccessMode } from "@/lib/e2e-fixtures";
 import type { IanaTimeZone } from "@/lib/time-zone";
 
-export type GitHubAccessMode = "best-effort";
+export type GitHubAccessMode = "best-effort" | "app";
 
 export type JournalOnboarding = {
   timeZone: string | null;
@@ -22,11 +23,11 @@ export async function getJournalOnboarding(
   if (
     process.env.NODE_ENV !== "production" &&
     process.env.E2E_AUTH_MODE === "true" &&
-    userId === "e2e-user"
+    userId.startsWith("e2e-")
   ) {
     return {
       timeZone: "America/Mexico_City",
-      githubAccessMode: "best-effort",
+      githubAccessMode: getE2EAccessMode(userId),
     };
   }
 

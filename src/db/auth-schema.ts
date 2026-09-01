@@ -1,10 +1,12 @@
 import { relations } from "drizzle-orm";
 import {
+  boolean,
+  index,
+  integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
-  boolean,
-  index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
@@ -92,7 +94,7 @@ export const journalOnboarding = pgTable("journal_onboarding", {
     .primaryKey()
     .references(() => user.id, { onDelete: "cascade" }),
   timeZone: text("time_zone"),
-  githubAccessMode: text("github_access_mode").$type<"best-effort">(),
+  githubAccessMode: text("github_access_mode").$type<"best-effort" | "app">(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
@@ -100,11 +102,82 @@ export const journalOnboarding = pgTable("journal_onboarding", {
     .notNull(),
 });
 
+export const githubInstallationState = pgTable(
+  "github_installation_state",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    returnTo: text("return_to").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("github_installation_state_userId_idx").on(table.userId)],
+);
+
+export const githubInstallation = pgTable(
+  "github_installation",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    installationId: text("installation_id"),
+    accountId: text("account_id"),
+    accountLogin: text("account_login"),
+    accountType: text("account_type").$type<"User" | "Organization">(),
+    repositorySelection: text("repository_selection").$type<
+      "all" | "selected"
+    >(),
+    repositoryCount: integer("repository_count"),
+    permissions: jsonb("permissions").$type<Record<string, string>>(),
+    status: text("status")
+      .$type<"active" | "pending" | "disconnected">()
+      .notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("github_installation_userId_installationId_uidx").on(
+      table.userId,
+      table.installationId,
+    ),
+    index("github_installation_userId_idx").on(table.userId),
+  ],
+);
+
 export const userRelations = relations(user, ({ many, one }) => ({
   sessions: many(session),
   accounts: many(account),
   journalOnboarding: one(journalOnboarding),
+  githubInstallations: many(githubInstallation),
+  githubInstallationStates: many(githubInstallationState),
 }));
+
+export const githubInstallationRelations = relations(
+  githubInstallation,
+  ({ one }) => ({
+    user: one(user, {
+      fields: [githubInstallation.userId],
+      references: [user.id],
+    }),
+  }),
+);
+
+export const githubInstallationStateRelations = relations(
+  githubInstallationState,
+  ({ one }) => ({
+    user: one(user, {
+      fields: [githubInstallationState.userId],
+      references: [user.id],
+    }),
+  }),
+);
 
 export const journalOnboardingRelations = relations(
   journalOnboarding,

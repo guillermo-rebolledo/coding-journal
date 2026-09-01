@@ -11,6 +11,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { JournalFrame } from "@/app/journal/journal-frame";
+import { getE2EJournalHistory, isE2EJournalUser } from "@/lib/e2e-fixtures";
 import { journalFinalizationRepository } from "@/lib/journal-finalization-repository";
 import { getJournalSession } from "@/lib/session";
 
@@ -39,7 +40,9 @@ function statusLabel(status: string, correctionCount: number) {
 export default async function JournalHistoryPage() {
   const session = await getJournalSession(await headers());
   if (!session) redirect("/sign-in?next=%2Fjournal%2Fhistory");
-  const history = await journalFinalizationRepository.list(session.user.id);
+  const history = isE2EJournalUser(session.user.id)
+    ? getE2EJournalHistory()
+    : await journalFinalizationRepository.list(session.user.id);
 
   return (
     <JournalFrame current="history">

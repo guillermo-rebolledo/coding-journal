@@ -175,6 +175,43 @@ test("Today filters, groups, refreshes, and opens source evidence", async ({
   ).toHaveCount(1);
 });
 
+test("History browses finalized days and corrections without horizontal overflow", async ({
+  context,
+  page,
+}) => {
+  await context.addCookies([
+    {
+      name: "coding-journal-e2e-session",
+      value: "all",
+      domain: "localhost",
+      path: "/",
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
+
+  await page.goto("/journal/history");
+  await expect(
+    page.getByRole("heading", { name: "Journal history" }),
+  ).toBeVisible();
+  await expect(page.getByText("Corrected · 1 late event")).toBeVisible();
+  await page.getByRole("link", { name: /Sunday, August 30/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Sunday, August 30" }),
+  ).toBeVisible();
+  await expect(page.getByText("Complete coverage")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Late corrections" }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    )
+    .toBe(true);
+});
+
 test("Settings keeps GitHub access guidance within the viewport", async ({
   context,
   page,

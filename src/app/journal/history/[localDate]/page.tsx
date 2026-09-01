@@ -12,6 +12,12 @@ import { notFound, redirect } from "next/navigation";
 
 import { JournalFrame } from "@/app/journal/journal-frame";
 import { JournalExplorer } from "@/app/journal/journal-explorer";
+import {
+  redactHistoricalNarrative,
+  retryHistoricalJournal,
+} from "@/app/journal/history/actions";
+import { Button } from "@/components/ui/button";
+import { getE2EHistoricalJournal, isE2EJournalUser } from "@/lib/e2e-fixtures";
 import type { ActivityMetrics } from "@/lib/github-activity";
 import { journalFinalizationRepository } from "@/lib/journal-finalization-repository";
 import { getJournalSession } from "@/lib/session";
@@ -63,15 +69,16 @@ export default async function JournalHistoryDetailPage({
   if (!session) redirect("/sign-in?next=%2Fjournal%2Fhistory");
   const { localDate } = await params;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(localDate)) notFound();
-  const journal = await journalFinalizationRepository.read(
-    session.user.id,
-    localDate,
-  );
+  const journal = isE2EJournalUser(session.user.id)
+    ? getE2EHistoricalJournal(localDate)
+    : await journalFinalizationRepository.read(session.user.id, localDate);
   if (!journal) notFound();
 
   const failed = journal.status === "recoverable-error";
   const corrected = journal.status === "corrected";
   const finalizing = journal.status === "finalizing";
+  const retryAction = retryHistoricalJournal.bind(null, localDate);
+  const redactAction = redactHistoricalNarrative.bind(null, localDate);
 
   return (
     <JournalFrame current="history">
@@ -199,6 +206,34 @@ export default async function JournalHistoryDetailPage({
           </p>
         )}
       </section>
+
+      {failed ? (
+        <section className="mt-5 rounded-m3-xl bg-m3-error-container p-5 text-m3-on-error-container sm:p-6">
+          <h2 className="text-m3-title-lg-emphasized">Retry finalization</h2>
+          <p className="mt-2 max-w-2xl text-m3-body-md">
+            Retry after GitHub or narrative generation has recovered. The job
+            remains idempotent and cannot overwrite a completed record.
+          </p>
+          <form action={retryAction} className="mt-4">
+            <Button type="submit" variant="outline">
+              Retry finalization
+            </Button>
+          </form>
+        </section>
+      ) : journal.narrative ? (
+        <section className="mt-5 rounded-m3-xl bg-m3-surface-container-low p-5 sm:p-6">
+          <h2 className="text-m3-title-lg-emphasized">Privacy redaction</h2>
+          <p className="mt-2 max-w-2xl text-m3-body-md text-muted-foreground">
+            Permanently remove the frozen narrative. Aggregate metrics and the
+            correction record stay unchanged.
+          </p>
+          <form action={redactAction} className="mt-4">
+            <Button type="submit" variant="outline">
+              Redact narrative
+            </Button>
+          </form>
+        </section>
+      ) : null}
 
       {journal.evidence.length ? (
         <JournalExplorer

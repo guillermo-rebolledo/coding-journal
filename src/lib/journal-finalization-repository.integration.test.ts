@@ -125,5 +125,47 @@ describe("journal finalization repository with Postgres", () => {
         ],
       }),
     );
+
+    await expect(
+      repository.redactNarrative(candidate.userId, candidate.localDate),
+    ).resolves.toBe(true);
+    await expect(
+      repository.read(candidate.userId, candidate.localDate),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        narrative: null,
+        metrics,
+        status: "corrected",
+      }),
+    );
+  });
+
+  it("allows a recoverable failure to be explicitly retried", async () => {
+    const candidate = {
+      userId: "history-user",
+      localDate: "2026-08-30",
+      timeZone: "America/Mexico_City",
+    };
+    const now = new Date("2026-09-01T12:00:00Z");
+    await repository.schedule(candidate, now);
+    await repository.claim(candidate.userId, candidate.localDate, now);
+    await repository.fail(
+      candidate.userId,
+      candidate.localDate,
+      "summary-failed",
+      true,
+    );
+
+    await expect(
+      repository.read(candidate.userId, candidate.localDate),
+    ).resolves.toEqual(
+      expect.objectContaining({ status: "recoverable-error" }),
+    );
+    await expect(
+      repository.retry(candidate.userId, candidate.localDate, now),
+    ).resolves.toEqual(expect.objectContaining(candidate));
+    await expect(
+      repository.claim(candidate.userId, candidate.localDate, now),
+    ).resolves.toBe(true);
   });
 });

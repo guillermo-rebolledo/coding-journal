@@ -2,14 +2,25 @@ import {
   AlertTriangle,
   ArrowUpRight,
   CalendarDays,
+  CircleCheck,
   CircleDashed,
+  CircleDot,
   Clock3,
+  FileCheck,
   GitCommitHorizontal,
   GitBranch,
+  GitMerge,
+  GitPullRequest,
+  GitPullRequestArrow,
+  GitPullRequestClosed,
   LockKeyhole,
+  MessageSquare,
+  MessagesSquare,
+  RotateCcw,
   Settings,
   ShieldCheck,
   Upload,
+  type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
@@ -30,7 +41,7 @@ import {
 } from "@/lib/github-installation";
 import { getGitHubInstallationCompleteness } from "@/lib/github-completeness";
 import { getJournalOnboarding } from "@/lib/journal";
-import type { TodayJournal } from "@/lib/github-reconciliation";
+import type { ActivityRecord, TodayJournal } from "@/lib/github-reconciliation";
 import { getJournalSession } from "@/lib/session";
 import { getTodayJournal } from "@/lib/today-journal";
 import { cn } from "@/lib/utils";
@@ -258,9 +269,137 @@ function Today({
   );
 }
 
-function pluralizedMetric(count: number, singular: string) {
-  return `${count} ${singular}${count === 1 ? "" : "s"}`;
+function pluralizedMetric(
+  count: number,
+  singular: string,
+  plural = `${singular}s`,
+) {
+  return `${count} ${count === 1 ? singular : plural}`;
 }
+
+const metricCards: Array<{
+  key: keyof TodayJournal["metrics"];
+  singular: string;
+  plural?: string;
+  detail: string;
+  icon: LucideIcon;
+}> = [
+  {
+    key: "pushes",
+    singular: "push",
+    plural: "pushes",
+    detail: "Counted when each push occurred",
+    icon: Upload,
+  },
+  {
+    key: "commits",
+    singular: "commit",
+    detail: "Kept at each commit's author time",
+    icon: GitCommitHorizontal,
+  },
+  {
+    key: "issues",
+    singular: "issue update",
+    detail: "Issues you opened, closed, or reopened",
+    icon: CircleDot,
+  },
+  {
+    key: "pullRequests",
+    singular: "pull request update",
+    detail: "Pull requests you opened, updated, closed, or reopened",
+    icon: GitPullRequest,
+  },
+  {
+    key: "reviews",
+    singular: "review",
+    detail: "Reviews you submitted on pull requests",
+    icon: FileCheck,
+  },
+  {
+    key: "merges",
+    singular: "merge",
+    detail: "Pull requests you merged",
+    icon: GitMerge,
+  },
+  {
+    key: "comments",
+    singular: "comment",
+    detail: "Comments on issues, pull requests, and diffs",
+    icon: MessageSquare,
+  },
+];
+
+const activityPresentation: Record<
+  ActivityRecord["kind"],
+  { label: string; evidenceNoun: string; icon: LucideIcon }
+> = {
+  push: { label: "Push", evidenceNoun: "push", icon: Upload },
+  commit: {
+    label: "Commit",
+    evidenceNoun: "commit",
+    icon: GitCommitHorizontal,
+  },
+  "issue-opened": {
+    label: "Opened issue",
+    evidenceNoun: "issue",
+    icon: CircleDot,
+  },
+  "issue-closed": {
+    label: "Closed issue",
+    evidenceNoun: "issue",
+    icon: CircleCheck,
+  },
+  "issue-reopened": {
+    label: "Reopened issue",
+    evidenceNoun: "issue",
+    icon: RotateCcw,
+  },
+  "issue-comment": {
+    label: "Commented on issue",
+    evidenceNoun: "comment",
+    icon: MessageSquare,
+  },
+  "pull-request-opened": {
+    label: "Opened pull request",
+    evidenceNoun: "pull request",
+    icon: GitPullRequest,
+  },
+  "pull-request-updated": {
+    label: "Updated pull request",
+    evidenceNoun: "pull request",
+    icon: GitPullRequestArrow,
+  },
+  "pull-request-merged": {
+    label: "Merged pull request",
+    evidenceNoun: "pull request",
+    icon: GitMerge,
+  },
+  "pull-request-closed": {
+    label: "Closed pull request",
+    evidenceNoun: "pull request",
+    icon: GitPullRequestClosed,
+  },
+  "pull-request-reopened": {
+    label: "Reopened pull request",
+    evidenceNoun: "pull request",
+    icon: RotateCcw,
+  },
+  "pull-request-comment": {
+    label: "Commented on pull request",
+    evidenceNoun: "comment",
+    icon: MessageSquare,
+  },
+  "pull-request-review": {
+    label: "Reviewed pull request",
+    evidenceNoun: "review",
+    icon: FileCheck,
+  },
+  "pull-request-review-comment": {
+    label: "Commented on a diff",
+    evidenceNoun: "comment",
+    icon: MessagesSquare,
+  },
+};
 
 function JournalActivity({
   journal,
@@ -279,29 +418,34 @@ function JournalActivity({
 
   return (
     <div className="mt-10">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <article className="rounded-m3-xl bg-card p-5 shadow-m3-1 sm:p-6">
-          <span className="bg-primary-container grid size-11 place-items-center rounded-m3-lg text-primary">
-            <Upload aria-hidden className="size-5" />
-          </span>
-          <p className="mt-5 text-m3-headline-sm">
-            {pluralizedMetric(journal.metrics.pushes, "push")}
-          </p>
-          <p className="mt-1 text-m3-body-sm text-muted-foreground">
-            Counted when each push occurred
-          </p>
-        </article>
-        <article className="rounded-m3-xl bg-card p-5 shadow-m3-1 sm:p-6">
-          <span className="bg-secondary-container grid size-11 place-items-center rounded-m3-lg text-secondary-foreground">
-            <GitCommitHorizontal aria-hidden className="size-5" />
-          </span>
-          <p className="mt-5 text-m3-headline-sm">
-            {pluralizedMetric(journal.metrics.commits, "commit")}
-          </p>
-          <p className="mt-1 text-m3-body-sm text-muted-foreground">
-            Kept at each commit&apos;s author time
-          </p>
-        </article>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {metricCards.map((card, index) => (
+          <article
+            key={card.key}
+            className="rounded-m3-xl bg-card p-5 shadow-m3-1 sm:p-6"
+          >
+            <span
+              className={cn(
+                "grid size-11 place-items-center rounded-m3-lg",
+                index % 2 === 0
+                  ? "bg-primary-container text-primary"
+                  : "bg-secondary-container text-secondary-foreground",
+              )}
+            >
+              <card.icon aria-hidden className="size-5" />
+            </span>
+            <p className="mt-5 text-m3-headline-sm">
+              {pluralizedMetric(
+                journal.metrics[card.key],
+                card.singular,
+                card.plural,
+              )}
+            </p>
+            <p className="mt-1 text-m3-body-sm text-muted-foreground">
+              {card.detail}
+            </p>
+          </article>
+        ))}
       </div>
 
       <div
@@ -391,68 +535,82 @@ function JournalActivity({
             ) : null}
           </div>
           <ol className="mt-5 space-y-3">
-            {journal.activities.map((activity) => (
-              <li
-                key={activity.deduplicationKey}
-                className="rounded-m3-xl bg-m3-surface-container-low p-5 sm:p-6"
-              >
-                <div className="flex gap-4">
-                  <span className="bg-surface grid size-11 shrink-0 place-items-center rounded-m3-lg text-primary shadow-m3-1">
-                    {activity.kind === "push" ? (
-                      <Upload aria-hidden className="size-5" />
-                    ) : (
-                      <GitCommitHorizontal aria-hidden className="size-5" />
-                    )}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-m3-title-md-emphasized capitalize">
-                        {activity.kind}
-                      </h3>
-                      {activity.visibility === "private" ? (
-                        <span className="bg-secondary-container inline-flex items-center gap-1 rounded-m3-full px-2.5 py-1 text-m3-label-sm text-secondary-foreground">
-                          <LockKeyhole aria-hidden className="size-3.5" />
-                          Private repository
-                        </span>
+            {journal.activities.map((activity) => {
+              const presentation = activityPresentation[activity.kind];
+              return (
+                <li
+                  key={activity.deduplicationKey}
+                  className="rounded-m3-xl bg-m3-surface-container-low p-5 sm:p-6"
+                >
+                  <div className="flex gap-4">
+                    <span className="bg-surface grid size-11 shrink-0 place-items-center rounded-m3-lg text-primary shadow-m3-1">
+                      <presentation.icon aria-hidden className="size-5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-m3-title-md-emphasized">
+                          {presentation.label}
+                          {activity.subjectNumber !== null
+                            ? ` #${activity.subjectNumber}`
+                            : ""}
+                        </h3>
+                        {activity.visibility === "private" ? (
+                          <span className="bg-secondary-container inline-flex items-center gap-1 rounded-m3-full px-2.5 py-1 text-m3-label-sm text-secondary-foreground">
+                            <LockKeyhole aria-hidden className="size-3.5" />
+                            Private repository
+                          </span>
+                        ) : null}
+                        {activity.authoredBeforeDay ? (
+                          <span className="rounded-m3-full bg-m3-warning-container px-2.5 py-1 text-m3-label-sm text-m3-on-warning-container">
+                            Authored before today
+                          </span>
+                        ) : null}
+                      </div>
+                      {activity.subjectTitle ? (
+                        <p className="mt-2 text-m3-body-md break-words">
+                          {activity.subjectTitle}
+                        </p>
                       ) : null}
-                      {activity.authoredBeforeDay ? (
-                        <span className="rounded-m3-full bg-m3-warning-container px-2.5 py-1 text-m3-label-sm text-m3-on-warning-container">
-                          Authored before today
-                        </span>
-                      ) : null}
+                      <p
+                        className={cn(
+                          "break-words",
+                          activity.subjectTitle
+                            ? "mt-1 text-m3-body-sm text-muted-foreground"
+                            : "mt-2 text-m3-body-md",
+                        )}
+                      >
+                        {activity.repositoryName}
+                      </p>
+                      <p className="mt-1 text-m3-body-sm text-muted-foreground">
+                        <time dateTime={activity.occurredAt.toISOString()}>
+                          {new Intl.DateTimeFormat("en-US", {
+                            timeZone,
+                            hour: "numeric",
+                            minute: "2-digit",
+                            month: activity.authoredBeforeDay
+                              ? "short"
+                              : undefined,
+                            day: activity.authoredBeforeDay
+                              ? "numeric"
+                              : undefined,
+                          }).format(activity.occurredAt)}
+                        </time>
+                        {` · @${activity.actorLogin}`}
+                      </p>
+                      <a
+                        href={activity.evidenceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-m3-label-lg-emphasized mt-3 inline-flex min-h-11 items-center gap-2 text-primary underline-offset-4 hover:underline"
+                      >
+                        View {presentation.evidenceNoun} evidence
+                        <ArrowUpRight aria-hidden className="size-4" />
+                      </a>
                     </div>
-                    <p className="mt-2 text-m3-body-md break-words">
-                      {activity.repositoryName}
-                    </p>
-                    <p className="mt-1 text-m3-body-sm text-muted-foreground">
-                      <time dateTime={activity.occurredAt.toISOString()}>
-                        {new Intl.DateTimeFormat("en-US", {
-                          timeZone,
-                          hour: "numeric",
-                          minute: "2-digit",
-                          month: activity.authoredBeforeDay
-                            ? "short"
-                            : undefined,
-                          day: activity.authoredBeforeDay
-                            ? "numeric"
-                            : undefined,
-                        }).format(activity.occurredAt)}
-                      </time>
-                      {` · @${activity.actorLogin}`}
-                    </p>
-                    <a
-                      href={activity.evidenceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-m3-label-lg-emphasized mt-3 inline-flex min-h-11 items-center gap-2 text-primary underline-offset-4 hover:underline"
-                    >
-                      View {activity.kind} evidence
-                      <ArrowUpRight aria-hidden className="size-4" />
-                    </a>
                   </div>
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ol>
         </section>
       )}

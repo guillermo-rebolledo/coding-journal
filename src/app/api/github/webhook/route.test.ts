@@ -120,6 +120,70 @@ describe("GitHub webhook endpoint", () => {
     expect(queueBoundary.publish).not.toHaveBeenCalled();
   });
 
+  it("acknowledges a verified issue action and enqueues it under its delivery id", async () => {
+    const body = JSON.stringify({
+      action: "opened",
+      issue: {
+        number: 41,
+        title: "Reconciliation misses reopened issues",
+        created_at: new Date().toISOString(),
+      },
+      repository: { id: 42, full_name: "acme/private-engine", private: true },
+      sender: { id: 7, login: "ada", type: "User" },
+      installation: { id: 99 },
+    });
+
+    const response = await POST(webhookRequest({ body, event: "issues" }));
+
+    expect(response.status).toBe(202);
+    expect(neonBoundary.claimDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "issues",
+        installationId: "99",
+        status: "received",
+      }),
+    );
+    expect(queueBoundary.publish).toHaveBeenCalledWith(
+      "github-webhook-deliveries",
+      expect.objectContaining({
+        version: 1,
+        collaboration: expect.objectContaining({
+          subject: expect.objectContaining({
+            kind: "issue-opened",
+            deduplicationKey: "github:issue-opened:42:41",
+          }),
+        }),
+      }),
+      "d0b74ba1-575e-4a52-9c1c-b8f2f4b0a111",
+    );
+    expect(neonBoundary.markDeliveryEnqueued).toHaveBeenCalled();
+  });
+
+  it("records unsupported collaboration actions as ignored without enqueueing them", async () => {
+    const body = JSON.stringify({
+      action: "synchronize",
+      pull_request: {
+        number: 52,
+        title: "Sync",
+        updated_at: new Date().toISOString(),
+      },
+      repository: { id: 42, full_name: "acme/private-engine", private: true },
+      sender: { id: 7, login: "ada", type: "User" },
+      installation: { id: 99 },
+    });
+
+    const response = await POST(
+      webhookRequest({ body, event: "pull_request" }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ status: "no-activity" });
+    expect(neonBoundary.claimDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: "pull_request", status: "ignored" }),
+    );
+    expect(queueBoundary.publish).not.toHaveBeenCalled();
+  });
+
   it("records unsupported events as ignored without enqueueing them", async () => {
     const response = await POST(webhookRequest({ event: "workflow_run" }));
 

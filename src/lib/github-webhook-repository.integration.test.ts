@@ -14,7 +14,7 @@ import {
 } from "@/db/auth-schema";
 import { createGitHubActivityRepository } from "@/lib/github-activity-repository";
 import { reconcileGitHubActivity } from "@/lib/github-reconciliation";
-import { processPushDeliveryMessage } from "@/lib/github-webhook-processing";
+import { processWebhookDeliveryMessage } from "@/lib/github-webhook-processing";
 import { createGitHubWebhookRepository } from "@/lib/github-webhook-repository";
 
 describe("GitHub webhook repository with Postgres", () => {
@@ -154,7 +154,7 @@ describe("GitHub webhook repository with Postgres", () => {
 
     // The webhook consumer lands the push first, then reconciliation observes
     // the same push through the events API.
-    await processPushDeliveryMessage(
+    await processWebhookDeliveryMessage(
       {
         version: 1,
         deliveryId: "delivery-overlap",
@@ -192,7 +192,15 @@ describe("GitHub webhook repository with Postgres", () => {
       store: activityRepository,
     });
 
-    expect(journal.metrics).toEqual({ pushes: 1, commits: 1 });
+    expect(journal.metrics).toEqual({
+      pushes: 1,
+      commits: 1,
+      issues: 0,
+      pullRequests: 0,
+      reviews: 0,
+      merges: 0,
+      comments: 0,
+    });
     expect(journal.activities).toEqual([
       expect.objectContaining({
         deduplicationKey: "github:commit:42:2222222",
@@ -203,6 +211,93 @@ describe("GitHub webhook repository with Postgres", () => {
         source: "github-webhook",
       }),
     ]);
+  });
+
+  it("keeps one canonical record when reconciliation and the webhook observe the same comment", async () => {
+    const jsonResponse = (body: unknown) =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const fetchFixture = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
+      if (url.includes("/users/ada/events")) {
+        return jsonResponse([
+          {
+            id: "event-901",
+            type: "IssueCommentEvent",
+            actor: { id: 7, login: "ada" },
+            repo: { id: 42, name: "acme/private-engine" },
+            public: false,
+            created_at: "2026-03-08T15:10:00Z",
+            payload: {
+              action: "created",
+              issue: { number: 41, title: "Reconciliation misses issues" },
+              comment: { id: 9001, created_at: "2026-03-08T15:10:00Z" },
+            },
+          },
+        ]);
+      }
+      throw new Error(`Unexpected fixture request: ${url}`);
+    });
+
+    // The webhook consumer lands the comment first, then reconciliation
+    // observes the same comment through the events API.
+    await processWebhookDeliveryMessage(
+      {
+        version: 1,
+        deliveryId: "delivery-overlap-comment",
+        installationId: "99",
+        receivedAt: receivedAt.toISOString(),
+        collaboration: {
+          repositoryId: "42",
+          repositoryName: "acme/private-engine",
+          private: true,
+          senderId: "7",
+          senderLogin: "ada",
+          subject: {
+            kind: "issue-comment",
+            deduplicationKey: "github:issue-comment:42:9001",
+            subjectId: "9001",
+            subjectNumber: 41,
+            title: "Reconciliation misses issues",
+            evidenceUrl:
+              "https://github.com/acme/private-engine/issues/41#issuecomment-9001",
+            occurredAt: "2026-03-08T15:10:00.000Z",
+          },
+        },
+      },
+      { deliveryCount: 1 },
+      repository,
+    );
+    const journal = await reconcileGitHubActivity({
+      userId: "webhook-user",
+      timeZone: "America/New_York",
+      accessMode: "best-effort",
+      installationIds: [],
+      accessToken: "fixture-token",
+      now: new Date("2026-03-08T18:20:00Z"),
+      fetchImplementation: fetchFixture as typeof fetch,
+      store: activityRepository,
+    });
+
+    expect(journal.metrics.comments).toBe(1);
+    expect(journal.activities).toContainEqual(
+      expect.objectContaining({
+        deduplicationKey: "github:issue-comment:42:9001",
+        kind: "issue-comment",
+        source: "github-webhook",
+        subjectNumber: 41,
+        subjectTitle: "Reconciliation misses issues",
+      }),
+    );
+
+    const rows = await testDatabase.query.githubActivity.findMany({
+      where: (activity, { eq }) =>
+        eq(activity.deduplicationKey, "github:issue-comment:42:9001"),
+    });
+    expect(rows).toHaveLength(1);
   });
 
   it("records webhook activity idempotently under repeated delivery", async () => {
@@ -218,6 +313,8 @@ describe("GitHub webhook repository with Postgres", () => {
       visibility: "public" as const,
       source: "github-webhook" as const,
       subjectId: "bbbbbbb",
+      subjectNumber: null,
+      subjectTitle: null,
       occurredAt: new Date("2026-03-08T15:00:00Z"),
       observedAt: receivedAt,
       authoredBeforeDay: false,

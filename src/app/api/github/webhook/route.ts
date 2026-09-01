@@ -1,5 +1,9 @@
 import { getRequiredEnv } from "@/lib/env";
 import {
+  extractCollaborationDelivery,
+  isCollaborationWebhookEvent,
+} from "@/lib/github-collaboration";
+import {
   extractPushDelivery,
   pushDeliveryTopic,
   validDeliveryId,
@@ -27,7 +31,10 @@ export async function POST(request: Request) {
   }
   const receivedAt = new Date();
 
-  if (eventType !== "push") {
+  const collaborationEvent = isCollaborationWebhookEvent(eventType)
+    ? eventType
+    : null;
+  if (eventType !== "push" && !collaborationEvent) {
     await githubWebhookRepository.claimDelivery({
       deliveryId,
       eventType,
@@ -44,7 +51,14 @@ export async function POST(request: Request) {
   } catch {
     payload = null;
   }
-  const extraction = extractPushDelivery({ payload, deliveryId, receivedAt });
+  const extraction = collaborationEvent
+    ? extractCollaborationDelivery({
+        eventType: collaborationEvent,
+        payload,
+        deliveryId,
+        receivedAt,
+      })
+    : extractPushDelivery({ payload, deliveryId, receivedAt });
 
   if (!extraction.ok) {
     await githubWebhookRepository.claimDelivery({

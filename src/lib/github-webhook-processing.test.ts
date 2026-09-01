@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { ActivityRecord } from "@/lib/github-reconciliation";
 import type { PushDeliveryMessage } from "@/lib/github-webhook";
 import {
-  processPushDeliveryMessage,
+  processWebhookDeliveryMessage,
   type WebhookDeliveryStore,
 } from "@/lib/github-webhook-processing";
 import type { WebhookInstallationUser } from "@/lib/github-webhook-repository";
@@ -75,13 +75,100 @@ describe("GitHub webhook queue processing", () => {
   it("persists one canonical push and commit for an installed user", async () => {
     const store = new MemoryStore();
 
-    await processPushDeliveryMessage(message(), { deliveryCount: 1 }, store);
+    await processWebhookDeliveryMessage(message(), { deliveryCount: 1 }, store);
 
     expect([...store.activities.keys()]).toEqual([
       "user-1:github:push:42:1111111:2222222",
       "user-1:github:commit:42:2222222",
     ]);
     expect(store.deliveryStatuses.get("delivery-1")).toBe("processed");
+  });
+
+  it("persists one canonical collaboration record for an installed user", async () => {
+    const store = new MemoryStore();
+    const collaborationMessage = {
+      version: 1 as const,
+      deliveryId: "delivery-9",
+      installationId: "99",
+      receivedAt: "2026-03-08T15:00:05.000Z",
+      collaboration: {
+        repositoryId: "42",
+        repositoryName: "acme/private-engine",
+        private: true,
+        senderId: "7",
+        senderLogin: "ada",
+        subject: {
+          kind: "pull-request-review" as const,
+          deduplicationKey: "github:pull-request-review:42:7001",
+          subjectId: "7001",
+          subjectNumber: 52,
+          title: "Track issue and pull-request collaboration",
+          evidenceUrl:
+            "https://github.com/acme/private-engine/pull/52#pullrequestreview-7001",
+          occurredAt: "2026-03-08T14:36:00.000Z",
+        },
+      },
+    };
+
+    await processWebhookDeliveryMessage(
+      collaborationMessage,
+      { deliveryCount: 1 },
+      store,
+    );
+    await processWebhookDeliveryMessage(
+      { ...collaborationMessage, deliveryId: "delivery-10" },
+      { deliveryCount: 1 },
+      store,
+    );
+
+    expect([...store.activities.keys()]).toEqual([
+      "user-1:github:pull-request-review:42:7001",
+    ]);
+    expect(
+      store.activities.get("user-1:github:pull-request-review:42:7001"),
+    ).toMatchObject({
+      kind: "pull-request-review",
+      subjectNumber: 52,
+      subjectTitle: "Track issue and pull-request collaboration",
+      source: "github-webhook",
+    });
+    expect(store.deliveryStatuses.get("delivery-9")).toBe("processed");
+    expect(store.deliveryStatuses.get("delivery-10")).toBe("processed");
+  });
+
+  it("skips collaboration actions from participants who are not the journal user", async () => {
+    const store = new MemoryStore();
+
+    await processWebhookDeliveryMessage(
+      {
+        version: 1,
+        deliveryId: "delivery-11",
+        installationId: "99",
+        receivedAt: "2026-03-08T15:00:05.000Z",
+        collaboration: {
+          repositoryId: "42",
+          repositoryName: "acme/private-engine",
+          private: true,
+          senderId: "8",
+          senderLogin: "mallory",
+          subject: {
+            kind: "issue-comment",
+            deduplicationKey: "github:issue-comment:42:9001",
+            subjectId: "9001",
+            subjectNumber: 41,
+            title: null,
+            evidenceUrl:
+              "https://github.com/acme/private-engine/issues/41#issuecomment-9001",
+            occurredAt: "2026-03-08T14:35:00.000Z",
+          },
+        },
+      },
+      { deliveryCount: 1 },
+      store,
+    );
+
+    expect(store.activities.size).toBe(0);
+    expect(store.deliveryStatuses.get("delivery-11")).toBe("skipped");
   });
 
   it("keeps duplicated, reordered, and concurrent deliveries at one effect", async () => {
@@ -105,11 +192,11 @@ describe("GitHub webhook queue processing", () => {
 
     // The second push arrives first, the first is retried and duplicated, and
     // one retry races a duplicate concurrently.
-    await processPushDeliveryMessage(second, { deliveryCount: 1 }, store);
-    await processPushDeliveryMessage(first, { deliveryCount: 1 }, store);
+    await processWebhookDeliveryMessage(second, { deliveryCount: 1 }, store);
+    await processWebhookDeliveryMessage(first, { deliveryCount: 1 }, store);
     await Promise.all([
-      processPushDeliveryMessage(first, { deliveryCount: 2 }, store),
-      processPushDeliveryMessage(first, { deliveryCount: 3 }, store),
+      processWebhookDeliveryMessage(first, { deliveryCount: 2 }, store),
+      processWebhookDeliveryMessage(first, { deliveryCount: 3 }, store),
     ]);
 
     const kinds = [...store.activities.values()].map((record) => record.kind);
@@ -120,7 +207,7 @@ describe("GitHub webhook queue processing", () => {
   it("skips pushes from collaborators who are not the journal user", async () => {
     const store = new MemoryStore();
 
-    await processPushDeliveryMessage(
+    await processWebhookDeliveryMessage(
       message({
         push: { ...message().push, senderId: "8", senderLogin: "mallory" },
       }),
@@ -137,11 +224,11 @@ describe("GitHub webhook queue processing", () => {
     store.failRecordActivity = 1;
 
     await expect(
-      processPushDeliveryMessage(message(), { deliveryCount: 1 }, store),
+      processWebhookDeliveryMessage(message(), { deliveryCount: 1 }, store),
     ).rejects.toThrow("Postgres is unavailable");
     expect(store.deliveryStatuses.get("delivery-1")).toBe("failed");
 
-    await processPushDeliveryMessage(message(), { deliveryCount: 2 }, store);
+    await processWebhookDeliveryMessage(message(), { deliveryCount: 2 }, store);
 
     expect(store.activities.size).toBe(2);
     expect(store.deliveryStatuses.get("delivery-1")).toBe("processed");
@@ -152,7 +239,7 @@ describe("GitHub webhook queue processing", () => {
     store.failRecordActivity = Number.POSITIVE_INFINITY;
 
     await expect(
-      processPushDeliveryMessage(message(), { deliveryCount: 5 }, store),
+      processWebhookDeliveryMessage(message(), { deliveryCount: 5 }, store),
     ).resolves.toBeUndefined();
     expect(store.deliveryStatuses.get("delivery-1")).toBe("poisoned");
     expect(store.activities.size).toBe(0);
@@ -162,7 +249,7 @@ describe("GitHub webhook queue processing", () => {
     const store = new MemoryStore();
 
     await expect(
-      processPushDeliveryMessage(
+      processWebhookDeliveryMessage(
         { version: 99, deliveryId: "delivery-9" },
         { deliveryCount: 1 },
         store,

@@ -1,7 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ActivityRecord, TodayJournal } from "@/lib/github-reconciliation";
+import {
+  computeActivityMetrics,
+  type ActivityRecord,
+  type TodayJournal,
+} from "@/lib/github-reconciliation";
 
 const authBoundary = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -152,12 +156,7 @@ describe("protected journal boundary", () => {
           ...storedJournal,
           localDate,
           activities,
-          metrics: {
-            pushes: activities.filter((activity) => activity.kind === "push")
-              .length,
-            commits: activities.filter((activity) => activity.kind === "commit")
-              .length,
-          },
+          metrics: computeActivityMetrics(activities),
         };
       },
     );
@@ -366,6 +365,149 @@ describe("protected journal boundary", () => {
       "href",
       "https://github.com/acme/private-engine/compare/1111111...abcdef1",
     );
+  });
+
+  it("distinguishes issues, pull requests, reviews, merges, and comments on Today", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
+    authBoundary.getSession.mockResolvedValue({
+      session: { id: "session-1", token: "server-only-token" },
+      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
+    });
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "best-effort",
+    });
+    installationBoundary.getInstallations.mockResolvedValue([]);
+    const pullRequest = {
+      number: 52,
+      title: "Track issue and pull-request collaboration",
+      body: "PRIVATE-PR-BODY",
+      merged: true,
+      created_at: "2026-08-31T10:00:00Z",
+      closed_at: "2026-08-31T11:30:00Z",
+      merged_at: "2026-08-31T11:30:00Z",
+      updated_at: "2026-08-31T11:30:00Z",
+    };
+    githubBoundary.fetch.mockImplementation(
+      async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/user")) {
+          return jsonResponse({ id: 7, login: "ada" });
+        }
+        if (url.includes("/users/ada/events")) {
+          return jsonResponse([
+            {
+              id: "event-1",
+              type: "IssuesEvent",
+              actor: { id: 7, login: "ada" },
+              repo: { id: 42, name: "acme/private-engine" },
+              public: false,
+              created_at: "2026-08-31T11:00:00Z",
+              payload: {
+                action: "opened",
+                issue: {
+                  number: 41,
+                  title: "Reconciliation misses reopened issues",
+                  body: "PRIVATE-ISSUE-BODY",
+                  created_at: "2026-08-31T11:00:00Z",
+                },
+              },
+            },
+            {
+              id: "event-2",
+              type: "IssueCommentEvent",
+              actor: { id: 7, login: "ada" },
+              repo: { id: 42, name: "acme/private-engine" },
+              public: false,
+              created_at: "2026-08-31T11:05:00Z",
+              payload: {
+                action: "created",
+                issue: {
+                  number: 41,
+                  title: "Reconciliation misses reopened issues",
+                },
+                comment: {
+                  id: 9001,
+                  body: "PRIVATE-COMMENT-BODY",
+                  created_at: "2026-08-31T11:05:00Z",
+                },
+              },
+            },
+            {
+              id: "event-3",
+              type: "PullRequestReviewEvent",
+              actor: { id: 7, login: "ada" },
+              repo: { id: 42, name: "acme/private-engine" },
+              public: false,
+              created_at: "2026-08-31T11:10:00Z",
+              payload: {
+                action: "created",
+                pull_request: pullRequest,
+                review: {
+                  id: 7001,
+                  state: "approved",
+                  body: "PRIVATE-REVIEW-BODY",
+                  submitted_at: "2026-08-31T11:10:00Z",
+                },
+              },
+            },
+            {
+              id: "event-4",
+              type: "PullRequestEvent",
+              actor: { id: 7, login: "ada" },
+              repo: { id: 42, name: "acme/private-engine" },
+              public: false,
+              created_at: "2026-08-31T11:30:00Z",
+              payload: { action: "closed", pull_request: pullRequest },
+            },
+          ]);
+        }
+        throw new Error(`Unexpected fixture request: ${url}`);
+      },
+    );
+
+    render(
+      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+    );
+
+    expect(screen.getByText("1 issue update")).toBeInTheDocument();
+    expect(screen.getByText("0 pull request updates")).toBeInTheDocument();
+    expect(screen.getByText("1 review")).toBeInTheDocument();
+    expect(screen.getByText("1 merge")).toBeInTheDocument();
+    expect(screen.getByText("1 comment")).toBeInTheDocument();
+
+    expect(
+      screen.getByRole("heading", { name: "Opened issue #41" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Commented on issue #41" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Reviewed pull request #52" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Merged pull request #52" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Reconciliation misses reopened issues"),
+    ).toHaveLength(2);
+    expect(screen.getAllByText("Private repository")).toHaveLength(4);
+    expect(
+      screen.getByRole("link", { name: "View issue evidence" }),
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/acme/private-engine/issues/41",
+    );
+    expect(
+      screen.getByRole("link", { name: "View review evidence" }),
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/acme/private-engine/pull/52#pullrequestreview-7001",
+    );
+
+    // Bodies and diffs never reach the page.
+    expect(document.body.textContent).not.toContain("PRIVATE");
   });
 
   it("keeps sign-out available after onboarding", async () => {

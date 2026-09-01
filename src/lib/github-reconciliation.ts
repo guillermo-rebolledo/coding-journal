@@ -1,4 +1,35 @@
-import { getLocalDate } from "@/lib/time-zone";
+import {
+  commitDeduplicationKey,
+  pushDeduplicationKey,
+  pushEvidenceUrl,
+  validRepositoryName,
+  validSha,
+  type ActivityMetrics,
+  type ActivityRecord,
+} from "@/lib/github-activity";
+import {
+  collaborationEventForApiType,
+  deriveCollaborationSubject,
+} from "@/lib/github-collaboration";
+import { getLocalDayWindow, parseDate } from "@/lib/time-zone";
+
+// These moved to their shared homes; re-exported so existing importers of the
+// reconciliation module keep working.
+export {
+  commitDeduplicationKey,
+  pushDeduplicationKey,
+  pushEvidenceUrl,
+  validRepositoryName,
+  validSha,
+  computeActivityMetrics,
+  type ActivityMetrics,
+  type ActivityRecord,
+} from "@/lib/github-activity";
+export {
+  getLocalDayWindow,
+  parseDate,
+  type LocalDayWindow,
+} from "@/lib/time-zone";
 
 const githubApiVersion = "2026-03-10";
 const githubEventsPageSize = 100;
@@ -6,30 +37,12 @@ const githubEventsPageSize = 100;
 const githubEventsMaxPages = 3;
 const reconciliationCooldownMs = 15 * 60 * 1000;
 
-export type ActivityRecord = {
-  deduplicationKey: string;
-  localDate: string;
-  kind: "push" | "commit";
-  actorId: string;
-  actorLogin: string;
-  repositoryId: string;
-  repositoryName: string;
-  evidenceUrl: string;
-  visibility: "public" | "private";
-  source: "github-events" | "github-repository-commits" | "github-webhook";
-  subjectId: string;
-  occurredAt: Date;
-  observedAt: Date;
-  authoredBeforeDay: boolean;
-  installationId: string | null;
-};
-
 export type TodayJournal = {
   localDate: string;
   timeZone: string;
   status: "loading" | "complete" | "partial" | "error";
   refreshedAt: Date | null;
-  metrics: { pushes: number; commits: number };
+  metrics: ActivityMetrics;
   activities: ActivityRecord[];
 };
 
@@ -74,57 +87,6 @@ export function describeError(error: unknown) {
       };
 }
 
-export type LocalDayWindow = {
-  localDate: string;
-  startsAt: Date;
-  endsAt: Date;
-};
-
-function addCalendarDay(localDate: string) {
-  const next = new Date(`${localDate}T00:00:00.000Z`);
-  next.setUTCDate(next.getUTCDate() + 1);
-  return next.toISOString().slice(0, 10);
-}
-
-function firstInstantOnOrAfter(localDate: string, timeZone: string) {
-  const approximateMidnight = Date.parse(`${localDate}T00:00:00.000Z`);
-  let low = approximateMidnight - 36 * 60 * 60 * 1000;
-  let high = approximateMidnight + 36 * 60 * 60 * 1000;
-
-  while (low < high) {
-    const middle = Math.floor((low + high) / 2);
-    if (getLocalDate(new Date(middle), timeZone).iso < localDate) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-
-  return new Date(low);
-}
-
-export function pushDeduplicationKey(
-  repositoryId: string,
-  before: string,
-  head: string,
-) {
-  return `github:push:${repositoryId}:${before}:${head}`;
-}
-
-export function commitDeduplicationKey(repositoryId: string, sha: string) {
-  return `github:commit:${repositoryId}:${sha}`;
-}
-
-export function getLocalDayWindow(now: Date, timeZone: string): LocalDayWindow {
-  const localDate = getLocalDate(now, timeZone).iso;
-
-  return {
-    localDate,
-    startsAt: firstInstantOnOrAfter(localDate, timeZone),
-    endsAt: firstInstantOnOrAfter(addCalendarDay(localDate), timeZone),
-  };
-}
-
 type GitHubActor = { id?: number; login?: string };
 type GitHubEvent = {
   id?: string;
@@ -166,23 +128,6 @@ function githubHeaders(accessToken: string) {
   };
 }
 
-export function parseDate(value: unknown) {
-  if (typeof value !== "string") return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-export function validRepositoryName(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value)
-  );
-}
-
-export function validSha(value: unknown): value is string {
-  return typeof value === "string" && /^[a-fA-F0-9]{7,64}$/.test(value);
-}
-
 export class GitHubRequestError extends Error {
   readonly status: number;
 
@@ -204,16 +149,6 @@ async function fetchJson(
   });
   if (!response.ok) throw new GitHubRequestError(response.status);
   return response.json() as Promise<unknown>;
-}
-
-export function pushEvidenceUrl(
-  repositoryName: string,
-  before: string,
-  head: string,
-) {
-  return before && !/^0+$/.test(before)
-    ? `https://github.com/${repositoryName}/compare/${before}...${head}`
-    : `https://github.com/${repositoryName}/commit/${head}`;
 }
 
 export async function reconcileGitHubActivity({
@@ -311,29 +246,74 @@ export async function reconcileGitHubActivity({
       }
 
       for (const rawEvent of rawEvents) {
-        const occurredAt = parseDate(rawEvent.created_at);
         const repositoryName = rawEvent.repo?.name;
         const eventActor = rawEvent.actor;
         const payload = rawEvent.payload;
         if (
-          rawEvent.type !== "PushEvent" ||
           typeof rawEvent.id !== "string" ||
           typeof eventActor?.id !== "number" ||
           eventActor.id !== actor.id ||
           typeof eventActor.login !== "string" ||
           typeof rawEvent.repo?.id !== "number" ||
           !validRepositoryName(repositoryName) ||
-          !occurredAt ||
-          occurredAt < window.startsAt ||
-          occurredAt >= window.endsAt ||
-          !validSha(payload?.head) ||
-          !validSha(payload?.before) ||
           typeof rawEvent.public !== "boolean"
         ) {
           continue;
         }
 
         const visibility = rawEvent.public ? "public" : "private";
+
+        const collaborationEvent = collaborationEventForApiType(rawEvent.type);
+        if (collaborationEvent) {
+          const derivation = deriveCollaborationSubject(
+            collaborationEvent,
+            payload,
+            { id: String(rawEvent.repo.id), name: repositoryName },
+          );
+          if (!derivation.ok) continue;
+          const { subject } = derivation;
+          // The feed timestamps events at delivery; the subject carries the
+          // content instant shared with webhook copies of the same action.
+          if (
+            subject.occurredAt < window.startsAt ||
+            subject.occurredAt >= window.endsAt ||
+            records.has(subject.deduplicationKey)
+          ) {
+            continue;
+          }
+          records.set(subject.deduplicationKey, {
+            deduplicationKey: subject.deduplicationKey,
+            localDate: window.localDate,
+            kind: subject.kind,
+            actorId: String(eventActor.id),
+            actorLogin: eventActor.login,
+            repositoryId: String(rawEvent.repo.id),
+            repositoryName,
+            evidenceUrl: subject.evidenceUrl,
+            visibility,
+            source: "github-events",
+            subjectId: subject.subjectId,
+            subjectNumber: subject.subjectNumber,
+            subjectTitle: subject.title,
+            occurredAt: subject.occurredAt,
+            observedAt: now,
+            authoredBeforeDay: false,
+            installationId: null,
+          });
+          continue;
+        }
+
+        const occurredAt = parseDate(rawEvent.created_at);
+        if (
+          rawEvent.type !== "PushEvent" ||
+          !occurredAt ||
+          occurredAt < window.startsAt ||
+          occurredAt >= window.endsAt ||
+          !validSha(payload?.head) ||
+          !validSha(payload?.before)
+        ) {
+          continue;
+        }
         // Keyed on content, not the events API id, so webhook-ingested copies
         // of the same push collapse into one canonical record.
         const pushKey = pushDeduplicationKey(
@@ -358,6 +338,8 @@ export async function reconcileGitHubActivity({
           visibility,
           source: "github-events",
           subjectId: rawEvent.id,
+          subjectNumber: null,
+          subjectTitle: null,
           occurredAt,
           observedAt: now,
           authoredBeforeDay: false,
@@ -445,6 +427,8 @@ export async function reconcileGitHubActivity({
               visibility,
               source: "github-events",
               subjectId: commit.sha,
+              subjectNumber: null,
+              subjectTitle: null,
               occurredAt: authoredAt,
               observedAt: now,
               authoredBeforeDay: authoredAt < window.startsAt,
@@ -550,6 +534,8 @@ export async function reconcileGitHubActivity({
                   visibility: repository.private ? "private" : "public",
                   source: "github-repository-commits",
                   subjectId: commit.sha,
+                  subjectNumber: null,
+                  subjectTitle: null,
                   occurredAt: authoredAt,
                   observedAt: now,
                   authoredBeforeDay: false,

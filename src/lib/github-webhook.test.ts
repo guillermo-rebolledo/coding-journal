@@ -203,6 +203,8 @@ describe("GitHub push delivery normalization", () => {
         visibility: "private",
         source: "github-webhook",
         subjectId: "2222222",
+        subjectNumber: null,
+        subjectTitle: null,
         occurredAt: new Date("2026-03-08T15:00:00Z"),
         authoredBeforeDay: false,
         installationId: "99",

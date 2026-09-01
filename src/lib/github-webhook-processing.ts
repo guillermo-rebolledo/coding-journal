@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 
+import {
+  normalizeCollaborationMessage,
+  parseCollaborationDeliveryMessage,
+} from "@/lib/github-collaboration";
 import type { GitHubWebhookRepository } from "@/lib/github-webhook-repository";
 import {
   normalizePushMessage,
@@ -18,13 +22,15 @@ export type WebhookDeliveryStore = Pick<
 
 // Consumes one queue message. Throwing signals the queue to retry; returning
 // acknowledges the message.
-export async function processPushDeliveryMessage(
+export async function processWebhookDeliveryMessage(
   rawMessage: unknown,
   metadata: { deliveryCount: number },
   store: WebhookDeliveryStore,
   now: Date = new Date(),
 ): Promise<void> {
-  const message = parsePushDeliveryMessage(rawMessage);
+  const message =
+    parsePushDeliveryMessage(rawMessage) ??
+    parseCollaborationDeliveryMessage(rawMessage);
   if (!message) {
     // A message this deployment cannot read (older or newer producer) will
     // never succeed; acknowledge it without any activity effect.
@@ -47,7 +53,10 @@ export async function processPushDeliveryMessage(
     );
     let recorded = false;
     for (const user of users) {
-      const records = normalizePushMessage(message, user);
+      const records =
+        "push" in message
+          ? normalizePushMessage(message, user)
+          : normalizeCollaborationMessage(message, user);
       if (records.length === 0) continue;
       await store.recordActivity(user.userId, records);
       recorded = true;

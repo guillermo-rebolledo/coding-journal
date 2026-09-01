@@ -42,6 +42,8 @@ describe("GitHub activity repository with Postgres", () => {
       visibility: "private",
       source: "github-events",
       subjectId: "event-1",
+      subjectNumber: null,
+      subjectTitle: null,
       occurredAt: new Date("2026-03-08T15:00:00Z"),
       observedAt: firstAttempt,
       authoredBeforeDay: false,
@@ -80,7 +82,15 @@ describe("GitHub activity repository with Postgres", () => {
     expect(await repository.read("activity-user", "2026-03-08")).toEqual(
       expect.objectContaining({
         status: "complete",
-        metrics: { pushes: 1, commits: 0 },
+        metrics: {
+          pushes: 1,
+          commits: 0,
+          issues: 0,
+          pullRequests: 0,
+          reviews: 0,
+          merges: 0,
+          comments: 0,
+        },
         activities: [
           expect.objectContaining({
             deduplicationKey: record.deduplicationKey,
@@ -136,6 +146,8 @@ describe("GitHub activity repository with the Neon HTTP driver contract", () => 
             visibility: "private",
             source: "github-events",
             subjectId: "event-1",
+            subjectNumber: null,
+            subjectTitle: null,
             occurredAt: new Date("2026-03-08T15:00:00Z"),
             observedAt,
             authoredBeforeDay: false,

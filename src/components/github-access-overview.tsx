@@ -2,7 +2,10 @@ import { AlertTriangle, CheckCircle2, Clock3, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button-variants";
-import { getGitHubInstallationCompleteness } from "@/lib/github-completeness";
+import {
+  describeMissingActivity,
+  getGitHubInstallationCompleteness,
+} from "@/lib/github-completeness";
 import type { GitHubConnectionView } from "@/lib/github-completeness";
 import type { GitHubAccessMode } from "@/lib/journal";
 import { cn } from "@/lib/utils";
@@ -41,7 +44,7 @@ function getInstallationStatus(installation: GitHubConnectionView) {
     return {
       icon: CheckCircle2,
       label: completeness.label,
-      detail: `${count} selected ${count === 1 ? "repository" : "repositories"} visible to your GitHub identity.${completeness.discussionAccess ? "" : " Discussions are unavailable until the App has Discussions read access."}`,
+      detail: `${count} selected ${count === 1 ? "repository" : "repositories"} visible to your GitHub identity.${completeness.missingPermissions.length ? ` ${describeMissingActivity(completeness.missingPermissions)} until the App permissions are updated.` : ""}`,
     };
   }
 
@@ -49,8 +52,7 @@ function getInstallationStatus(installation: GitHubConnectionView) {
     return {
       icon: AlertTriangle,
       label: completeness.label,
-      detail:
-        "Granted repositories are visible, but Discussions are unavailable until the App has Discussions read access.",
+      detail: `Granted repositories are visible. ${describeMissingActivity(completeness.missingPermissions)} until the App permissions are updated.`,
     };
   }
 

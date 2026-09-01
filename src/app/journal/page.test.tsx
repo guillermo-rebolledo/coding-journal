@@ -317,6 +317,87 @@ describe("protected journal boundary", () => {
     ).toBeInTheDocument();
   });
 
+  it("marks ref and release coverage incomplete without Contents permission", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
+    authBoundary.getSession.mockResolvedValue({
+      session: { id: "session-1", token: "server-only-token" },
+      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
+    });
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "app",
+    });
+    installationBoundary.getInstallations.mockResolvedValue([
+      {
+        installationId: "42",
+        accountLogin: "example-org",
+        accountType: "Organization",
+        repositorySelection: "all",
+        repositoryCount: 8,
+        permissions: { discussions: "read", metadata: "read" },
+        status: "active",
+      },
+    ]);
+
+    render(
+      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+    );
+
+    expect(screen.getByText("Limited activity")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "All granted repositories · Pushes, refs, and releases unavailable",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("summarizes incomplete coverage across multiple active installations", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
+    authBoundary.getSession.mockResolvedValue({
+      session: { id: "session-1", token: "server-only-token" },
+      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
+    });
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "app",
+    });
+    installationBoundary.getInstallations.mockResolvedValue([
+      {
+        installationId: "10",
+        accountLogin: "ada",
+        accountType: "User",
+        repositorySelection: "all",
+        repositoryCount: 8,
+        permissions: {
+          contents: "read",
+          discussions: "read",
+          metadata: "read",
+        },
+        status: "active",
+      },
+      {
+        installationId: "42",
+        accountLogin: "example-org",
+        accountType: "Organization",
+        repositorySelection: "selected",
+        repositoryCount: 2,
+        permissions: { contents: "read", metadata: "read" },
+        status: "active",
+      },
+    ]);
+
+    render(
+      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+    );
+
+    expect(screen.getByText("Partial access")).toBeInTheDocument();
+    expect(
+      screen.getByText("2 selected repositories · Discussions unavailable"),
+    ).toBeInTheDocument();
+  });
+
   it("shows trustworthy metrics and chronological evidence for today's activity", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));

@@ -86,7 +86,9 @@ test("best-effort Today keeps its completeness and next action clear on a phone"
   ]);
 
   await page.goto("/journal");
-  await expect(page.getByText("America/Mexico_City")).toBeVisible();
+  await expect(
+    page.getByText("America/Mexico_City", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("Best-effort journal")).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Your day is ready to take shape" }),
@@ -97,6 +99,66 @@ test("best-effort Today keeps its completeness and next action clear on a phone"
     page.getByRole("heading", { name: "Choose what your journal can see" }),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "Back to Today" })).toBeVisible();
+});
+
+test("Today filters, groups, refreshes, and opens source evidence", async ({
+  context,
+  page,
+}) => {
+  await context.addCookies([
+    {
+      name: "coding-journal-e2e-session",
+      value: "all",
+      domain: "localhost",
+      path: "/",
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
+  await context.route("https://github.com/**", async (route) => {
+    await route.fulfill({ status: 200, body: "Evidence" });
+  });
+
+  await page.goto("/journal");
+  await expect(page.getByText("1 push")).toBeVisible();
+  await expect(page.getByText("1 issue update")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    )
+    .toBe(true);
+
+  await page.getByRole("button", { name: "Choose color theme" }).click();
+  await page.getByRole("menuitem", { name: "Dark" }).click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    )
+    .toBe(true);
+
+  await page.getByLabel("Repository").selectOption("acme/api");
+  await page.getByRole("button", { name: "Group by repository" }).click();
+  await expect(page.getByRole("region", { name: "acme/api" })).toBeVisible();
+  await expect(page.getByText("Opened issue #51")).toHaveCount(0);
+
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByRole("link", { name: "View push evidence" }).click();
+  const evidence = await popupPromise;
+  await expect(evidence).toHaveURL(
+    "https://github.com/acme/api/compare/1111111...2222222",
+  );
+
+  await page.getByRole("button", { name: "Refresh Today" }).click();
+  await expect(
+    page.getByRole("status").filter({
+      hasText: "Stored activity reloaded and GitHub reconciliation finished.",
+    }),
+  ).toHaveCount(1);
 });
 
 test("Settings keeps GitHub access guidance within the viewport", async ({

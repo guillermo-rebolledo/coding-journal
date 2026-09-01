@@ -7,19 +7,67 @@ import {
   describeError,
   getLocalDayWindow,
   reconcileGitHubActivity,
+  type ActivityRecord,
   type ReconciliationDiagnostic,
   type TodayJournal,
 } from "@/lib/github-reconciliation";
 import { getGitHubUserAccessToken } from "@/lib/github-user-token";
 
-function emptyE2EJournal(timeZone: string, now: Date): TodayJournal {
+function e2eJournal(userId: string, timeZone: string, now: Date): TodayJournal {
+  const localDate = getLocalDayWindow(now, timeZone).localDate;
+  const activities =
+    userId === "e2e-all"
+      ? ([
+          {
+            deduplicationKey: "e2e:push:api",
+            localDate,
+            kind: "push",
+            actorId: "7",
+            actorLogin: "ada",
+            repositoryId: "42",
+            repositoryName: "acme/api",
+            evidenceUrl:
+              "https://github.com/acme/api/compare/1111111...2222222",
+            visibility: "private",
+            source: "github-webhook",
+            subjectId: "push-api",
+            subjectNumber: null,
+            subjectTitle: "main",
+            occurredAt: new Date(now.getTime() - 30 * 60 * 1000),
+            observedAt: now,
+            authoredBeforeDay: false,
+            installationId: "10",
+          },
+          {
+            deduplicationKey: "e2e:issue:web",
+            localDate,
+            kind: "issue-opened",
+            actorId: "7",
+            actorLogin: "ada",
+            repositoryId: "43",
+            repositoryName: "acme/web",
+            evidenceUrl: "https://github.com/acme/web/issues/51",
+            visibility: "public",
+            source: "github-events",
+            subjectId: "51",
+            subjectNumber: 51,
+            subjectTitle: "Polish Today filters",
+            occurredAt: new Date(now.getTime() - 15 * 60 * 1000),
+            observedAt: now,
+            authoredBeforeDay: false,
+            installationId: null,
+          },
+        ] satisfies ActivityRecord[])
+      : [];
   return {
-    localDate: getLocalDayWindow(now, timeZone).localDate,
+    localDate,
     timeZone,
     status: "complete",
     refreshedAt: now,
-    metrics: computeActivityMetrics([]),
-    activities: [],
+    storedAt: now,
+    lastAttemptAt: now,
+    metrics: computeActivityMetrics(activities),
+    activities,
   };
 }
 
@@ -55,10 +103,20 @@ export async function getTodayJournal({
     process.env.E2E_AUTH_MODE === "true" &&
     userId.startsWith("e2e-")
   ) {
-    return emptyE2EJournal(timeZone, now);
+    return e2eJournal(userId, timeZone, now);
   }
 
-  const reportDiagnostic = createDiagnosticReporter(userId);
+  let rateLimitedUntil: Date | undefined;
+  const logDiagnostic = createDiagnosticReporter(userId);
+  const reportDiagnostic = (diagnostic: ReconciliationDiagnostic) => {
+    logDiagnostic(diagnostic);
+    if (
+      diagnostic.rateLimitResetAt &&
+      (!rateLimitedUntil || diagnostic.rateLimitResetAt > rateLimitedUntil)
+    ) {
+      rateLimitedUntil = diagnostic.rateLimitResetAt;
+    }
+  };
 
   let accessToken: string | null = null;
   try {
@@ -75,7 +133,7 @@ export async function getTodayJournal({
     });
   }
 
-  return reconcileGitHubActivity({
+  const journal = await reconcileGitHubActivity({
     userId,
     timeZone,
     accessMode,
@@ -89,4 +147,33 @@ export async function getTodayJournal({
     store: githubActivityRepository,
     reportDiagnostic,
   });
+  return rateLimitedUntil ? { ...journal, rateLimitedUntil } : journal;
+}
+
+export async function getStoredTodayJournal(
+  options: Parameters<typeof getTodayJournal>[0],
+) {
+  if (
+    process.env.NODE_ENV !== "production" &&
+    process.env.E2E_AUTH_MODE === "true" &&
+    options.userId.startsWith("e2e-")
+  ) {
+    return getTodayJournal(options);
+  }
+  const localDate = getLocalDayWindow(
+    options.now ?? new Date(),
+    options.timeZone,
+  ).localDate;
+  try {
+    return await githubActivityRepository.read(options.userId, localDate);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message === "The journal reconciliation has not been started." ||
+        error.message === "Reconciliation was not finished")
+    ) {
+      return getTodayJournal(options);
+    }
+    throw error;
+  }
 }

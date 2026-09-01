@@ -419,6 +419,40 @@ describe("GitHub current-day reconciliation", () => {
     expect(JSON.stringify(diagnostics)).not.toContain("fixture-token");
   });
 
+  it("reports when GitHub rate limiting ends", async () => {
+    const store = new MemoryStore();
+    const diagnostics: ReconciliationDiagnostic[] = [];
+    const fetchFixture = vi.fn(async (input: string | URL | Request) => {
+      if (String(input).endsWith("/user")) {
+        return new Response("{}", {
+          status: 429,
+          headers: { "x-ratelimit-reset": "1772994300" },
+        });
+      }
+      return jsonResponse([]);
+    });
+
+    await reconcileGitHubActivity({
+      userId: "user-1",
+      timeZone: "America/New_York",
+      accessMode: "best-effort",
+      installationIds: [],
+      accessToken: "fixture-token",
+      now: new Date("2026-03-08T18:00:00Z"),
+      fetchImplementation: fetchFixture as typeof fetch,
+      store,
+      reportDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+
+    expect(diagnostics[0]).toEqual(
+      expect.objectContaining({
+        stage: "actor",
+        errorName: "GitHubRequestError",
+        rateLimitResetAt: new Date("2026-03-08T18:25:00.000Z"),
+      }),
+    );
+  });
+
   it("keeps the events pass alive at GitHub's 300-event pagination limit", async () => {
     const store = new MemoryStore();
     const diagnostics: ReconciliationDiagnostic[] = [];

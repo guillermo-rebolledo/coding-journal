@@ -192,6 +192,8 @@ export function createGitHubActivityRepository<
       timeZone: state.timeZone,
       status: state.status,
       refreshedAt: state.refreshedAt,
+      storedAt: state.updatedAt,
+      lastAttemptAt: state.lastAttemptAt,
       sourceFreshness: state.sourceFreshness?.map((source) => ({
         ...source,
         refreshedAt: source.refreshedAt ? new Date(source.refreshedAt) : null,

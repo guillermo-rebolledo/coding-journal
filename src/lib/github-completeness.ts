@@ -6,7 +6,13 @@ export type GitHubConnectionView = Omit<StoredGitHubInstallation, "status"> & {
 
 export type GitHubInstallationCompleteness =
   | { kind: "installed"; label: "Installed" }
-  | { kind: "partial"; label: "Partial access"; repositoryCount: number }
+  | { kind: "limited"; label: "Limited activity" }
+  | {
+      kind: "partial";
+      label: "Partial access";
+      repositoryCount: number;
+      discussionAccess: boolean;
+    }
   | { kind: "pending"; label: "Pending approval" }
   | { kind: "disconnected"; label: "Disconnected" }
   | { kind: "unavailable"; label: "Temporarily unavailable" };
@@ -28,7 +34,11 @@ export function getGitHubInstallationCompleteness(
       kind: "partial",
       label: "Partial access",
       repositoryCount: installation.repositoryCount ?? 0,
+      discussionAccess: installation.permissions?.discussions === "read",
     };
+  }
+  if (installation.permissions?.discussions !== "read") {
+    return { kind: "limited", label: "Limited activity" };
   }
   return { kind: "installed", label: "Installed" };
 }

@@ -267,6 +267,11 @@ describe("protected journal boundary", () => {
         accountType: "Organization",
         repositorySelection: "selected",
         repositoryCount: 3,
+        permissions: {
+          contents: "read",
+          discussions: "read",
+          metadata: "read",
+        },
         status: "active",
       },
     ]);
@@ -277,6 +282,39 @@ describe("protected journal boundary", () => {
 
     expect(screen.getByText("Partial access")).toBeInTheDocument();
     expect(screen.getByText("3 selected repositories")).toBeInTheDocument();
+  });
+
+  it("marks Discussions incomplete when the installed App lacks permission", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
+    authBoundary.getSession.mockResolvedValue({
+      session: { id: "session-1", token: "server-only-token" },
+      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
+    });
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "app",
+    });
+    installationBoundary.getInstallations.mockResolvedValue([
+      {
+        installationId: "42",
+        accountLogin: "example-org",
+        accountType: "Organization",
+        repositorySelection: "all",
+        repositoryCount: 8,
+        permissions: { contents: "read", metadata: "read" },
+        status: "active",
+      },
+    ]);
+
+    render(
+      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+    );
+
+    expect(screen.getByText("Limited activity")).toBeInTheDocument();
+    expect(
+      screen.getByText("All granted repositories · Discussions unavailable"),
+    ).toBeInTheDocument();
   });
 
   it("shows trustworthy metrics and chronological evidence for today's activity", async () => {
@@ -297,6 +335,11 @@ describe("protected journal boundary", () => {
         accountType: "Organization",
         repositorySelection: "selected",
         repositoryCount: 1,
+        permissions: {
+          contents: "read",
+          discussions: "read",
+          metadata: "read",
+        },
         status: "active",
       },
     ]);
@@ -545,7 +588,7 @@ describe("protected journal boundary", () => {
         ...common,
         kind: "branch-created",
         deduplicationKey:
-          "github:branch-created:42:feature%2Fjournal:2026-08-31",
+          "github:branch-created:42:feature%2Fjournal:delivery-1",
         subjectId: "feature/journal",
         subjectTitle: "feature/journal",
         evidenceUrl: "https://github.com/acme/private-engine/branches",
@@ -559,6 +602,7 @@ describe("protected journal boundary", () => {
         subjectTitle: "Version 2",
         evidenceUrl:
           "https://github.com/acme/private-engine/releases/tag/v2.0.0",
+        visibility: "public",
         occurredAt: new Date("2026-08-31T11:10:00Z"),
       },
       {
@@ -597,7 +641,7 @@ describe("protected journal boundary", () => {
       "href",
       "https://github.com/acme/private-engine/discussions/73#discussioncomment-8801",
     );
-    expect(screen.getAllByText("Private repository")).toHaveLength(3);
+    expect(screen.getAllByText("Private repository")).toHaveLength(2);
   });
 
   it("keeps sign-out available after onboarding", async () => {

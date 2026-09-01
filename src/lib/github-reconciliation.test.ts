@@ -627,5 +627,19 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
     ]);
     expect(JSON.stringify(journal)).not.toContain("PRIVATE");
     expect(JSON.stringify(journal)).not.toContain("reaction");
+
+    const appJournal = await reconcileGitHubActivity({
+      userId: "user-app",
+      timeZone: "America/New_York",
+      accessMode: "app",
+      installationIds: [],
+      accessToken: "fixture-token",
+      now: window.now,
+      fetchImplementation: fetchFixture as typeof fetch,
+      store: new MemoryStore(),
+    });
+    expect(
+      appJournal.activities.map((activity) => activity.kind),
+    ).not.toContain("branch-created");
   });
 });

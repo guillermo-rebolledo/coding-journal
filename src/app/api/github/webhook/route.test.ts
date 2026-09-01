@@ -188,6 +188,109 @@ describe("GitHub webhook endpoint", () => {
     expect(JSON.stringify(message)).not.toContain("PRIVATE");
   });
 
+  it.each([
+    {
+      event: "delete",
+      expectedKind: "tag-deleted",
+      activity: { ref: "v1.0.0", ref_type: "tag", pusher_type: "user" },
+    },
+    {
+      event: "release",
+      expectedKind: "release-published",
+      activity: {
+        action: "published",
+        release: {
+          id: 501,
+          tag_name: "v2.0.0",
+          name: "Version 2",
+          draft: false,
+          published_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      },
+    },
+    {
+      event: "release",
+      expectedKind: "release-updated",
+      activity: {
+        action: "edited",
+        release: {
+          id: 501,
+          tag_name: "v2.0.0",
+          name: "Version 2",
+          draft: false,
+          published_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      },
+    },
+    {
+      event: "discussion",
+      expectedKind: "discussion-created",
+      activity: {
+        action: "created",
+        discussion: {
+          number: 73,
+          title: "Public design question",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      },
+    },
+    {
+      event: "discussion_comment",
+      expectedKind: "discussion-comment",
+      activity: {
+        action: "created",
+        discussion: { number: 73, title: "Public design question" },
+        comment: { id: 8801, created_at: new Date().toISOString() },
+      },
+    },
+    {
+      event: "discussion",
+      expectedKind: "discussion-answered",
+      activity: {
+        action: "answered",
+        discussion: {
+          number: 73,
+          title: "Public design question",
+          updated_at: new Date().toISOString(),
+        },
+        answer: { id: 8801 },
+      },
+    },
+  ])(
+    "enqueues $expectedKind activity at the webhook boundary",
+    async (testCase) => {
+      const body = JSON.stringify({
+        ...testCase.activity,
+        repository: {
+          id: 42,
+          full_name: "acme/open-engine",
+          private: false,
+        },
+        sender: { id: 7, login: "ada", type: "User" },
+        installation: { id: 99 },
+      });
+
+      const response = await POST(
+        webhookRequest({ body, event: testCase.event }),
+      );
+
+      expect(response.status).toBe(202);
+      expect(queueBoundary.publish).toHaveBeenCalledWith(
+        "github-webhook-deliveries",
+        expect.objectContaining({
+          collaboration: expect.objectContaining({
+            private: false,
+            subject: expect.objectContaining({ kind: testCase.expectedKind }),
+          }),
+        }),
+        "d0b74ba1-575e-4a52-9c1c-b8f2f4b0a111",
+      );
+    },
+  );
+
   it("excludes reaction deliveries before queueing", async () => {
     const body = JSON.stringify({
       action: "created",

@@ -152,7 +152,8 @@ export function deriveCollaborationSubject(
   eventType: CollaborationWebhookEvent,
   payload: unknown,
   repository: { id: string; name: string },
-  fallbackOccurredAt?: Date,
+  eventOccurredAt?: Date,
+  eventIdentity?: string,
 ): CollaborationDerivation {
   if (typeof payload !== "object" || payload === null) return invalid;
   const collaboration = payload as CollaborationPayload;
@@ -166,14 +167,14 @@ export function deriveCollaborationSubject(
       typeof collaboration.ref !== "string" ||
       !collaboration.ref.trim() ||
       collaboration.ref.trim().length > refNameMaxLength ||
-      !fallbackOccurredAt
+      !eventOccurredAt ||
+      !eventIdentity
     ) {
       return invalid;
     }
     const ref = collaboration.ref.trim();
     const kind =
       `${collaboration.ref_type}-${eventType === "create" ? "created" : "deleted"}` as CollaborationKind;
-    const day = fallbackOccurredAt.toISOString().slice(0, 10);
     return {
       ok: true,
       subject: {
@@ -181,13 +182,13 @@ export function deriveCollaborationSubject(
         deduplicationKey: collaborationDeduplicationKey(
           kind,
           repository.id,
-          `${encodeURIComponent(ref)}:${day}`,
+          `${encodeURIComponent(ref)}:${eventIdentity}`,
         ),
         subjectId: ref,
         subjectNumber: null,
         title: boundSubjectTitle(ref),
         evidenceUrl: `https://github.com/${repository.name}/${collaboration.ref_type === "branch" ? "branches" : "tags"}`,
-        occurredAt: fallbackOccurredAt,
+        occurredAt: eventOccurredAt,
       },
     };
   }
@@ -268,7 +269,7 @@ export function deriveCollaborationSubject(
       };
     }
     const answerId = collaboration.answer?.id;
-    const occurredAt = parseDate(discussion.updated_at) ?? fallbackOccurredAt;
+    const occurredAt = parseDate(discussion.updated_at) ?? eventOccurredAt;
     if (!positiveInteger(answerId) || !occurredAt) return invalid;
     return {
       ok: true,
@@ -579,6 +580,7 @@ export function extractCollaborationDelivery({
       name: repository.full_name,
     },
     receivedAt,
+    deliveryId,
   );
   if (!derivation.ok) {
     return derivation.reason === "invalid"

@@ -266,11 +266,23 @@ export async function reconcileGitHubActivity({
 
         const collaborationEvent = collaborationEventForApiType(rawEvent.type);
         if (collaborationEvent) {
+          // Ref webhooks have no action timestamp, so there is no exact
+          // content identity shared with the Events API. App mode uses its
+          // durable webhook observation; best-effort mode uses the event id.
+          // Keeping the sources disjoint avoids both double-counting and
+          // collapsing a create-delete-recreate cycle.
+          if (
+            accessMode === "app" &&
+            (collaborationEvent === "create" || collaborationEvent === "delete")
+          ) {
+            continue;
+          }
           const derivation = deriveCollaborationSubject(
             collaborationEvent,
             payload,
             { id: String(rawEvent.repo.id), name: repositoryName },
             eventOccurredAt ?? undefined,
+            rawEvent.id,
           );
           if (!derivation.ok) continue;
           const { subject } = derivation;

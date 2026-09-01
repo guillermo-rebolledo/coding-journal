@@ -41,7 +41,16 @@ function getInstallationStatus(installation: GitHubConnectionView) {
     return {
       icon: CheckCircle2,
       label: completeness.label,
-      detail: `${count} selected ${count === 1 ? "repository" : "repositories"} visible to your GitHub identity.`,
+      detail: `${count} selected ${count === 1 ? "repository" : "repositories"} visible to your GitHub identity.${completeness.discussionAccess ? "" : " Discussions are unavailable until the App has Discussions read access."}`,
+    };
+  }
+
+  if (completeness.kind === "limited") {
+    return {
+      icon: AlertTriangle,
+      label: completeness.label,
+      detail:
+        "Granted repositories are visible, but Discussions are unavailable until the App has Discussions read access.",
     };
   }
 

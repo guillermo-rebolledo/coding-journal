@@ -36,7 +36,11 @@ Configure the shared GitHub App with:
 - Redirect on update: enabled
 - Account permission → Email addresses: Read-only
 - Repository permission → Contents: Read-only
+- Repository permission → Discussions: Read-only
 - Repository permission → Metadata: Read-only (GitHub grants this automatically)
+- Subscribe to repository events: Create, Delete, Discussion, Discussion comment,
+  Issues, Issue comment, Pull request, Pull request review, Pull request review
+  comment, Push, and Release
 
 Set `GITHUB_APP_SLUG` to the slug in the app's public URL. Keep every other
 repository permission at read-only or no access. Coding Journal rejects an

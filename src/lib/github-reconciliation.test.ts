@@ -171,6 +171,9 @@ describe("GitHub current-day reconciliation", () => {
       }),
       expect.objectContaining({
         kind: "push",
+        // The content-derived key keeps webhook-ingested pushes deduplicated
+        // against events API reconciliation.
+        deduplicationKey: "github:push:42:1111111:2222222",
         repositoryName: "acme/private-engine",
         visibility: "private",
         authoredBeforeDay: false,

@@ -55,6 +55,8 @@ export type TodayJournal = {
   lastAttemptAt?: Date;
   /** Transient provider limit returned by an attempted reconciliation. */
   rateLimitedUntil?: Date;
+  /** True only for an empty stored view before the first manual reconciliation. */
+  awaitingReconciliation?: boolean;
   metrics: ActivityMetrics;
   activities: ActivityRecord[];
   sourceFreshness?: SecondarySourceFreshness[];

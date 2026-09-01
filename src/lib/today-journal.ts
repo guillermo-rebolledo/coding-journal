@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { StoredGitHubInstallation } from "@/lib/github-installation";
+import { isE2EJournalUser } from "@/lib/e2e-fixtures";
 import { githubActivityRepository } from "@/lib/github-activity-repository";
 import {
   computeActivityMetrics,
@@ -78,6 +79,7 @@ function emptyStoredJournal(timeZone: string, now: Date): TodayJournal {
     timeZone,
     status: "complete",
     refreshedAt: null,
+    awaitingReconciliation: true,
     metrics: computeActivityMetrics([]),
     activities: [],
   };
@@ -110,11 +112,7 @@ export async function getTodayJournal({
   installations: StoredGitHubInstallation[];
   now?: Date;
 }) {
-  if (
-    process.env.NODE_ENV !== "production" &&
-    process.env.E2E_AUTH_MODE === "true" &&
-    userId.startsWith("e2e-")
-  ) {
+  if (isE2EJournalUser(userId)) {
     return e2eJournal(userId, timeZone, now);
   }
 
@@ -165,11 +163,7 @@ export async function getTodayJournal({
 export async function getStoredTodayJournal(
   options: Parameters<typeof getTodayJournal>[0],
 ) {
-  if (
-    process.env.NODE_ENV !== "production" &&
-    process.env.E2E_AUTH_MODE === "true" &&
-    options.userId.startsWith("e2e-")
-  ) {
+  if (isE2EJournalUser(options.userId)) {
     return getTodayJournal(options);
   }
   const localDate = getLocalDayWindow(

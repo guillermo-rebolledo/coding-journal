@@ -27,6 +27,14 @@ export function getE2EUserId(mode: E2EMode) {
   return mode === "valid" ? "e2e-user" : `e2e-${mode}`;
 }
 
+export function isE2EJournalUser(userId: string) {
+  return (
+    process.env.NODE_ENV !== "production" &&
+    process.env.E2E_AUTH_MODE === "true" &&
+    userId.startsWith("e2e-")
+  );
+}
+
 export function getE2EAccessMode(userId: string) {
   return userId === "e2e-user" || userId === "e2e-pending"
     ? "best-effort"

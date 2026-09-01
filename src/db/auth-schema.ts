@@ -151,13 +151,101 @@ export const githubInstallation = pgTable(
   ],
 );
 
+export const journalReconciliation = pgTable(
+  "journal_reconciliation",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    localDate: text("local_date").notNull(),
+    timeZone: text("time_zone").notNull(),
+    status: text("status")
+      .$type<"loading" | "complete" | "partial" | "error">()
+      .notNull(),
+    lastAttemptAt: timestamp("last_attempt_at", {
+      withTimezone: true,
+    }).notNull(),
+    refreshedAt: timestamp("refreshed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("journal_reconciliation_user_date_uidx").on(
+      table.userId,
+      table.localDate,
+    ),
+  ],
+);
+
+export const githubActivity = pgTable(
+  "github_activity",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    localDate: text("local_date").notNull(),
+    kind: text("kind").$type<"push" | "commit">().notNull(),
+    deduplicationKey: text("deduplication_key").notNull(),
+    actorId: text("actor_id").notNull(),
+    actorLogin: text("actor_login").notNull(),
+    repositoryId: text("repository_id").notNull(),
+    repositoryName: text("repository_name").notNull(),
+    evidenceUrl: text("evidence_url").notNull(),
+    visibility: text("visibility").$type<"public" | "private">().notNull(),
+    source: text("source")
+      .$type<"github-events" | "github-repository-commits">()
+      .notNull(),
+    subjectId: text("subject_id").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+    authoredBeforeDay: boolean("authored_before_day").default(false).notNull(),
+    installationId: text("installation_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("github_activity_user_deduplication_uidx").on(
+      table.userId,
+      table.deduplicationKey,
+    ),
+    index("github_activity_user_date_idx").on(table.userId, table.localDate),
+  ],
+);
+
 export const userRelations = relations(user, ({ many, one }) => ({
   sessions: many(session),
   accounts: many(account),
   journalOnboarding: one(journalOnboarding),
   githubInstallations: many(githubInstallation),
   githubInstallationStates: many(githubInstallationState),
+  githubActivities: many(githubActivity),
+  journalReconciliations: many(journalReconciliation),
 }));
+
+export const githubActivityRelations = relations(githubActivity, ({ one }) => ({
+  user: one(user, {
+    fields: [githubActivity.userId],
+    references: [user.id],
+  }),
+}));
+
+export const journalReconciliationRelations = relations(
+  journalReconciliation,
+  ({ one }) => ({
+    user: one(user, {
+      fields: [journalReconciliation.userId],
+      references: [user.id],
+    }),
+  }),
+);
 
 export const githubInstallationRelations = relations(
   githubInstallation,

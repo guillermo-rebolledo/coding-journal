@@ -259,11 +259,80 @@ describe("GitHub current-day reconciliation", () => {
     expect(diagnostics).toEqual([
       {
         stage: "events",
-        errorName: "Error",
+        errorName: "GitHubRequestError",
         errorMessage: "GitHub request failed (502)",
       },
     ]);
     expect(JSON.stringify(diagnostics)).not.toContain("fixture-token");
+  });
+
+  it("keeps the events pass alive at GitHub's 300-event pagination limit", async () => {
+    const store = new MemoryStore();
+    const diagnostics: ReconciliationDiagnostic[] = [];
+    const requestedPages: string[] = [];
+    // Non-push events keep the fixture focused on pagination alone.
+    const fullPage = Array.from({ length: 100 }, (_, index) => ({
+      id: `watch-${index}`,
+      type: "WatchEvent",
+      actor: { id: 7, login: "ada" },
+      repo: { id: 42, name: "acme/private-engine" },
+      public: true,
+      created_at: "2026-03-08T15:00:00Z",
+    }));
+    const fetchFixture = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
+      if (url.includes("/users/ada/events")) {
+        const page = new URL(url).searchParams.get("page") ?? "1";
+        requestedPages.push(page);
+        // GitHub rejects anything past the third page of the events feed.
+        if (Number(page) > 3) return jsonResponse({ message: "..." }, 422);
+        return jsonResponse(fullPage);
+      }
+      throw new Error(`Unexpected fixture request: ${url}`);
+    });
+
+    const journal = await reconcileGitHubActivity({
+      userId: "user-1",
+      timeZone: "America/New_York",
+      accessMode: "best-effort",
+      installationIds: [],
+      accessToken: "fixture-token",
+      now: new Date("2026-03-08T18:00:00Z"),
+      fetchImplementation: fetchFixture as typeof fetch,
+      store,
+      reportDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+
+    expect(requestedPages).toEqual(["1", "2", "3"]);
+    expect(journal.status).toBe("partial");
+    expect(diagnostics).toEqual([]);
+  });
+
+  it("degrades instead of failing when GitHub rejects a page with 422", async () => {
+    const store = new MemoryStore();
+    const fetchFixture = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/user")) return jsonResponse({ id: 7, login: "ada" });
+      if (url.includes("/users/ada/events")) {
+        return jsonResponse({ message: "Pagination is limited" }, 422);
+      }
+      throw new Error(`Unexpected fixture request: ${url}`);
+    });
+
+    const journal = await reconcileGitHubActivity({
+      userId: "user-1",
+      timeZone: "America/New_York",
+      accessMode: "best-effort",
+      installationIds: [],
+      accessToken: "fixture-token",
+      now: new Date("2026-03-08T18:00:00Z"),
+      fetchImplementation: fetchFixture as typeof fetch,
+      store,
+    });
+
+    // A 422 must not read as "GitHub is unavailable".
+    expect(journal.status).toBe("partial");
   });
 
   it("returns a recoverable error journal when GitHub is unavailable", async () => {

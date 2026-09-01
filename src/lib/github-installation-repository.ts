@@ -122,6 +122,7 @@ export function createGitHubInstallationRepository<
         accountType: true,
         repositorySelection: true,
         repositoryCount: true,
+        permissions: true,
         status: true,
       },
       where: eq(githubInstallation.userId, userId),

@@ -231,9 +231,17 @@ function Today({
     ? activeCompleteness.kind === "partial"
       ? {
           label: activeCompleteness.label,
-          detail: `${activeCompleteness.repositoryCount} selected repositories`,
+          detail: `${activeCompleteness.repositoryCount} selected repositories${activeCompleteness.discussionAccess ? "" : " · Discussions unavailable"}`,
         }
-      : { label: activeCompleteness.label, detail: "All granted repositories" }
+      : activeCompleteness.kind === "limited"
+        ? {
+            label: activeCompleteness.label,
+            detail: "All granted repositories · Discussions unavailable",
+          }
+        : {
+            label: activeCompleteness.label,
+            detail: "All granted repositories",
+          }
     : pending
       ? { label: "Pending approval", detail: "Organization access not granted" }
       : disconnected

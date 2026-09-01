@@ -149,6 +149,15 @@ describe("GitHub collaboration delivery extraction", () => {
     });
     expect(JSON.stringify([published, updated])).not.toContain("PRIVATE");
     expect(JSON.stringify([published, updated])).not.toContain("assets");
+
+    const reconciled = deriveCollaborationSubject(
+      "release",
+      { action: "published", release },
+      { id: "42", name: "acme/private-engine" },
+    );
+    expect(reconciled.ok && reconciled.subject.deduplicationKey).toBe(
+      published.collaboration.subject.deduplicationKey,
+    );
   });
 
   it("normalizes discussion creation, comments, and answers without retaining content", () => {
@@ -233,26 +242,28 @@ describe("GitHub collaboration delivery extraction", () => {
     ).toEqual({ ok: false, reason: "no-activity" });
   });
 
-  it("uses the same content keys for webhook and reconciliation overlap", () => {
+  it("keeps repeated ref lifecycle deliveries distinct", () => {
     const refPayload = {
       ref: "feature/journal",
       ref_type: "branch",
       pusher_type: "user",
     };
-    const fromWebhook = extractedMessage("create", {
+    const first = extractedMessage("create", {
       ...envelope,
       ...refPayload,
     }).collaboration.subject.deduplicationKey;
-    const fromEvents = deriveCollaborationSubject(
-      "create",
-      refPayload,
-      { id: "42", name: "acme/private-engine" },
-      new Date("2026-03-08T15:00:00Z"),
-    );
+    const secondExtraction = extractCollaborationDelivery({
+      eventType: "create",
+      payload: { ...envelope, ...refPayload },
+      deliveryId: "delivery-2",
+      receivedAt,
+    });
+    if (!secondExtraction.ok) throw new Error("second extraction failed");
+    const second =
+      secondExtraction.message.collaboration.subject.deduplicationKey;
 
-    expect(fromEvents.ok && fromEvents.subject.deduplicationKey).toBe(
-      fromWebhook,
-    );
+    expect(first).not.toBe(second);
+    expect(first).toContain(encodeURIComponent("feature/journal"));
   });
 
   it("projects an opened issue into a minimal queue message", () => {

@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { githubActivityRepository } from "@/lib/github-activity-repository";
+import { isE2EJournalUser } from "@/lib/e2e-fixtures";
 import { getGitHubInstallations } from "@/lib/github-installation";
 import {
   getLocalDayWindow,
@@ -66,11 +67,7 @@ export async function refreshTodayJournal(): Promise<RefreshActionResult> {
   let storedJournal: Awaited<
     ReturnType<typeof githubActivityRepository.read>
   > | null = null;
-  const isE2EUser =
-    process.env.NODE_ENV !== "production" &&
-    process.env.E2E_AUTH_MODE === "true" &&
-    session.user.id.startsWith("e2e-");
-  if (!isE2EUser) {
+  if (!isE2EJournalUser(session.user.id)) {
     try {
       storedJournal = await githubActivityRepository.read(
         session.user.id,

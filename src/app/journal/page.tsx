@@ -487,22 +487,26 @@ function JournalActivity({
           <Clock3 aria-hidden className="size-5 shrink-0" />
         )}
         <span className="font-m3-medium">
-          {journal.status === "loading"
-            ? "Reconciling today's GitHub activity"
-            : journal.status === "partial"
-              ? "Partial GitHub response"
-              : journal.status === "error"
-                ? "GitHub reconciliation unavailable"
-                : "GitHub activity reconciled"}
+          {journal.awaitingReconciliation
+            ? "GitHub reconciliation pending"
+            : journal.status === "loading"
+              ? "Reconciling today's GitHub activity"
+              : journal.status === "partial"
+                ? "Partial GitHub response"
+                : journal.status === "error"
+                  ? "GitHub reconciliation unavailable"
+                  : "GitHub activity reconciled"}
         </span>
         <span>
-          {journal.status === "partial"
-            ? "Some granted sources could not be refreshed."
-            : journal.status === "error"
-              ? "Stored activity remains available while GitHub recovers."
-              : freshness
-                ? `Updated at ${freshness}.`
-                : "This may take a moment."}
+          {journal.awaitingReconciliation
+            ? "Refresh Today when you want to check GitHub."
+            : journal.status === "partial"
+              ? "Some granted sources could not be refreshed."
+              : journal.status === "error"
+                ? "Stored activity remains available while GitHub recovers."
+                : freshness
+                  ? `Updated at ${freshness}.`
+                  : "This may take a moment."}
         </span>
       </div>
 
@@ -566,16 +570,20 @@ function JournalActivity({
             id="empty-today-heading"
             className="mt-6 text-m3-headline-sm text-balance"
           >
-            {journal.status === "error"
-              ? "Today could not be refreshed"
-              : journal.status === "loading"
-                ? "Your day is being reconciled"
-                : "Your day is ready to take shape"}
+            {journal.awaitingReconciliation
+              ? "Your day is ready to refresh"
+              : journal.status === "error"
+                ? "Today could not be refreshed"
+                : journal.status === "loading"
+                  ? "Your day is being reconciled"
+                  : "Your day is ready to take shape"}
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-m3-body-md text-muted-foreground">
-            {journal.status === "error"
-              ? "GitHub did not return activity right now. Try opening Today again after the reconciliation cooldown."
-              : "There is no activity in this journal yet. Without repository access, Coding Journal may miss private work and delayed GitHub events."}
+            {journal.awaitingReconciliation
+              ? "Stored activity is shown immediately. Use Refresh Today to start the first GitHub reconciliation."
+              : journal.status === "error"
+                ? "GitHub did not return activity right now. Try opening Today again after the reconciliation cooldown."
+                : "There is no activity in this journal yet. Without repository access, Coding Journal may miss private work and delayed GitHub events."}
           </p>
           <Link
             href="/journal?setup=repositories"

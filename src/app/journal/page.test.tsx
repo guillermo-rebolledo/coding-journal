@@ -252,7 +252,10 @@ describe("protected journal boundary", () => {
     expect(screen.getByText("America/Mexico_City")).toBeInTheDocument();
     expect(screen.getByText("Best-effort journal")).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Your day is ready to take shape" }),
+      screen.getByRole("heading", { name: "Your day is ready to refresh" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("GitHub reconciliation pending"),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "Review repository access" }),
@@ -1107,6 +1110,10 @@ describe("protected journal boundary", () => {
     expect(screen.getAllByRole("listitem")[0]).toHaveTextContent(
       "Opened issue #51",
     );
+    fireEvent.change(screen.getByLabelText("Activity type"), {
+      target: { value: "pushes" },
+    });
+    expect(screen.queryByText("Opened issue #51")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Repository"), {
       target: { value: "acme/api" },
     });
@@ -1210,6 +1217,35 @@ describe("protected journal boundary", () => {
     expect(
       document.querySelector('time[datetime="2026-08-31T12:35:00.000Z"]'),
     ).toBeInTheDocument();
+  });
+
+  it("reloads the stored view and announces a failed manual reconciliation", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-08-31T12:20:00Z"));
+    authBoundary.getSession.mockResolvedValue({
+      session: { id: "session-1", token: "server-only-token" },
+      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
+    });
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "best-effort",
+    });
+    githubBoundary.getToken.mockResolvedValue(null);
+
+    render(
+      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Today" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "Stored activity reloaded. GitHub could not sync right now.",
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(navigation.refresh).toHaveBeenCalled();
+    expect(githubBoundary.fetch).not.toHaveBeenCalled();
   });
 
   it("keeps sign-out available after onboarding", async () => {

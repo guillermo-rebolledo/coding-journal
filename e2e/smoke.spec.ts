@@ -91,7 +91,7 @@ test("best-effort Today keeps its completeness and next action clear on a phone"
   ).toBeVisible();
   await expect(page.getByText("Best-effort journal")).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Your day is ready to take shape" }),
+    page.getByRole("heading", { name: "Your day is ready to refresh" }),
   ).toBeVisible();
 
   await page.getByRole("link", { name: "Review repository access" }).click();
@@ -104,7 +104,7 @@ test("best-effort Today keeps its completeness and next action clear on a phone"
 test("Today filters, groups, refreshes, and opens source evidence", async ({
   context,
   page,
-}) => {
+}, testInfo) => {
   await context.addCookies([
     {
       name: "coding-journal-e2e-session",
@@ -129,9 +129,14 @@ test("Today filters, groups, refreshes, and opens source evidence", async ({
       ),
     )
     .toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("today-light.png"),
+    fullPage: true,
+  });
 
   await page.getByRole("button", { name: "Choose color theme" }).click();
   await page.getByRole("menuitem", { name: "Dark" }).click();
+  await page.keyboard.press("Escape");
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expect
     .poll(() =>
@@ -140,6 +145,15 @@ test("Today filters, groups, refreshes, and opens source evidence", async ({
       ),
     )
     .toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("today-dark.png"),
+    fullPage: true,
+  });
+
+  await page.getByLabel("Activity type").selectOption("issues");
+  await expect(page.getByText("Opened issue #51")).toBeVisible();
+  await expect(page.getByText("Push", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Activity type").selectOption("all");
 
   await page.getByLabel("Repository").selectOption("acme/api");
   await page.getByRole("button", { name: "Group by repository" }).click();

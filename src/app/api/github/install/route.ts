@@ -11,10 +11,14 @@ export async function GET(request: Request) {
   const session = await getJournalSession(request.headers);
 
   if (!session) {
-    return Response.redirect(
-      new URL(`/sign-in?next=${encodeURIComponent(returnTo)}`, requestUrl),
-      307,
+    const destination = new URL(
+      `/sign-in?next=${encodeURIComponent(returnTo)}`,
+      requestUrl,
     );
+    return new Response(null, {
+      status: 307,
+      headers: { location: destination.toString(), "cache-control": "no-store" },
+    });
   }
 
   const state = await createGitHubInstallationState(session.user.id, returnTo);
@@ -23,5 +27,8 @@ export async function GET(request: Request) {
   );
   installUrl.searchParams.set("state", state);
 
-  return Response.redirect(installUrl, 307);
+  return new Response(null, {
+    status: 307,
+    headers: { location: installUrl.toString(), "cache-control": "no-store" },
+  });
 }

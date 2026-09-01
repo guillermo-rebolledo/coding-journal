@@ -22,6 +22,7 @@ import {
   getGitHubInstallations,
   type StoredGitHubInstallation,
 } from "@/lib/github-installation";
+import { getGitHubInstallationCompleteness } from "@/lib/github-completeness";
 import { getJournalOnboarding } from "@/lib/journal";
 import { getJournalSession } from "@/lib/session";
 import { getLocalDate } from "@/lib/time-zone";
@@ -192,13 +193,16 @@ function Today({
   const pending = installations.some(
     (installation) => installation.status === "pending",
   );
-  const completeness = activeInstallation
-    ? activeInstallation.repositorySelection === "selected"
+  const activeCompleteness = activeInstallation
+    ? getGitHubInstallationCompleteness(activeInstallation)
+    : null;
+  const completeness = activeCompleteness
+    ? activeCompleteness.kind === "partial"
       ? {
-          label: "Partial access",
-          detail: `${activeInstallation.repositoryCount ?? 0} selected repositories`,
+          label: activeCompleteness.label,
+          detail: `${activeCompleteness.repositoryCount} selected repositories`,
         }
-      : { label: "Installed", detail: "All granted repositories" }
+      : { label: activeCompleteness.label, detail: "All granted repositories" }
     : pending
       ? { label: "Pending approval", detail: "Organization access not granted" }
       : disconnected

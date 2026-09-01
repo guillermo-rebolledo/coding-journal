@@ -1,39 +1,44 @@
 import { AlertTriangle, CheckCircle2, Clock3, RefreshCw } from "lucide-react";
+import Link from "next/link";
 
+import { buttonVariants } from "@/components/ui/button-variants";
+import { getGitHubInstallationCompleteness } from "@/lib/github-completeness";
 import type { StoredGitHubInstallation } from "@/lib/github-installation";
 import type { GitHubAccessMode } from "@/lib/journal";
+import { cn } from "@/lib/utils";
 
 function getInstallationStatus(installation: StoredGitHubInstallation) {
-  if (installation.status === "pending") {
+  const completeness = getGitHubInstallationCompleteness(installation);
+  if (completeness.kind === "pending") {
     return {
       icon: Clock3,
-      label: "Pending approval",
+      label: completeness.label,
       detail:
         "An organization owner must approve the request before Coding Journal can read repositories.",
     };
   }
 
-  if (installation.status === "disconnected") {
+  if (completeness.kind === "disconnected") {
     return {
       icon: AlertTriangle,
-      label: "Disconnected",
+      label: completeness.label,
       detail:
         "GitHub no longer reports this installation as available. Reinstall or review access on GitHub.",
     };
   }
 
-  if (installation.repositorySelection === "selected") {
-    const count = installation.repositoryCount ?? 0;
+  if (completeness.kind === "partial") {
+    const count = completeness.repositoryCount;
     return {
       icon: CheckCircle2,
-      label: "Partial access",
+      label: completeness.label,
       detail: `${count} selected ${count === 1 ? "repository" : "repositories"} visible to your GitHub identity.`,
     };
   }
 
   return {
     icon: CheckCircle2,
-    label: "Installed",
+    label: completeness.label,
     detail:
       "All repositories granted to this installation are available for supported activity.",
   };
@@ -53,6 +58,12 @@ export function GitHubAccessOverview({
           const status = getInstallationStatus(installation);
           const StatusIcon = status.icon;
           const key = installation.installationId ?? `pending-${index}`;
+          const manageUrl = installation.installationId
+            ? installation.accountType === "Organization" &&
+              installation.accountLogin
+              ? `https://github.com/organizations/${encodeURIComponent(installation.accountLogin)}/settings/installations/${installation.installationId}`
+              : `https://github.com/settings/installations/${installation.installationId}`
+            : null;
 
           return (
             <article
@@ -75,6 +86,17 @@ export function GitHubAccessOverview({
                   <p className="mt-2 text-m3-body-md text-muted-foreground">
                     {status.detail}
                   </p>
+                  {manageUrl ? (
+                    <Link
+                      href={manageUrl}
+                      className={cn(
+                        buttonVariants({ variant: "outline" }),
+                        "mt-4",
+                      )}
+                    >
+                      Manage on GitHub
+                    </Link>
+                  ) : null}
                 </div>
               </div>
             </article>
@@ -97,8 +119,8 @@ export function GitHubAccessOverview({
         <article className="rounded-m3-xl border border-border p-5">
           <p className="text-m3-label-lg-emphasized">Preview source</p>
           <p className="mt-2 text-m3-body-sm text-muted-foreground">
-            Organization Projects coverage depends on GitHub preview interfaces
-            and is always labeled best-effort.
+            When available, organization Projects coverage depends on GitHub
+            preview interfaces and is always labeled best-effort.
           </p>
         </article>
         <article className="rounded-m3-xl border border-border p-5">
@@ -107,8 +129,8 @@ export function GitHubAccessOverview({
             <p className="text-m3-label-lg-emphasized">Reconciliation only</p>
           </div>
           <p className="mt-2 text-m3-body-sm text-muted-foreground">
-            Gists and lightweight GitHub activity can arrive later because
-            GitHub does not provide matching repository webhooks.
+            User-authorized Gists and lightweight activity can arrive later
+            because GitHub does not provide matching repository webhooks.
           </p>
         </article>
       </div>

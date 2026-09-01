@@ -30,8 +30,15 @@ vi.mock("@/lib/journal", () => ({
   getJournalOnboarding: journalBoundary.getOnboarding,
 }));
 
-vi.mock("@/lib/github-installation", () => ({
-  getGitHubInstallations: installationBoundary.getInstallations,
+vi.mock("@/lib/github-installation-repository", () => ({
+  findInstallations: installationBoundary.getInstallations,
+  consumeInstallationState: vi.fn(),
+  deletePendingInstallation: vi.fn(),
+  insertInstallationState: vi.fn(),
+  insertPendingInstallation: vi.fn(),
+  markInstallationDisconnected: vi.fn(),
+  setGitHubAccessMode: vi.fn(),
+  upsertActiveInstallation: vi.fn(),
 }));
 
 vi.mock("@/lib/auth-client", () => ({

@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/db", () => ({ db: {} }));
-vi.mock("@/lib/auth", () => ({ auth: {} }));
-
 import { getUserGitHubInstallation } from "@/lib/github-app";
 
 function githubResponse(body: unknown, status = 200) {
@@ -94,6 +91,18 @@ describe("GitHub installation API boundary", () => {
     ).resolves.toBeNull();
     await expect(
       getUserGitHubInstallation("token", "7", elevatedPermissions),
+    ).resolves.toBeNull();
+
+    const securityPermissions = vi.fn<typeof fetch>().mockResolvedValue(
+      githubResponse({
+        id: 7,
+        account: { id: 9, login: "ada", type: "User" },
+        repository_selection: "all",
+        permissions: { metadata: "read", vulnerability_alerts: "read" },
+      }),
+    );
+    await expect(
+      getUserGitHubInstallation("token", "7", securityPermissions),
     ).resolves.toBeNull();
   });
 

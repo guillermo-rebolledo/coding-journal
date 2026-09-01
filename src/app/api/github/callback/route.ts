@@ -1,18 +1,32 @@
-import {
-  getGitHubUserAccessToken,
-  getUserGitHubInstallation,
-} from "@/lib/github-app";
+import { getUserGitHubInstallation } from "@/lib/github-app";
 import {
   consumeGitHubInstallationState,
+  disconnectGitHubInstallation,
   saveGitHubInstallation,
   savePendingGitHubInstallation,
 } from "@/lib/github-installation";
+import { getGitHubUserAccessToken } from "@/lib/github-user-token";
 import { getJournalSession } from "@/lib/session";
 
-function redirectWithStatus(requestUrl: URL, path: string, status: string) {
+type GitHubCallbackStatus =
+  | "connected"
+  | "invalid-callback"
+  | "invalid-installation"
+  | "invalid-state"
+  | "pending"
+  | "reauthorize";
+
+function redirectWithStatus(
+  requestUrl: URL,
+  path: string,
+  status: GitHubCallbackStatus,
+) {
   const destination = new URL(path, requestUrl);
   destination.searchParams.set("github", status);
-  return Response.redirect(destination, 307);
+  return new Response(null, {
+    status: 307,
+    headers: { location: destination.toString(), "cache-control": "no-store" },
+  });
 }
 
 export async function GET(request: Request) {
@@ -21,10 +35,14 @@ export async function GET(request: Request) {
 
   if (!session) {
     const callbackPath = `${requestUrl.pathname}${requestUrl.search}`;
-    return Response.redirect(
-      new URL(`/sign-in?next=${encodeURIComponent(callbackPath)}`, requestUrl),
-      307,
+    const destination = new URL(
+      `/sign-in?next=${encodeURIComponent(callbackPath)}`,
+      requestUrl,
     );
+    return new Response(null, {
+      status: 307,
+      headers: { location: destination.toString(), "cache-control": "no-store" },
+    });
   }
 
   const stateToken = requestUrl.searchParams.get("state");
@@ -36,8 +54,28 @@ export async function GET(request: Request) {
     return redirectWithStatus(requestUrl, "/journal", "invalid-state");
   }
 
-  if (requestUrl.searchParams.get("setup_action") === "request") {
-    await savePendingGitHubInstallation(session.user.id);
+  const setupAction = requestUrl.searchParams.get("setup_action");
+  if (
+    setupAction &&
+    setupAction !== "install" &&
+    setupAction !== "update" &&
+    setupAction !== "request"
+  ) {
+    return redirectWithStatus(requestUrl, state.returnTo, "invalid-callback");
+  }
+
+  if (setupAction === "request") {
+    const accountId = requestUrl.searchParams.get("target_id");
+    const accountType = requestUrl.searchParams.get("target_type");
+    if (
+      !accountId ||
+      !/^[1-9]\d*$/.test(accountId) ||
+      accountType !== "Organization"
+    ) {
+      return redirectWithStatus(requestUrl, state.returnTo, "invalid-callback");
+    }
+
+    await savePendingGitHubInstallation(session.user.id, accountId);
     return redirectWithStatus(requestUrl, state.returnTo, "pending");
   }
 
@@ -59,6 +97,7 @@ export async function GET(request: Request) {
     installationId,
   );
   if (!installation) {
+    await disconnectGitHubInstallation(session.user.id, installationId);
     return redirectWithStatus(
       requestUrl,
       state.returnTo,

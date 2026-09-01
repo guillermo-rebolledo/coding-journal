@@ -134,3 +134,63 @@ test("Settings keeps GitHub access guidance within the viewport", async ({
     )
     .toBe(true);
 });
+
+for (const connection of [
+  {
+    session: "all",
+    label: "Installed",
+    manageUrl: "https://github.com/settings/installations/10",
+  },
+  {
+    session: "partial",
+    label: "Partial access",
+    manageUrl:
+      "https://github.com/organizations/example-org/settings/installations/42",
+  },
+  { session: "pending", label: "Pending approval", manageUrl: null },
+  {
+    session: "disconnected",
+    label: "Disconnected",
+    manageUrl:
+      "https://github.com/organizations/old-org/settings/installations/11",
+  },
+] as const) {
+  test(`Settings shows ${connection.label.toLowerCase()} GitHub coverage`, async ({
+    context,
+    page,
+  }) => {
+    await context.addCookies([
+      {
+        name: "coding-journal-e2e-session",
+        value: connection.session,
+        domain: "localhost",
+        path: "/",
+        httpOnly: true,
+        sameSite: "Lax",
+      },
+    ]);
+
+    await page.goto("/settings");
+    await expect(
+      page.getByText(connection.label, { exact: true }),
+    ).toBeVisible();
+
+    if (connection.manageUrl) {
+      await expect(
+        page.getByRole("link", { name: "Manage on GitHub" }),
+      ).toHaveAttribute("href", connection.manageUrl);
+      await expect(
+        page.getByRole("link", {
+          name:
+            connection.session === "disconnected"
+              ? "Install GitHub App"
+              : "Add another installation",
+        }),
+      ).toBeVisible();
+    } else {
+      await expect(
+        page.getByRole("link", { name: "Manage on GitHub" }),
+      ).toHaveCount(0);
+    }
+  });
+}

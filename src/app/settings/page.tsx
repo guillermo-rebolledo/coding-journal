@@ -9,7 +9,7 @@ import { GitHubAccessOverview } from "@/components/github-access-overview";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeMenu } from "@/components/theme-menu";
 import { buttonVariants } from "@/components/ui/button-variants";
-import { getGitHubInstallations } from "@/lib/github-installation";
+import { refreshGitHubConnections } from "@/lib/github-connection";
 import { getJournalOnboarding } from "@/lib/journal";
 import { getJournalSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -18,12 +18,13 @@ export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const session = await getJournalSession(await headers());
+  const requestHeaders = await headers();
+  const session = await getJournalSession(requestHeaders);
   if (!session) redirect("/sign-in?next=%2Fsettings");
 
   const [onboarding, installations] = await Promise.all([
     getJournalOnboarding(session.user.id),
-    getGitHubInstallations(session.user.id),
+    refreshGitHubConnections(requestHeaders, session.user.id),
   ]);
   const hasInstallation = installations.some(
     (installation) => installation.status === "active",
@@ -76,7 +77,7 @@ export default async function SettingsPage() {
           >
             <GitBranch aria-hidden />
             {hasInstallation
-              ? "Update repository access"
+              ? "Add another installation"
               : "Install GitHub App"}
           </Link>
         </div>

@@ -22,11 +22,14 @@ export async function getJournalOnboarding(
   if (
     process.env.NODE_ENV !== "production" &&
     process.env.E2E_AUTH_MODE === "true" &&
-    userId === "e2e-user"
+    userId.startsWith("e2e-")
   ) {
     return {
       timeZone: "America/Mexico_City",
-      githubAccessMode: "best-effort",
+      githubAccessMode:
+        userId === "e2e-user" || userId === "e2e-pending"
+          ? "best-effort"
+          : "app",
     };
   }
 

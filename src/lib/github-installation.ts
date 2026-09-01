@@ -1,14 +1,16 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
-import { and, eq, gt } from "drizzle-orm";
-
-import { db } from "@/db";
-import {
-  githubInstallation,
-  githubInstallationState,
-  journalOnboarding,
-} from "@/db/auth-schema";
 import type { GitHubInstallationDetails } from "@/lib/github-app";
+import {
+  consumeInstallationState,
+  deletePendingInstallation,
+  findInstallations,
+  insertInstallationState,
+  insertPendingInstallation,
+  markInstallationDisconnected,
+  setGitHubAccessMode,
+  upsertActiveInstallation,
+} from "@/lib/github-installation-repository";
 
 const installationStateLifetimeMs = 10 * 60 * 1000;
 
@@ -22,7 +24,7 @@ export async function createGitHubInstallationState(
 ) {
   const token = randomBytes(32).toString("base64url");
 
-  await db.insert(githubInstallationState).values({
+  await insertInstallationState({
     id: randomUUID(),
     userId,
     tokenHash: hashInstallationState(token),
@@ -37,16 +39,11 @@ export async function consumeGitHubInstallationState(
   userId: string,
   token: string,
 ) {
-  const [state] = await db
-    .delete(githubInstallationState)
-    .where(
-      and(
-        eq(githubInstallationState.userId, userId),
-        eq(githubInstallationState.tokenHash, hashInstallationState(token)),
-        gt(githubInstallationState.expiresAt, new Date()),
-      ),
-    )
-    .returning({ returnTo: githubInstallationState.returnTo });
+  const state = await consumeInstallationState(
+    userId,
+    hashInstallationState(token),
+    new Date(),
+  );
 
   if (state?.returnTo !== "/journal" && state?.returnTo !== "/settings") {
     return null;
@@ -59,68 +56,29 @@ export async function saveGitHubInstallation(
   userId: string,
   details: GitHubInstallationDetails,
 ) {
-  await db
-    .delete(githubInstallation)
-    .where(
-      and(
-        eq(githubInstallation.userId, userId),
-        eq(githubInstallation.status, "pending"),
-      ),
-    );
-
-  await db
-    .insert(githubInstallation)
-    .values({
-      id: randomUUID(),
-      userId,
-      ...details,
-      status: "active",
-    })
-    .onConflictDoUpdate({
-      target: [githubInstallation.userId, githubInstallation.installationId],
-      set: {
-        userId,
-        ...details,
-        status: "active",
-        updatedAt: new Date(),
-      },
-    });
-
-  await db
-    .insert(journalOnboarding)
-    .values({ userId, githubAccessMode: "app" })
-    .onConflictDoUpdate({
-      target: journalOnboarding.userId,
-      set: { githubAccessMode: "app", updatedAt: new Date() },
-    });
+  await deletePendingInstallation(userId, details.accountId);
+  await upsertActiveInstallation(userId, details);
+  await setGitHubAccessMode(userId);
 }
 
-export async function savePendingGitHubInstallation(userId: string) {
-  await db
-    .delete(githubInstallation)
-    .where(
-      and(
-        eq(githubInstallation.userId, userId),
-        eq(githubInstallation.status, "pending"),
-      ),
-    );
-
-  await db.insert(githubInstallation).values({
-    id: randomUUID(),
-    userId,
-    status: "pending",
-  });
+export async function savePendingGitHubInstallation(
+  userId: string,
+  accountId: string,
+) {
+  await deletePendingInstallation(userId, accountId);
+  await insertPendingInstallation(userId, accountId);
 }
 
-export type StoredGitHubInstallation = Pick<
-  typeof githubInstallation.$inferSelect,
-  | "installationId"
-  | "accountLogin"
-  | "accountType"
-  | "repositorySelection"
-  | "repositoryCount"
-  | "status"
->;
+export type StoredGitHubInstallation = Awaited<
+  ReturnType<typeof findInstallations>
+>[number];
+
+export async function disconnectGitHubInstallation(
+  userId: string,
+  installationId: string,
+) {
+  await markInstallationDisconnected(userId, installationId);
+}
 
 export async function getGitHubInstallations(
   userId: string,
@@ -128,21 +86,57 @@ export async function getGitHubInstallations(
   if (
     process.env.NODE_ENV !== "production" &&
     process.env.E2E_AUTH_MODE === "true" &&
-    userId === "e2e-user"
+    userId.startsWith("e2e-")
   ) {
-    return [];
+    const fixtureByUser: Record<string, StoredGitHubInstallation[]> = {
+      "e2e-all": [
+        {
+          installationId: "10",
+          accountId: "20",
+          accountLogin: "ada",
+          accountType: "User",
+          repositorySelection: "all",
+          repositoryCount: 8,
+          status: "active",
+        },
+      ],
+      "e2e-partial": [
+        {
+          installationId: "42",
+          accountId: "84",
+          accountLogin: "example-org",
+          accountType: "Organization",
+          repositorySelection: "selected",
+          repositoryCount: 3,
+          status: "active",
+        },
+      ],
+      "e2e-pending": [
+        {
+          installationId: null,
+          accountId: "84",
+          accountLogin: null,
+          accountType: "Organization",
+          repositorySelection: null,
+          repositoryCount: null,
+          status: "pending",
+        },
+      ],
+      "e2e-disconnected": [
+        {
+          installationId: "11",
+          accountId: "22",
+          accountLogin: "old-org",
+          accountType: "Organization",
+          repositorySelection: "selected",
+          repositoryCount: 2,
+          status: "disconnected",
+        },
+      ],
+    };
+
+    return fixtureByUser[userId] ?? [];
   }
 
-  return db.query.githubInstallation.findMany({
-    columns: {
-      installationId: true,
-      accountLogin: true,
-      accountType: true,
-      repositorySelection: true,
-      repositoryCount: true,
-      status: true,
-    },
-    where: eq(githubInstallation.userId, userId),
-    orderBy: (installation, { asc }) => [asc(installation.createdAt)],
-  });
+  return findInstallations(userId);
 }

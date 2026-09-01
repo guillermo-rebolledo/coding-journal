@@ -1,9 +1,3 @@
-import { and, eq } from "drizzle-orm";
-
-import { db } from "@/db";
-import { account } from "@/db/auth-schema";
-import { auth } from "@/lib/auth";
-
 const githubApiVersion = "2026-03-10";
 
 export type GitHubInstallationDetails = {
@@ -34,29 +28,15 @@ function githubHeaders(accessToken: string) {
 }
 
 function isReadOnlyPermissionSet(permissions: Record<string, string>) {
-  const forbiddenNames = /(administration|billing|secret|security)/i;
-  return Object.entries(permissions).every(
-    ([name, access]) => !forbiddenNames.test(name) && access === "read",
+  const forbiddenNames =
+    /(administration|billing|code_scanning|dependabot|secret|security|vulnerability)/i;
+  const entries = Object.entries(permissions);
+  return (
+    entries.length > 0 &&
+    entries.every(
+      ([name, access]) => !forbiddenNames.test(name) && access === "read",
+    )
   );
-}
-
-export async function getGitHubUserAccessToken(
-  requestHeaders: Headers,
-  userId: string,
-) {
-  const githubAccount = await db.query.account.findFirst({
-    columns: { id: true },
-    where: and(eq(account.userId, userId), eq(account.providerId, "github")),
-  });
-
-  if (!githubAccount) return null;
-
-  const result = await auth.api.getAccessToken({
-    body: { accountId: githubAccount.id },
-    headers: requestHeaders,
-  });
-
-  return result.accessToken;
 }
 
 export async function getUserGitHubInstallation(

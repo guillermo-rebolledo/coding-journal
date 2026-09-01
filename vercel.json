@@ -9,6 +9,20 @@
           "topic": "github-webhook-deliveries"
         }
       ]
+    },
+    "src/app/api/queues/journal-finalization/route.ts": {
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "journal-finalization"
+        }
+      ]
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/journal-finalization",
+      "schedule": "5 * * * *"
+    }
+  ]
 }

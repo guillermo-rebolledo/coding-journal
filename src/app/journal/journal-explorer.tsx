@@ -299,9 +299,15 @@ function ActivityItem({
 export function JournalExplorer({
   activities,
   timeZone,
+  title = "Today's activity",
+  eyebrow = "EXPLORE",
+  headingId = "journal-timeline-heading",
 }: {
   activities: ActivityRecord[];
   timeZone: string;
+  title?: string;
+  eyebrow?: string;
+  headingId?: string;
 }) {
   const [repository, setRepository] = useState("all");
   const [category, setCategory] = useState<ActivityCategory>("all");
@@ -347,12 +353,12 @@ export function JournalExplorer({
   );
 
   return (
-    <section aria-labelledby="today-timeline-heading" className="mt-8">
+    <section aria-labelledby={headingId} className="mt-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-m3-label-lg-emphasized text-primary">EXPLORE</p>
-          <h2 id="today-timeline-heading" className="mt-2 text-m3-headline-sm">
-            Today&apos;s activity
+          <p className="text-m3-label-lg-emphasized text-primary">{eyebrow}</p>
+          <h2 id={headingId} className="mt-2 text-m3-headline-sm">
+            {title}
           </h2>
         </div>
         <div

@@ -15,7 +15,6 @@ import {
   MessageSquare,
   MessagesSquare,
   Rocket,
-  Settings,
   ShieldCheck,
   Star,
   Upload,
@@ -25,15 +24,12 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import type { ReactNode } from "react";
 
 import { skipGitHubAppInstallation } from "@/app/journal/actions";
 import { JournalExplorer } from "@/app/journal/journal-explorer";
+import { JournalFrame } from "@/app/journal/journal-frame";
 import { JournalRefresh } from "@/app/journal/journal-refresh";
 import { TimeZoneStep } from "@/app/journal/time-zone-step";
-import { BrandMark } from "@/components/brand-mark";
-import { SignOutButton } from "@/components/sign-out-button";
-import { ThemeMenu } from "@/components/theme-menu";
 import { Button } from "@/components/ui/button";
 import { buttonVariants } from "@/components/ui/button-variants";
 import {
@@ -59,47 +55,6 @@ import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Journal" };
 export const dynamic = "force-dynamic";
-
-function JournalFrame({ children }: { children: ReactNode }) {
-  return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-background">
-        <nav
-          aria-label="Journal navigation"
-          className="mx-auto flex min-h-20 max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-3 sm:px-6"
-        >
-          <div className="flex min-h-11 items-center gap-3">
-            <BrandMark />
-            <div>
-              <p className="text-m3-title-md-emphasized">Coding Journal</p>
-              <p className="text-m3-body-sm text-muted-foreground">
-                Your private journal
-              </p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Link
-              href="/settings"
-              aria-label="Settings"
-              className={buttonVariants({
-                variant: "ghost",
-                size: "icon-lg",
-                shape: "round",
-              })}
-            >
-              <Settings aria-hidden />
-            </Link>
-            <ThemeMenu />
-            <SignOutButton />
-          </div>
-        </nav>
-      </header>
-      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-16">
-        {children}
-      </main>
-    </div>
-  );
-}
 
 function RepositoryAccessStep({
   canReturn,
@@ -258,12 +213,17 @@ function Today({
             <span>{timeZone}</span>
           </p>
         </div>
-        <div
-          role="status"
-          className="bg-secondary-container w-fit rounded-m3-lg px-4 py-3 text-secondary-foreground"
-        >
-          <p className="text-m3-label-lg-emphasized">{completeness.label}</p>
-          <p className="mt-1 text-m3-body-sm">{completeness.detail}</p>
+        <div className="grid justify-items-start gap-2 lg:justify-items-end">
+          <p className="bg-primary-container text-m3-label-md-emphasized w-fit rounded-m3-full px-3 py-1.5 text-primary">
+            Live
+          </p>
+          <div
+            role="status"
+            className="bg-secondary-container w-fit rounded-m3-lg px-4 py-3 text-secondary-foreground"
+          >
+            <p className="text-m3-label-lg-emphasized">{completeness.label}</p>
+            <p className="mt-1 text-m3-body-sm">{completeness.detail}</p>
+          </div>
         </div>
       </div>
 

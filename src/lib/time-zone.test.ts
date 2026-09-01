@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { getLocalDate, normalizeTimeZone } from "@/lib/time-zone";
+import {
+  getFinalizationDueAt,
+  getLocalDate,
+  normalizeTimeZone,
+} from "@/lib/time-zone";
 
 describe("journal time zone", () => {
   it("accepts IANA time zones and rejects invalid values", () => {
@@ -34,4 +38,17 @@ describe("journal time zone", () => {
       getLocalDate(new Date("2026-11-01T09:30:00.000Z"), "America/Los_Angeles"),
     ).toEqual({ iso: "2026-11-01", long: "Sunday, November 1" });
   });
+
+  it.each([
+    ["2026-03-08", "America/New_York", "2026-03-09T10:00:00.000Z"],
+    ["2026-11-01", "America/New_York", "2026-11-02T11:00:00.000Z"],
+    ["2026-04-05", "Australia/Lord_Howe", "2026-04-05T19:30:00.000Z"],
+  ])(
+    "schedules %s six elapsed hours after the next local midnight in %s",
+    (localDate, timeZone, expected) => {
+      expect(getFinalizationDueAt(localDate, timeZone).toISOString()).toBe(
+        expected,
+      );
+    },
+  );
 });

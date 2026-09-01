@@ -11,7 +11,7 @@ variable.
 ## Required application variables
 
 The application fails when any variable required by the code path being used is
-missing. Configure all seven values for a complete deployment.
+missing. Configure all eight values for a complete deployment.
 
 | Variable                | Local value                                                        | Production value                                                                                  | Secret?                  | Purpose                                                                      |
 | ----------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------- |
@@ -22,6 +22,7 @@ missing. Configure all seven values for a complete deployment.
 | `GITHUB_CLIENT_SECRET`  | Client secret paired with the local client ID                      | Client secret paired with the production client ID                                                | Yes                      | Exchanges GitHub OAuth authorization codes for user tokens                   |
 | `GITHUB_APP_SLUG`       | Slug from `https://github.com/apps/<slug>`                         | Production app's slug                                                                             | No                       | Builds the GitHub App installation URL                                       |
 | `GITHUB_WEBHOOK_SECRET` | Random value configured on the local GitHub App                    | Random value configured on the production GitHub App                                              | Yes                      | Verifies the HMAC signature on GitHub webhook deliveries                     |
+| `CRON_SECRET`           | A local random value                                               | A long random value configured for Vercel Cron                                                    | Yes                      | Authenticates scheduled journal-finalization dispatches                      |
 
 Use separate local and production Neon databases and separate
 `BETTER_AUTH_SECRET` values. A shared GitHub App can support local and

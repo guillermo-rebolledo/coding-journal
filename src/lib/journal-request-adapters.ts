@@ -12,8 +12,9 @@ import {
   getE2ESessionMode,
   getE2ETodayJournal,
   type E2EOnboardingStage,
-} from "@/lib/e2e-fixtures";
+} from "@/lib/journal-fixture-adapters";
 import { refreshGitHubConnections } from "@/lib/github-connection";
+import { JournalNotFoundError } from "@/lib/journal-errors";
 import { getRequiredEnv } from "@/lib/env";
 import { githubActivityRepository } from "@/lib/github-activity-repository";
 import { getGitHubInstallations } from "@/lib/github-installation";
@@ -31,7 +32,6 @@ import {
 import { journalSummaryRepository } from "@/lib/journal-summary-repository";
 import { openAiSummaryProvider } from "@/lib/openai-summary";
 import type { RateLimitPolicyName } from "@/lib/rate-limit";
-import { spendRequestBudget } from "@/lib/request-budget";
 import { guardAction } from "@/lib/request-guard";
 import { serviceCircuitRepository } from "@/lib/service-circuit-repository";
 import { getJournalSession } from "@/lib/session";
@@ -92,8 +92,9 @@ export function chooseJournalRequestAdapters(requestHeaders: Headers) {
           narrative: null,
           nextSyncAt: null,
         }),
-        readStored: async () =>
-          getE2ETodayJournal(fixtureUserId, "America/Mexico_City"),
+        readStored: async () => {
+          throw new JournalNotFoundError();
+        },
         reconcile: async ({
           timeZone,
           now = new Date(),
@@ -112,7 +113,6 @@ export function chooseJournalRequestAdapters(requestHeaders: Headers) {
         redactNarrative: async () => false,
         fail: journalFinalizationRepository.fail,
       },
-      budget: async () => null,
       guard: async () => ({ proceed: true as const }),
       endSession: async () => {
         const store = await cookies();
@@ -166,12 +166,6 @@ export function chooseJournalRequestAdapters(requestHeaders: Headers) {
         }),
     },
     finalization: journalFinalizationRepository,
-    budget: (
-      policy: RateLimitPolicyName,
-      userId: string | null,
-      now: Date,
-      service?: "github" | "openai",
-    ) => spendRequestBudget({ policy, userId, now, service }),
     guard: (
       policy: RateLimitPolicyName,
       userId: string | null,

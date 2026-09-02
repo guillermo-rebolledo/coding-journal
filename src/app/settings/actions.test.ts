@@ -12,7 +12,7 @@ import { journalSession } from "~test/session-fixture";
 const boundaries = {
   deleteAccount: vi.fn<DeleteAccountDependencies["deleteAccount"]>(),
   getSession: vi.fn<(headers: Headers) => Promise<JournalSession | null>>(),
-  spendBudget: vi.fn<DeleteAccountDependencies["spendBudget"]>(),
+  guard: vi.fn<DeleteAccountDependencies["guard"]>(),
   redirect: vi.fn((destination: string): never => {
     throw new Error(`NEXT_REDIRECT:${destination}`);
   }),
@@ -22,7 +22,7 @@ function dependencies(): DeleteAccountDependencies {
   return {
     requestHeaders: new Headers(),
     getSession: boundaries.getSession,
-    spendBudget: boundaries.spendBudget,
+    guard: boundaries.guard,
     deleteAccount: boundaries.deleteAccount,
     redirect: boundaries.redirect,
   };
@@ -34,13 +34,11 @@ function deleteAccount(formData: FormData) {
 
 describe("account deletion action", () => {
   beforeEach(() => {
-    boundaries.deleteAccount
-      .mockReset()
-      .mockResolvedValue(undefined);
+    boundaries.deleteAccount.mockReset().mockResolvedValue(undefined);
     boundaries.getSession
       .mockReset()
       .mockResolvedValue(journalSession("user-1"));
-    boundaries.spendBudget.mockReset().mockResolvedValue(null);
+    boundaries.guard.mockReset().mockResolvedValue({ proceed: true });
     boundaries.redirect.mockClear();
   });
 
@@ -83,13 +81,13 @@ describe("account deletion action", () => {
   });
 
   it("refuses a repeated deletion request without touching the account", async () => {
-    boundaries.spendBudget.mockResolvedValue({
-      allowed: false,
-      policy: "account-deletion",
-      limit: 3,
-      remaining: 0,
-      retryAfterSeconds: 3600,
-      resetAt: new Date("2026-09-01T13:00:00Z"),
+    boundaries.guard.mockResolvedValue({
+      proceed: false,
+      refusal: {
+        outcome: "limited",
+        message: "Request limit reached.",
+        resumeAt: new Date("2026-09-01T13:00:00Z"),
+      },
     });
     const formData = new FormData();
     formData.set("confirmation", "DELETE");

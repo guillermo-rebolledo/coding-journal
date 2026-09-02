@@ -13,8 +13,7 @@ export async function deleteAccount(formData: FormData) {
   return runDeleteAccount(formData, {
     requestHeaders,
     getSession: adapters.session,
-    spendBudget: (userId) =>
-      adapters.budget("account-deletion", userId, new Date()),
+    guard: (userId) => adapters.guard("account-deletion", userId, new Date()),
     deleteAccount: adapters.deleteAccount,
     redirect,
   });

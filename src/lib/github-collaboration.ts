@@ -2,6 +2,7 @@ import {
   activityIdentity,
   collaborationKinds,
   createActivityRecord,
+  githubRepositoryEvidenceUrl,
   readAttributionKeys,
   validRepositoryName,
   validSha,
@@ -17,7 +18,11 @@ import {
   readString,
   type JsonObject,
 } from "@/lib/json-payload";
-import { isStaleGitHubDelivery } from "@/lib/github-delivery-rules";
+import {
+  boundedGitHubTitle,
+  githubSubjectTitleMaxLength,
+  isStaleGitHubDelivery,
+} from "@/lib/github-delivery-rules";
 import { getLocalDayWindow, parseDate } from "@/lib/time-zone";
 
 // Deliveries whose action happened this long before receipt describe history
@@ -26,7 +31,7 @@ import { getLocalDayWindow, parseDate } from "@/lib/time-zone";
 // Titles and ref/tag names are the only free text this activity contract
 // keeps. Bodies, diffs, patches, release assets, and comments are never
 // retained.
-export const subjectTitleMaxLength = 120;
+export const subjectTitleMaxLength = githubSubjectTitleMaxLength;
 const refNameMaxLength = 255;
 
 export const collaborationWebhookEvents = [
@@ -92,12 +97,7 @@ export type CollaborationDerivation =
   | { ok: false; reason: "unsupported" | "invalid" };
 
 function boundSubjectTitle(value: string | null): string | null {
-  if (value === null) return null;
-  const title = value.trim();
-  if (!title) return null;
-  return title.length > subjectTitleMaxLength
-    ? `${title.slice(0, subjectTitleMaxLength - 1)}…`
-    : title;
+  return boundedGitHubTitle(value);
 }
 
 /** Reads a ref name, rejecting one that is empty or implausibly long. */
@@ -116,7 +116,8 @@ function collaborationDeduplicationKey(
   repositoryId: string,
   discriminator: string | number,
 ) {
-  return `github:${kind}:${repositoryId}:${discriminator}`;
+  return activityIdentity.repository(kind, repositoryId, String(discriminator))
+    .deduplicationKey;
 }
 
 // Maps one observed issue or pull-request action onto its canonical subject.
@@ -166,7 +167,10 @@ export function deriveCollaborationSubject(
         subjectId: ref,
         subjectNumber: null,
         title: boundSubjectTitle(ref),
-        evidenceUrl: `https://github.com/${repository.name}/${refType === "branch" ? "branches" : "tags"}`,
+        evidenceUrl: githubRepositoryEvidenceUrl(
+          repository.name,
+          refType === "branch" ? "branches" : "tags",
+        ),
         occurredAt: eventOccurredAt,
       },
     };
@@ -215,7 +219,10 @@ export function deriveCollaborationSubject(
         title:
           boundSubjectTitle(readString(release, "name")) ??
           boundSubjectTitle(tag),
-        evidenceUrl: `https://github.com/${repository.name}/releases/tag/${encodeURIComponent(tag)}`,
+        evidenceUrl: githubRepositoryEvidenceUrl(
+          repository.name,
+          `releases/tag/${encodeURIComponent(tag)}`,
+        ),
         occurredAt,
         attributionKeys: [
           `github:ref:${repository.id}:${encodeURIComponent(tag)}`,
@@ -245,7 +252,10 @@ export function deriveCollaborationSubject(
           subjectId: String(number),
           subjectNumber: number,
           title,
-          evidenceUrl: `https://github.com/${repository.name}/discussions/${number}`,
+          evidenceUrl: githubRepositoryEvidenceUrl(
+            repository.name,
+            `discussions/${number}`,
+          ),
           occurredAt,
         },
       };
@@ -266,7 +276,7 @@ export function deriveCollaborationSubject(
         subjectId: String(answerId),
         subjectNumber: number,
         title,
-        evidenceUrl: `https://github.com/${repository.name}/discussions/${number}#discussioncomment-${answerId}`,
+        evidenceUrl: `${githubRepositoryEvidenceUrl(repository.name, `discussions/${number}`)}#discussioncomment-${answerId}`,
         occurredAt,
       },
     };
@@ -295,7 +305,7 @@ export function deriveCollaborationSubject(
         subjectId: String(commentId),
         subjectNumber: number,
         title: boundSubjectTitle(readString(discussion, "title")),
-        evidenceUrl: `https://github.com/${repository.name}/discussions/${number}#discussioncomment-${commentId}`,
+        evidenceUrl: `${githubRepositoryEvidenceUrl(repository.name, `discussions/${number}`)}#discussioncomment-${commentId}`,
         occurredAt,
       },
     };
@@ -343,7 +353,10 @@ export function deriveCollaborationSubject(
         subjectId: String(number),
         subjectNumber: number,
         title: boundSubjectTitle(readString(issue, "title")),
-        evidenceUrl: `https://github.com/${repository.name}/issues/${number}`,
+        evidenceUrl: githubRepositoryEvidenceUrl(
+          repository.name,
+          `issues/${number}`,
+        ),
         occurredAt,
       },
     };
@@ -374,7 +387,7 @@ export function deriveCollaborationSubject(
         subjectId: String(commentId),
         subjectNumber: number,
         title: boundSubjectTitle(readString(issue, "title")),
-        evidenceUrl: `https://github.com/${repository.name}/${onPullRequest ? "pull" : "issues"}/${number}#issuecomment-${commentId}`,
+        evidenceUrl: `${githubRepositoryEvidenceUrl(repository.name, `${onPullRequest ? "pull" : "issues"}/${number}`)}#issuecomment-${commentId}`,
         occurredAt,
       },
     };
@@ -433,7 +446,10 @@ export function deriveCollaborationSubject(
       subjectId: String(number),
       subjectNumber: number,
       title: boundSubjectTitle(readString(pullRequest, "title")),
-      evidenceUrl: `https://github.com/${repository.name}/pull/${number}`,
+      evidenceUrl: githubRepositoryEvidenceUrl(
+        repository.name,
+        `pull/${number}`,
+      ),
       occurredAt,
     };
     // A merge also attributes the merge commit, so the commit observation and
@@ -477,7 +493,7 @@ export function deriveCollaborationSubject(
         subjectId: String(reviewId),
         subjectNumber: number,
         title: boundSubjectTitle(readString(pullRequest, "title")),
-        evidenceUrl: `https://github.com/${repository.name}/pull/${number}#pullrequestreview-${reviewId}`,
+        evidenceUrl: `${githubRepositoryEvidenceUrl(repository.name, `pull/${number}`)}#pullrequestreview-${reviewId}`,
         occurredAt,
       },
     };
@@ -503,7 +519,7 @@ export function deriveCollaborationSubject(
       subjectId: String(commentId),
       subjectNumber: number,
       title: boundSubjectTitle(readString(pullRequest, "title")),
-      evidenceUrl: `https://github.com/${repository.name}/pull/${number}#discussion_r${commentId}`,
+      evidenceUrl: `${githubRepositoryEvidenceUrl(repository.name, `pull/${number}`)}#discussion_r${commentId}`,
       occurredAt,
     },
   };

@@ -3,9 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { ActivityRecord } from "@/lib/github-activity";
 import {
   buildSummarySnapshot,
+  createInMemorySummaryStore,
   generateJournalSummary,
-  type JournalSummary,
-  type SummaryStore,
 } from "@/lib/journal-summary";
 
 function activity(overrides: Partial<ActivityRecord> = {}): ActivityRecord {
@@ -33,22 +32,7 @@ function activity(overrides: Partial<ActivityRecord> = {}): ActivityRecord {
   };
 }
 
-function memoryStore(): SummaryStore & { summaries: JournalSummary[] } {
-  const summaries: JournalSummary[] = [];
-  return {
-    summaries,
-    findBySnapshotHash: async (userId, hash) =>
-      summaries.find(
-        (summary) => summary.userId === userId && summary.snapshotHash === hash,
-      ) ?? null,
-    getUsage: async () => ({ userDaily: 0, globalDaily: 0, monthlyCostUsd: 0 }),
-    claimSlot: async () => ({ finish: async () => {} }),
-    save: async (summary) => {
-      summaries.push(summary);
-      return summary;
-    },
-  };
-}
+const memoryStore = createInMemorySummaryStore;
 
 const validOutput = {
   overview:

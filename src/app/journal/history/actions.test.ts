@@ -9,7 +9,7 @@ import {
 } from "@/app/journal/history/history-actions";
 import type { JournalFinalizationRepository } from "@/lib/journal-finalization-repository";
 import type { QueuePublisher } from "@/lib/queue";
-import type { RateLimitDecision } from "@/lib/rate-limit";
+import type { GuardDecision } from "@/lib/request-guard";
 import type { JournalSession } from "@/lib/session";
 import { journalSession } from "~test/session-fixture";
 
@@ -19,14 +19,14 @@ const boundaries = {
   redactNarrative: vi.fn<JournalFinalizationRepository["redactNarrative"]>(),
   publish: vi.fn<QueuePublisher["publish"]>(),
   fail: vi.fn<JournalFinalizationRepository["fail"]>(),
-  spendBudget: vi.fn<HistoryActionDependencies["spendBudget"]>(),
+  guard: vi.fn<HistoryActionDependencies["guard"]>(),
 };
 
 function dependencies(): HistoryActionDependencies {
   return {
     requestHeaders: new Headers(),
     getSession: boundaries.getSession,
-    spendBudget: boundaries.spendBudget,
+    guard: boundaries.guard,
     store: {
       retry: boundaries.retry,
       redactNarrative: boundaries.redactNarrative,
@@ -49,14 +49,16 @@ function redactHistoricalNarrative(localDate: string) {
 }
 
 /** A refusal from the shared request budget, as the real one reports it. */
-function refusal(policy: RateLimitDecision["policy"]): RateLimitDecision {
+function refusal(policy: string): GuardDecision {
+  void policy;
   return {
-    allowed: false,
-    policy,
-    limit: 3,
-    remaining: 0,
-    resetAt: new Date(Date.now() + 30 * 60 * 1000),
-    retryAfterSeconds: 1800,
+    proceed: false,
+    refusal: {
+      outcome: "limited",
+      message:
+        "Request limit reached. The finalized record and its metrics stay readable. Try again in about 30 minutes.",
+      resumeAt: new Date(Date.now() + 30 * 60 * 1000),
+    },
   };
 }
 
@@ -74,7 +76,7 @@ describe("journal history actions", () => {
     boundaries.redactNarrative.mockReset().mockResolvedValue(true);
     boundaries.publish.mockReset().mockResolvedValue(undefined);
     boundaries.fail.mockReset();
-    boundaries.spendBudget.mockReset().mockResolvedValue(null);
+    boundaries.guard.mockReset().mockResolvedValue({ proceed: true });
   });
 
   it("queues a retry and says the recorded day is still readable", async () => {
@@ -87,7 +89,7 @@ describe("journal history actions", () => {
   });
 
   it("refuses a repeated retry without queueing more provider work", async () => {
-    boundaries.spendBudget.mockResolvedValue(refusal("finalization-retry"));
+    boundaries.guard.mockResolvedValue(refusal("finalization-retry"));
 
     const result = await retryHistoricalJournal("2026-08-30");
 
@@ -136,7 +138,7 @@ describe("journal history actions", () => {
   });
 
   it("refuses a redaction burst without touching the record", async () => {
-    boundaries.spendBudget.mockResolvedValue(refusal("narrative-redaction"));
+    boundaries.guard.mockResolvedValue(refusal("narrative-redaction"));
 
     const result = await redactHistoricalNarrative("2026-08-30");
 

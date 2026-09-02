@@ -7,7 +7,7 @@ import {
   type JournalHistoryStore,
 } from "@/lib/journal-history";
 import type { QueuePublisher } from "@/lib/queue";
-import { rateLimitMessage, type RateLimitDecision } from "@/lib/rate-limit";
+import type { GuardDecision } from "@/lib/request-guard";
 import type { JournalSession } from "@/lib/session";
 import { logServiceEvent } from "@/lib/telemetry";
 
@@ -30,15 +30,12 @@ export type HistoryActionResult = {
 export type HistoryActionDependencies = {
   requestHeaders: Headers;
   getSession: (requestHeaders: Headers) => Promise<JournalSession | null>;
-  spendBudget: (
+  guard: (
     policy: "finalization-retry" | "narrative-redaction",
     userId: string,
     now: Date,
-  ) => Promise<RateLimitDecision | null>;
-  store: Pick<
-    JournalHistoryStore,
-    "fail" | "retry" | "redactNarrative"
-  >;
+  ) => Promise<GuardDecision>;
+  store: Pick<JournalHistoryStore, "fail" | "retry" | "redactNarrative">;
   queue: QueuePublisher;
   revalidatePath: (path: string) => void;
   redirect: (destination: string) => never;
@@ -64,13 +61,12 @@ export async function runRetryHistoricalJournal(
   const userId = await authenticatedUserId(dependencies);
   const now = new Date();
 
-  const budget = await dependencies.spendBudget(
-    "finalization-retry",
-    userId,
-    now,
-  );
-  if (budget && !budget.allowed) {
-    return { status: "limited", message: rateLimitMessage(budget, now) };
+  const guarded = await dependencies.guard("finalization-retry", userId, now);
+  if (!guarded.proceed) {
+    return {
+      status: guarded.refusal.outcome,
+      message: guarded.refusal.message,
+    };
   }
 
   const retry = await store.retry(userId, localDate);
@@ -124,13 +120,12 @@ export async function runRedactHistoricalNarrative(
   const userId = await authenticatedUserId(dependencies);
   const now = new Date();
 
-  const budget = await dependencies.spendBudget(
-    "narrative-redaction",
-    userId,
-    now,
-  );
-  if (budget && !budget.allowed) {
-    return { status: "limited", message: rateLimitMessage(budget, now) };
+  const guarded = await dependencies.guard("narrative-redaction", userId, now);
+  if (!guarded.proceed) {
+    return {
+      status: guarded.refusal.outcome,
+      message: guarded.refusal.message,
+    };
   }
 
   await store.redactNarrative(userId, localDate);

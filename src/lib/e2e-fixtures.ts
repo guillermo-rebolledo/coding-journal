@@ -199,9 +199,7 @@ export function getE2EGitHubInstallations(
 ): StoredGitHubInstallation[] {
   if (!Object.hasOwn(e2eGitHubInstallations, userId)) return [];
   return (
-    e2eGitHubInstallations[
-      userId as keyof typeof e2eGitHubInstallations
-    ] ?? []
+    e2eGitHubInstallations[userId as keyof typeof e2eGitHubInstallations] ?? []
   ).map((installation) => ({ ...installation }));
 }
 

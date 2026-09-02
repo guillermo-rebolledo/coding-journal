@@ -36,6 +36,18 @@ export type GuardDecision =
   | { proceed: true }
   | { proceed: false; refusal: GuardRefusal };
 
+export function providerUnavailableRefusal(
+  provider: CircuitService,
+  retryAfterSeconds: number,
+  now = new Date(),
+): GuardRefusal {
+  return {
+    outcome: "unavailable",
+    message: `The ${provider === "github" ? "GitHub" : "narrative"} service is temporarily unavailable. Stored journals stay readable. Try again in about ${Math.max(1, Math.ceil(retryAfterSeconds / 60))} minutes.`,
+    resumeAt: new Date(now.getTime() + retryAfterSeconds * 1000),
+  };
+}
+
 export function retryableGuardError(cause: unknown) {
   return cause instanceof QueueSaturatedError ||
     cause instanceof ProviderUnavailableError
@@ -93,9 +105,6 @@ export async function guardAction({
       configuration: circuitConfiguration(),
     });
     if (!circuit.allowed) {
-      const resumeAt = new Date(
-        now.getTime() + circuit.retryAfterSeconds * 1000,
-      );
       logServiceEvent({
         category: "provider",
         event: "provider-circuit-open",
@@ -106,11 +115,11 @@ export async function guardAction({
       });
       return {
         proceed: false,
-        refusal: {
-          outcome: "unavailable",
-          message: `The ${provider === "github" ? "GitHub" : "narrative"} service is temporarily unavailable. Stored journals stay readable. Try again in about ${Math.max(1, Math.ceil(circuit.retryAfterSeconds / 60))} minutes.`,
-          resumeAt,
-        },
+        refusal: providerUnavailableRefusal(
+          provider,
+          circuit.retryAfterSeconds,
+          now,
+        ),
       };
     }
   }

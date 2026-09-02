@@ -17,12 +17,8 @@ import { getGitHubJournalCompleteness } from "@/lib/github-completeness";
 import type { JournalOnboarding } from "@/lib/journal";
 import type { TodayJournal } from "@/lib/github-reconciliation";
 import type { JournalSession } from "@/lib/session";
-import {
-  describeJournalStatus,
-} from "@/lib/today-journal";
-import {
-  type JournalSummary,
-} from "@/lib/journal-summary";
+import { describeJournalStatus } from "@/lib/today-journal";
+import { type JournalSummary } from "@/lib/journal-summary";
 import { cn } from "@/lib/utils";
 
 function formatTime(value: Date, timeZone: string) {
@@ -207,9 +203,7 @@ function Today({
           </div>
           <JournalRefresh
             refresh={refresh}
-            nextSyncAt={
-              nextSyncAt?.toISOString() ?? null
-            }
+            nextSyncAt={nextSyncAt?.toISOString() ?? null}
             timeZone={timeZone}
           />
         </div>
@@ -403,10 +397,7 @@ export type JournalPageDependencies = {
     requestHeaders: Headers,
   ) => Promise<JournalOnboarding>;
   getInstallations: (userId: string) => Promise<StoredGitHubInstallation[]>;
-  readToday: (input: {
-    userId: string;
-    timeZone: string;
-  }) => Promise<{
+  readToday: (input: { userId: string; timeZone: string }) => Promise<{
     journal: TodayJournal;
     narrative: JournalSummary | null;
     nextSyncAt: Date | null;

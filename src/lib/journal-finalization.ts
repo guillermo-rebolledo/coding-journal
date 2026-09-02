@@ -1,3 +1,4 @@
+import { readNumber, readString, type JsonObject } from "@/lib/json-payload";
 import type { ActivityMetrics, ActivityRecord } from "@/lib/github-activity";
 import {
   buildSummarySnapshot,
@@ -60,11 +61,11 @@ async function failAttempt(
   message: JournalFinalizationMessage,
   failure: FinalizationFailure,
   deliveryCount: number,
-  error: unknown,
+  cause: unknown,
 ) {
   const terminal = deliveryCount >= maximumAttempts;
   await store.fail(message.userId, message.localDate, failure, terminal);
-  if (!terminal) throw error;
+  if (!terminal) throw cause;
 }
 
 function idempotencyKey(candidate: FinalizationCandidate) {
@@ -102,21 +103,30 @@ export async function enqueueDueJournalFinalizations(
   return enqueued;
 }
 
+/**
+ * Decodes a queue message this service published earlier. The message crossed
+ * a queue, so every field is read and checked before the message is rebuilt.
+ */
 export function parseJournalFinalizationMessage(
-  value: unknown,
+  value: JsonObject | null,
 ): JournalFinalizationMessage | null {
-  if (!value || typeof value !== "object") return null;
-  const message = value as Record<string, unknown>;
-  return message.version === 1 &&
-    typeof message.userId === "string" &&
-    /^\d{4}-\d{2}-\d{2}$/.test(String(message.localDate)) &&
-    typeof message.timeZone === "string"
-    ? (message as JournalFinalizationMessage)
-    : null;
+  const userId = readString(value, "userId");
+  const localDate = readString(value, "localDate");
+  const timeZone = readString(value, "timeZone");
+  if (
+    readNumber(value, "version") !== 1 ||
+    userId === null ||
+    localDate === null ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(localDate) ||
+    timeZone === null
+  ) {
+    return null;
+  }
+  return { version: 1, userId, localDate, timeZone };
 }
 
 export async function processJournalFinalization(
-  rawMessage: unknown,
+  rawMessage: JsonObject | null,
   deliveryCount: number,
   store: FinalizationStore,
   reconcile: ReconcileFinalDay,

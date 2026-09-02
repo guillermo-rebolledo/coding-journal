@@ -183,6 +183,8 @@ const metricKinds: Record<keyof ActivityMetrics, ActivityKind[]> = {
 export function computeActivityMetrics(
   activities: Array<{ kind: ActivityKind }>,
 ): ActivityMetrics {
+  // SAFETY: the entries come straight from `metricKinds`, whose keys are the
+  // metric names `ActivityMetrics` declares, so the rebuilt record is total.
   return Object.fromEntries(
     Object.entries(metricKinds).map(([metric, kinds]) => [
       metric,
@@ -191,15 +193,14 @@ export function computeActivityMetrics(
   ) as ActivityMetrics;
 }
 
-export function validRepositoryName(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value)
-  );
+/** Narrows a decoded string to GitHub's `owner/name` repository form. */
+export function validRepositoryName(value: string | null): value is string {
+  return value !== null && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value);
 }
 
-export function validSha(value: unknown): value is string {
-  return typeof value === "string" && /^[a-fA-F0-9]{7,64}$/.test(value);
+/** Narrows a decoded string to an abbreviated or full commit SHA. */
+export function validSha(value: string | null): value is string {
+  return value !== null && /^[a-fA-F0-9]{7,64}$/.test(value);
 }
 
 export function pushDeduplicationKey(

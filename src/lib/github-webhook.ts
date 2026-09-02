@@ -1,6 +1,17 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import {
+  isJsonObject,
+  readArray,
+  readBoolean,
+  readNumber,
+  readObject,
+  readObjectArray,
+  readPositiveInteger,
+  readString,
+  type JsonObject,
+} from "@/lib/json-payload";
+import {
   commitDeduplicationKey,
   getLocalDayWindow,
   parseDate,
@@ -51,34 +62,23 @@ export function verifyGitHubSignature(
   return timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
 }
 
-export function validDeliveryId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9-]{1,100}$/.test(value);
+/** Narrows a header or decoded string to GitHub's delivery-id form. */
+export function validDeliveryId(value: string | null): value is string {
+  return value !== null && /^[A-Za-z0-9-]{1,100}$/.test(value);
 }
 
-// Push webhooks report repository.pushed_at as epoch seconds; other payloads
-// use ISO strings.
-function parsePushedAt(value: unknown) {
-  if (typeof value === "number") {
-    const date = new Date(value * 1000);
+/**
+ * Push webhooks report `repository.pushed_at` as epoch seconds; every other
+ * payload uses an ISO string, so both encodings are accepted here.
+ */
+function readPushedAt(source: JsonObject | null, key: string): Date | null {
+  const seconds = readNumber(source, key);
+  if (seconds !== null) {
+    const date = new Date(seconds * 1000);
     return Number.isNaN(date.getTime()) ? null : date;
   }
-  return parseDate(value);
+  return parseDate(readString(source, key));
 }
-
-type PushWebhookPayload = {
-  deleted?: unknown;
-  repository?: {
-    id?: unknown;
-    full_name?: unknown;
-    private?: unknown;
-    pushed_at?: unknown;
-  };
-  before?: unknown;
-  after?: unknown;
-  sender?: { id?: unknown; login?: unknown };
-  installation?: { id?: unknown };
-  commits?: unknown;
-};
 
 export type PushExtraction =
   | { ok: true; message: PushDeliveryMessage }
@@ -89,61 +89,59 @@ export function extractPushDelivery({
   deliveryId,
   receivedAt,
 }: {
-  payload: unknown;
+  payload: JsonObject | null;
   deliveryId: string;
   receivedAt: Date;
 }): PushExtraction {
-  if (typeof payload !== "object" || payload === null) {
-    return { ok: false, reason: "malformed" };
-  }
-  const push = payload as PushWebhookPayload;
-  const repository = push.repository;
-  const sender = push.sender;
-  const installationId = push.installation?.id;
+  if (payload === null) return { ok: false, reason: "malformed" };
+
+  const repository = readObject(payload, "repository");
+  const repositoryNumericId = readPositiveInteger(repository, "id");
+  const repositoryName = readString(repository, "full_name");
+  const isPrivate = readBoolean(repository, "private");
+  const before = readString(payload, "before");
+  const head = readString(payload, "after");
+  const sender = readObject(payload, "sender");
+  const senderId = readPositiveInteger(sender, "id");
+  const senderLogin = readString(sender, "login");
+  const installationId = readPositiveInteger(
+    readObject(payload, "installation"),
+    "id",
+  );
 
   if (
-    typeof repository?.id !== "number" ||
-    !validRepositoryName(repository.full_name) ||
-    typeof repository.private !== "boolean" ||
-    !validSha(push.before) ||
-    !validSha(push.after) ||
-    typeof sender?.id !== "number" ||
-    typeof sender.login !== "string" ||
-    typeof installationId !== "number" ||
-    installationId <= 0
+    repositoryNumericId === null ||
+    !validRepositoryName(repositoryName) ||
+    isPrivate === null ||
+    !validSha(before) ||
+    !validSha(head) ||
+    senderId === null ||
+    senderLogin === null ||
+    installationId === null
   ) {
     return { ok: false, reason: "malformed" };
   }
 
   // A branch or tag deletion pushes an all-zero head and carries no activity.
-  if (push.deleted === true || /^0+$/.test(push.after)) {
+  if (readBoolean(payload, "deleted") === true || /^0+$/.test(head)) {
     return { ok: false, reason: "no-activity" };
   }
 
-  const pushedAt = parsePushedAt(repository.pushed_at) ?? receivedAt;
-
+  const pushedAt = readPushedAt(repository, "pushed_at") ?? receivedAt;
   if (receivedAt.getTime() - pushedAt.getTime() > staleDeliveryMs) {
     return { ok: false, reason: "stale" };
   }
 
   const commits: PushDeliveryMessage["push"]["commits"] = [];
-  if (Array.isArray(push.commits)) {
-    for (const candidate of push.commits as Array<{
-      id?: unknown;
-      timestamp?: unknown;
-      author?: { username?: unknown } | null;
-    }>) {
-      const authoredAt = parseDate(candidate.timestamp);
-      if (!validSha(candidate.id) || !authoredAt) continue;
-      commits.push({
-        sha: candidate.id,
-        authoredAt: authoredAt.toISOString(),
-        authorLogin:
-          typeof candidate.author?.username === "string"
-            ? candidate.author.username
-            : null,
-      });
-    }
+  for (const candidate of readObjectArray(payload, "commits") ?? []) {
+    const sha = readString(candidate, "id");
+    const authoredAt = parseDate(readString(candidate, "timestamp"));
+    if (!validSha(sha) || !authoredAt) continue;
+    commits.push({
+      sha,
+      authoredAt: authoredAt.toISOString(),
+      authorLogin: readString(readObject(candidate, "author"), "username"),
+    });
   }
 
   return {
@@ -154,52 +152,101 @@ export function extractPushDelivery({
       installationId: String(installationId),
       receivedAt: receivedAt.toISOString(),
       push: {
-        repositoryId: String(repository.id),
-        repositoryName: repository.full_name,
-        private: repository.private,
-        before: push.before,
-        head: push.after,
+        repositoryId: String(repositoryNumericId),
+        repositoryName,
+        private: isPrivate,
+        before,
+        head,
         pushedAt: pushedAt.toISOString(),
-        senderId: String(sender.id),
-        senderLogin: sender.login,
+        senderId: String(senderId),
+        senderLogin,
         commits,
       },
     },
   };
 }
 
+/**
+ * Decodes a queue message this service published earlier. The message crossed
+ * a queue, so every field is read and checked before the message is rebuilt.
+ */
 export function parsePushDeliveryMessage(
-  value: unknown,
+  value: JsonObject | null,
 ): PushDeliveryMessage | null {
-  if (typeof value !== "object" || value === null) return null;
-  const message = value as Partial<PushDeliveryMessage>;
-  const push = message.push;
+  if (value === null || readNumber(value, "version") !== 1) return null;
+
+  const deliveryId = readString(value, "deliveryId");
+  const installationId = readString(value, "installationId");
+  const receivedAt = readString(value, "receivedAt");
+  const push = readObject(value, "push");
+  const repositoryId = readString(push, "repositoryId");
+  const repositoryName = readString(push, "repositoryName");
+  const isPrivate = readBoolean(push, "private");
+  const before = readString(push, "before");
+  const head = readString(push, "head");
+  const pushedAt = readString(push, "pushedAt");
+  const senderId = readString(push, "senderId");
+  const senderLogin = readString(push, "senderLogin");
+  const rawCommits = readArray(push, "commits");
+
   if (
-    message.version !== 1 ||
-    !validDeliveryId(message.deliveryId) ||
-    typeof message.installationId !== "string" ||
-    !parseDate(message.receivedAt) ||
-    typeof push !== "object" ||
+    !validDeliveryId(deliveryId) ||
+    installationId === null ||
+    receivedAt === null ||
+    !parseDate(receivedAt) ||
     push === null ||
-    typeof push.repositoryId !== "string" ||
-    !validRepositoryName(push.repositoryName) ||
-    typeof push.private !== "boolean" ||
-    !validSha(push.before) ||
-    !validSha(push.head) ||
-    !parseDate(push.pushedAt) ||
-    typeof push.senderId !== "string" ||
-    typeof push.senderLogin !== "string" ||
-    !Array.isArray(push.commits) ||
-    push.commits.some(
-      (commit) =>
-        !validSha(commit?.sha) ||
-        !parseDate(commit.authoredAt) ||
-        (commit.authorLogin !== null && typeof commit.authorLogin !== "string"),
-    )
+    repositoryId === null ||
+    !validRepositoryName(repositoryName) ||
+    isPrivate === null ||
+    !validSha(before) ||
+    !validSha(head) ||
+    pushedAt === null ||
+    !parseDate(pushedAt) ||
+    senderId === null ||
+    senderLogin === null ||
+    rawCommits === null
   ) {
     return null;
   }
-  return message as PushDeliveryMessage;
+
+  const commits: PushDeliveryMessage["push"]["commits"] = [];
+  for (const entry of rawCommits) {
+    const commit = isJsonObject(entry) ? entry : null;
+    const sha = readString(commit, "sha");
+    const authoredAt = readString(commit, "authoredAt");
+    // `authorLogin` is nullable rather than optional: an unattributed commit
+    // reports null, but a present value must be a login.
+    const authorLoginMember =
+      commit === null ? undefined : commit["authorLogin"];
+    const authorLogin = readString(commit, "authorLogin");
+    if (
+      !validSha(sha) ||
+      authoredAt === null ||
+      !parseDate(authoredAt) ||
+      (authorLoginMember !== null && authorLogin === null)
+    ) {
+      return null;
+    }
+    commits.push({ sha, authoredAt, authorLogin });
+  }
+
+  return {
+    version: 1,
+    deliveryId,
+    installationId,
+    receivedAt,
+    push: {
+      repositoryId,
+      repositoryName,
+      private: isPrivate,
+      before,
+      head,
+      pushedAt,
+      senderId,
+      senderLogin,
+      commits,
+    },
+  };
 }
 
 export function normalizePushMessage(

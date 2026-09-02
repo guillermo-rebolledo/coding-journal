@@ -165,12 +165,18 @@ const statusLabels = {
   cancelled: "Cancelled",
 } as const;
 
+// SAFETY: `categoryLabels` is keyed by `ActivityCategory`, so its entries are
+// exactly that union paired with a label; `Object.entries` widens the key.
+const categoryEntries = Object.entries(categoryLabels) as Array<
+  [ActivityCategory, string]
+>;
+
 function coverageLabel(activity: ActivityRecord) {
   if (activity.kind === "gist-starred") return "First observed · best-effort";
   if (activity.source === "github-projects-preview")
     return "Preview · best-effort";
   if (activity.source === "github-gists") return "Reconciliation · best-effort";
-  if (secondaryKinds.includes(activity.kind as never))
+  if (secondaryKinds.some((kind) => kind === activity.kind))
     return "Delayed source · best-effort";
   return null;
 }
@@ -383,14 +389,14 @@ export function JournalExplorer({
         <select
           aria-label="Activity type"
           value={category}
-          onChange={(event) =>
-            setCategory(event.target.value as ActivityCategory)
-          }
+          onChange={(event) => {
+            // SAFETY: every option below is rendered from `categoryLabels`,
+            // so the selected value is one of its keys.
+            setCategory(event.target.value as ActivityCategory);
+          }}
           className="min-h-11 max-w-full rounded-m3-xs border border-m3-outline-variant bg-transparent px-3 text-m3-body-md text-m3-on-surface"
         >
-          {(
-            Object.entries(categoryLabels) as Array<[ActivityCategory, string]>
-          ).map(([value, label]) => (
+          {categoryEntries.map(([value, label]) => (
             <option key={value} value={value}>
               {label}
             </option>

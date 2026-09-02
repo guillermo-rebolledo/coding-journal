@@ -3097,22 +3097,22 @@ body {
   & > [data-slot="button"]:is(:hover, :focus-visible, :active):not(:disabled) {
     border-radius: var(--m3-button-group-state-radius);
   }
-  &[data-shape="round"][data-orientation="horizontal"]
+  &[data-corner="round"][data-orientation="horizontal"]
     > [data-slot="button"]:first-child {
     border-top-left-radius: var(--m3-button-group-outer-radius);
     border-bottom-left-radius: var(--m3-button-group-outer-radius);
   }
-  &[data-shape="round"][data-orientation="horizontal"]
+  &[data-corner="round"][data-orientation="horizontal"]
     > [data-slot="button"]:last-child {
     border-top-right-radius: var(--m3-button-group-outer-radius);
     border-bottom-right-radius: var(--m3-button-group-outer-radius);
   }
-  &[data-shape="round"][data-orientation="vertical"]
+  &[data-corner="round"][data-orientation="vertical"]
     > [data-slot="button"]:first-child {
     border-top-left-radius: var(--m3-button-group-outer-radius);
     border-top-right-radius: var(--m3-button-group-outer-radius);
   }
-  &[data-shape="round"][data-orientation="vertical"]
+  &[data-corner="round"][data-orientation="vertical"]
     > [data-slot="button"]:last-child {
     border-bottom-left-radius: var(--m3-button-group-outer-radius);
     border-bottom-right-radius: var(--m3-button-group-outer-radius);

@@ -157,7 +157,15 @@ describe("GitHub secondary reconciliation contracts", () => {
     );
     expect(
       normalizeSocialEvent({
-        event: { ...star, type: "ReactionEvent" },
+        event: {
+          id: "event-reaction-1",
+          type: "ReactionEvent",
+          actor,
+          repo: { id: 42, name: "acme/journal" },
+          public: true,
+          created_at: "2026-08-31T17:00:00.000Z",
+          payload: { action: "created" },
+        },
         actor,
         window,
         observedAt: now,

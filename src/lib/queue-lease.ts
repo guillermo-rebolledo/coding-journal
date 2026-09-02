@@ -107,7 +107,7 @@ export async function withQueueSlot<T>(
       event: "concurrency-limited",
       outcome: "limited",
       service: "queue",
-      ...(jobId ? { jobId } : {}),
+      jobId,
       limit,
       retryAfterSeconds,
     });

@@ -2,6 +2,12 @@ import { and, count, eq, gt, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { db } from "@/db";
+import {
+  isJsonObject,
+  readArray,
+  readNumber,
+  readString,
+} from "@/lib/json-payload";
 import { serviceLease } from "@/db/auth-schema";
 import type {
   QueueLease,
@@ -48,16 +54,22 @@ export function createQueueLeaseRepository<
           returning "id", "slot"
         `);
 
-        // Both the HTTP and the embedded driver return `{ rows }`; the shared
-        // Drizzle type is deliberately opaque about it.
-        const [row] = (
-          result as unknown as { rows: Array<{ id: string; slot: number }> }
-        ).rows;
-        if (row) {
+        // Both the HTTP and the embedded driver answer with `{ rows }`, but
+        // the shared Drizzle result type is deliberately opaque about it, so
+        // the returned row is decoded rather than asserted into shape.
+        const rows = isJsonObject(result) ? readArray(result, "rows") : null;
+        const first = rows?.[0];
+        const row = isJsonObject(first) ? first : null;
+        const id = readString(row, "id");
+        // `slot` is an integer column, but the HTTP driver quotes it.
+        const slot =
+          readNumber(row, "slot") ??
+          Number(readString(row, "slot") ?? Number.NaN);
+        if (id !== null && Number.isFinite(slot)) {
           return {
-            id: row.id,
+            id,
             topic,
-            slot: Number(row.slot),
+            slot,
             holder,
             expiresAt,
           } satisfies QueueLease;

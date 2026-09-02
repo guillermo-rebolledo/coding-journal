@@ -1,3 +1,4 @@
+import { isJsonObject } from "@/lib/json-payload";
 import { handleCallback } from "@vercel/queue";
 
 import { getGitHubInstallations } from "@/lib/github-installation";
@@ -42,29 +43,31 @@ function configuredNumber(value: string | undefined, fallback: number) {
 export const POST = handleCallback(
   async (message, metadata) => {
     const now = new Date();
-    const parsed = parseJournalFinalizationMessage(message);
+    // The one place a queue payload becomes a decoded message.
+    const payload = isJsonObject(message) ? message : null;
+    const parsed = parseJournalFinalizationMessage(payload);
     const jobId = parsed ? `${parsed.userId}:${parsed.localDate}` : undefined;
 
     await withQueueSlot(
-      { topic, store: queueLeaseRepository, now, ...(jobId ? { jobId } : {}) },
+      { topic, store: queueLeaseRepository, now, jobId },
       async () => {
         await assertProviderAvailable({
           service: "github",
           store: serviceCircuitRepository,
           now,
-          ...(jobId ? { jobId } : {}),
+          jobId,
         });
         if (process.env.OPENAI_API_KEY) {
           await assertProviderAvailable({
             service: "openai",
             store: serviceCircuitRepository,
             now,
-            ...(jobId ? { jobId } : {}),
+            jobId,
           });
         }
 
         await processJournalFinalization(
-          message,
+          payload,
           metadata.deliveryCount,
           journalFinalizationRepository,
           async (candidate) => {
@@ -122,7 +125,7 @@ export const POST = handleCallback(
           category: "finalization",
           event: "delivery-processed",
           outcome: "ok",
-          ...(jobId ? { jobId } : {}),
+          jobId,
           attempt: metadata.deliveryCount,
         });
       },

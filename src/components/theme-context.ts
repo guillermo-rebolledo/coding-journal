@@ -14,7 +14,7 @@ export const palettes: readonly Palette[] = [
 ];
 
 export function isPalette(value: unknown): value is Palette {
-  return palettes.includes(value as Palette);
+  return palettes.some((palette) => palette === value);
 }
 
 export type ThemeContextValue = {

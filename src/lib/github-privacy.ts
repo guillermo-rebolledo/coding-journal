@@ -1,3 +1,11 @@
+import {
+  readNumber,
+  readObject,
+  readObjectArray,
+  readString,
+  type JsonObject,
+} from "@/lib/json-payload";
+
 export type GitHubAccessChange = {
   deliveryId: string;
   kind:
@@ -17,25 +25,40 @@ export type GitHubAccessRestoration = {
   repositoryIds: string[];
 };
 
-function identifier(value: unknown) {
-  return typeof value === "string" || typeof value === "number"
-    ? String(value)
-    : null;
+/**
+ * GitHub numbers its entities, but a few payloads quote the same id as a
+ * string. Both denote the same installation, account, or repository, so the
+ * identifier is read either way and always stored as text.
+ */
+function readIdentifier(source: JsonObject | null, key: string): string | null {
+  const text = readString(source, key);
+  if (text !== null) return text;
+  const numeric = readNumber(source, key);
+  return numeric === null ? null : String(numeric);
+}
+
+/** Collects the ids of a listed set of repositories, skipping unusable entries. */
+function readRepositoryIds(payload: JsonObject, key: string): string[] {
+  const repositories = readObjectArray(payload, key) ?? [];
+  return repositories.flatMap((repository) => {
+    const id = readIdentifier(repository, "id");
+    return id === null ? [] : [id];
+  });
 }
 
 export function extractGitHubAccessRestoration(input: {
   eventType: string;
-  payload: unknown;
+  payload: JsonObject | null;
 }): GitHubAccessRestoration | null {
-  if (!input.payload || typeof input.payload !== "object") return null;
-  const payload = input.payload as Record<string, unknown>;
-  const action = payload.action;
-  const installation =
-    payload.installation && typeof payload.installation === "object"
-      ? (payload.installation as Record<string, unknown>)
-      : null;
-  const installationId = identifier(installation?.id);
-  if (!installationId) return null;
+  const payload = input.payload;
+  if (payload === null) return null;
+  const action = readString(payload, "action");
+  const installationId = readIdentifier(
+    readObject(payload, "installation"),
+    "id",
+  );
+  if (installationId === null) return null;
+
   if (input.eventType === "installation" && action === "unsuspend") {
     return {
       kind: "installation-unsuspended",
@@ -44,79 +67,57 @@ export function extractGitHubAccessRestoration(input: {
     };
   }
   if (input.eventType === "installation_repositories" && action === "added") {
-    const repositories = Array.isArray(payload.repositories_added)
-      ? payload.repositories_added
-      : [];
-    const repositoryIds = repositories.flatMap((repository) => {
-      if (!repository || typeof repository !== "object") return [];
-      const id = identifier((repository as Record<string, unknown>).id);
-      return id ? [id] : [];
-    });
+    const repositoryIds = readRepositoryIds(payload, "repositories_added");
     if (repositoryIds.length === 0) return null;
-    return {
-      kind: "repositories-added",
-      installationId,
-      repositoryIds,
-    };
+    return { kind: "repositories-added", installationId, repositoryIds };
   }
   return null;
 }
 
 export function extractGitHubAccessChange(input: {
   eventType: string;
-  payload: unknown;
+  payload: JsonObject | null;
   deliveryId: string;
   occurredAt: Date;
 }): GitHubAccessChange | null {
-  if (!input.payload || typeof input.payload !== "object") return null;
-  const payload = input.payload as Record<string, unknown>;
-  const action = payload.action;
-  const installation =
-    payload.installation && typeof payload.installation === "object"
-      ? (payload.installation as Record<string, unknown>)
-      : null;
-  const account =
-    installation?.account && typeof installation.account === "object"
-      ? (installation.account as Record<string, unknown>)
-      : null;
+  const payload = input.payload;
+  if (payload === null) return null;
+  const action = readString(payload, "action");
+  const installation = readObject(payload, "installation");
+  const account = readObject(installation, "account");
 
-  let kind: GitHubAccessChange["kind"] | null = null;
-  if (input.eventType === "installation" && action === "suspend") {
-    kind = "installation-suspended";
-  } else if (input.eventType === "installation" && action === "deleted") {
-    kind = "installation-removed";
-  } else if (
-    input.eventType === "installation_repositories" &&
-    action === "removed"
-  ) {
-    kind = "repositories-removed";
-  } else if (
-    input.eventType === "github_app_authorization" &&
-    action === "revoked"
-  ) {
-    kind = "authorization-revoked";
-  }
-  if (!kind) return null;
-
-  const repositories = Array.isArray(payload.repositories_removed)
-    ? payload.repositories_removed
-    : [];
-  const repositoryIds = repositories.flatMap((repository) => {
-    if (!repository || typeof repository !== "object") return [];
-    const id = identifier((repository as Record<string, unknown>).id);
-    return id ? [id] : [];
-  });
-  const sender =
-    payload.sender && typeof payload.sender === "object"
-      ? (payload.sender as Record<string, unknown>)
-      : null;
+  const kind = accessChangeKind(input.eventType, action);
+  if (kind === null) return null;
 
   return {
     deliveryId: input.deliveryId,
     kind,
-    installationId: identifier(installation?.id),
-    accountId: identifier(account?.id) ?? identifier(sender?.id),
-    repositoryIds,
+    installationId: readIdentifier(installation, "id"),
+    // An authorization revocation carries no installation account, so the
+    // sender is the only party the event identifies.
+    accountId:
+      readIdentifier(account, "id") ??
+      readIdentifier(readObject(payload, "sender"), "id"),
+    repositoryIds: readRepositoryIds(payload, "repositories_removed"),
     occurredAt: input.occurredAt,
   };
+}
+
+/** The access loss, if any, that an event and action pair describes. */
+function accessChangeKind(
+  eventType: string,
+  action: string | null,
+): GitHubAccessChange["kind"] | null {
+  if (eventType === "installation") {
+    if (action === "suspend") return "installation-suspended";
+    if (action === "deleted") return "installation-removed";
+    return null;
+  }
+  if (eventType === "installation_repositories" && action === "removed") {
+    return "repositories-removed";
+  }
+  if (eventType === "github_app_authorization" && action === "revoked") {
+    return "authorization-revoked";
+  }
+  return null;
 }

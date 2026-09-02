@@ -1,3 +1,4 @@
+import { readString, type JsonObject } from "@/lib/json-payload";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -31,7 +32,7 @@ export type WebhookDeliveryStore = Pick<
 // Consumes one queue message. Throwing signals the queue to retry; returning
 // acknowledges the message.
 export async function processWebhookDeliveryMessage(
-  rawMessage: unknown,
+  rawMessage: JsonObject | null,
   metadata: { deliveryCount: number },
   store: WebhookDeliveryStore,
   now: Date = new Date(),
@@ -44,9 +45,8 @@ export async function processWebhookDeliveryMessage(
   if (!message) {
     // A message this deployment cannot read (older or newer producer) will
     // never succeed; acknowledge it without any activity effect.
-    const deliveryId = (rawMessage as { deliveryId?: unknown } | null)
-      ?.deliveryId;
-    if (typeof deliveryId === "string") {
+    const deliveryId = readString(rawMessage, "deliveryId");
+    if (deliveryId !== null) {
       await store.markDeliveryFailed(
         deliveryId,
         "poisoned",

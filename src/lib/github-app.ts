@@ -1,3 +1,12 @@
+import {
+  isJsonObject,
+  readNumber,
+  readObject,
+  readPositiveInteger,
+  readString,
+  readStringRecord,
+} from "@/lib/json-payload";
+
 const githubApiVersion = "2026-03-10";
 
 export type GitHubInstallationDetails = {
@@ -9,15 +18,6 @@ export type GitHubInstallationDetails = {
   repositoryCount: number;
   permissions: Record<string, string>;
 };
-
-type GitHubInstallationResponse = {
-  id?: number;
-  account?: { id?: number; login?: string; type?: string } | null;
-  repository_selection?: string;
-  permissions?: Record<string, string>;
-};
-
-type GitHubRepositoriesResponse = { total_count?: number };
 
 function githubHeaders(accessToken: string) {
   return {
@@ -54,16 +54,19 @@ export async function getUserGitHubInstallation(
     throw new Error("GitHub installation validation failed.");
   }
 
-  const installation =
-    (await installationResponse.json()) as GitHubInstallationResponse;
-  const accountType = installation.account?.type;
-  const repositorySelection = installation.repository_selection;
-  const permissions = installation.permissions ?? {};
+  const installationBody: unknown = await installationResponse.json();
+  const installation = isJsonObject(installationBody) ? installationBody : null;
+  const account = readObject(installation, "account");
+  const accountId = readPositiveInteger(account, "id");
+  const accountLogin = readString(account, "login");
+  const accountType = readString(account, "type");
+  const repositorySelection = readString(installation, "repository_selection");
+  const permissions = readStringRecord(installation, "permissions") ?? {};
 
   if (
-    String(installation.id) !== installationId ||
-    typeof installation.account?.id !== "number" ||
-    typeof installation.account.login !== "string" ||
+    String(readNumber(installation, "id")) !== installationId ||
+    accountId === null ||
+    accountLogin === null ||
     (accountType !== "User" && accountType !== "Organization") ||
     (repositorySelection !== "all" && repositorySelection !== "selected") ||
     !isReadOnlyPermissionSet(permissions)
@@ -80,23 +83,24 @@ export async function getUserGitHubInstallation(
     throw new Error("GitHub repository selection validation failed.");
   }
 
-  const repositories =
-    (await repositoriesResponse.json()) as GitHubRepositoriesResponse;
+  const repositoriesBody: unknown = await repositoriesResponse.json();
+  const repositories = isJsonObject(repositoriesBody) ? repositoriesBody : null;
+  const repositoryCount = readNumber(repositories, "total_count");
   if (
-    typeof repositories.total_count !== "number" ||
-    !Number.isSafeInteger(repositories.total_count) ||
-    repositories.total_count < 0
+    repositoryCount === null ||
+    !Number.isSafeInteger(repositoryCount) ||
+    repositoryCount < 0
   ) {
     return null;
   }
 
   return {
     installationId,
-    accountId: String(installation.account.id),
-    accountLogin: installation.account.login,
+    accountId: String(accountId),
+    accountLogin,
     accountType,
     repositorySelection,
-    repositoryCount: repositories.total_count,
+    repositoryCount,
     permissions,
   };
 }

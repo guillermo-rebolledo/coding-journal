@@ -98,6 +98,10 @@ function emptyStoredJournal(timeZone: string, now: Date): TodayJournal {
 function createDiagnosticReporter(userId: string) {
   const attemptId = randomUUID();
   return (diagnostic: ReconciliationDiagnostic) => {
+    const rateLimitResetAt = diagnostic.rateLimitResetAt;
+    const retryAfterSeconds = rateLimitResetAt
+      ? Math.max(1, Math.ceil((rateLimitResetAt.getTime() - Date.now()) / 1000))
+      : undefined;
     logServiceEvent({
       category: "sync",
       event: "reconciliation-stage-failed",
@@ -108,16 +112,7 @@ function createDiagnosticReporter(userId: string) {
       stage: diagnostic.stage,
       errorName: diagnostic.errorName,
       errorMessage: diagnostic.errorMessage,
-      ...(diagnostic.rateLimitResetAt
-        ? {
-            retryAfterSeconds: Math.max(
-              1,
-              Math.ceil(
-                (diagnostic.rateLimitResetAt.getTime() - Date.now()) / 1000,
-              ),
-            ),
-          }
-        : {}),
+      retryAfterSeconds,
     });
   };
 }

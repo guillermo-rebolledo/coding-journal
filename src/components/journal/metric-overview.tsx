@@ -75,6 +75,8 @@ const stripPriority: MetricKey[] = [
 
 const stripLimit = 4;
 
+// SAFETY: `metricLabels` is keyed by `MetricKey`, so its own keys are exactly
+// that union; `Object.keys` only loses that in its return type.
 export const metricKeys = Object.keys(metricLabels) as MetricKey[];
 
 export function metricNoun(key: MetricKey, value: number) {

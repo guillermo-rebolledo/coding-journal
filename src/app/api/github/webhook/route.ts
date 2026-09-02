@@ -1,4 +1,5 @@
 import { getRequiredEnv } from "@/lib/env";
+import { isJsonObject, type JsonObject } from "@/lib/json-payload";
 import {
   extractCollaborationDelivery,
   isCollaborationWebhookEvent,
@@ -43,9 +44,12 @@ export async function POST(request: Request) {
   }
   const receivedAt = new Date();
 
-  let payload: unknown;
+  // The one place the raw body becomes a decoded payload. Every extractor
+  // below navigates the result rather than re-checking representations.
+  let payload: JsonObject | null = null;
   try {
-    payload = JSON.parse(rawBody);
+    const parsed: unknown = JSON.parse(rawBody);
+    if (isJsonObject(parsed)) payload = parsed;
   } catch {
     payload = null;
   }

@@ -16,6 +16,8 @@ export function ListSurface<T extends ElementType = "div">({
   className,
   ...props
 }: { as?: T } & Omit<ComponentPropsWithoutRef<T>, "as">) {
+  // SAFETY: `as` is constrained to `ElementType` by the props type; the
+  // default fills in the same contract when the caller omits it.
   const Component = (as ?? "div") as ElementType;
   return (
     <Component

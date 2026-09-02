@@ -23,6 +23,10 @@ export type E2EMode = (typeof e2eModes)[number];
 
 const e2eModeSet = new Set<string>(e2eModes);
 
+function isE2EMode(value: string | null): value is E2EMode {
+  return value !== null && e2eModeSet.has(value);
+}
+
 function readCookie(requestHeaders: Headers, name: string) {
   return (
     requestHeaders
@@ -37,7 +41,7 @@ function readCookie(requestHeaders: Headers, name: string) {
 export function getE2ESessionMode(requestHeaders: Headers): E2EMode | null {
   const value = readCookie(requestHeaders, E2E_SESSION_COOKIE);
 
-  return value && e2eModeSet.has(value) ? (value as E2EMode) : null;
+  return isE2EMode(value) ? value : null;
 }
 
 const e2eOnboardingUserId = "e2e-onboarding";

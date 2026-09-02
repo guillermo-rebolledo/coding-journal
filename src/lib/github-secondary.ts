@@ -3,47 +3,18 @@ import {
   type ActivityRecord,
 } from "@/lib/github-activity";
 import { subjectTitleMaxLength } from "@/lib/github-collaboration";
+import {
+  readBoolean,
+  readNonEmptyString,
+  readObject,
+  readPositiveInteger,
+  readString,
+  type JsonObject,
+} from "@/lib/json-payload";
 import { parseDate, type LocalDayWindow } from "@/lib/time-zone";
 
-type GitHubActor = { id?: unknown; login?: unknown };
-
-type GistMetadata = {
-  id?: unknown;
-  html_url?: unknown;
-  public?: unknown;
-  description?: unknown;
-  created_at?: unknown;
-  updated_at?: unknown;
-  owner?: GitHubActor | null;
-  fork_of?: { id?: unknown } | null;
-  files?: unknown;
-};
-
-type GistCommitMetadata = {
-  version?: unknown;
-  committed_at?: unknown;
-  user?: GitHubActor | null;
-};
-
-type GistCommentMetadata = {
-  id?: unknown;
-  created_at?: unknown;
-  user?: GitHubActor | null;
-  body?: unknown;
-};
-
-type SocialEventMetadata = {
-  id?: unknown;
-  type?: unknown;
-  actor?: GitHubActor;
-  repo?: { id?: unknown; name?: unknown };
-  public?: unknown;
-  created_at?: unknown;
-  payload?: {
-    action?: unknown;
-    forkee?: { id?: unknown; full_name?: unknown; html_url?: unknown };
-  };
-};
+/** The actor whose activity the reconciliation pass is collecting. */
+type ReconciledActor = { id: number; login: string };
 
 export type SecondarySourceFreshness = {
   source: "social" | "gists";
@@ -60,33 +31,25 @@ export type StoredSecondarySourceFreshness = Omit<
   refreshedAt: string | null;
 };
 
-function positiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
-}
-
-function nonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function boundedDescription(value: unknown) {
-  if (!nonEmptyString(value)) return null;
+function boundedDescription(value: string | null) {
+  if (value === null) return null;
   const description = value.trim();
+  if (!description) return null;
   return description.length > subjectTitleMaxLength
     ? `${description.slice(0, subjectTitleMaxLength - 1)}…`
     : description;
 }
 
+/** Whether a decoded `user`/`owner`/`actor` member is the reconciled actor. */
 function sameActor(
-  candidate: GitHubActor | null | undefined,
-  actor: {
-    id: number;
-    login: string;
-  },
-) {
+  candidate: JsonObject | null,
+  actor: ReconciledActor,
+): boolean {
+  const login = readString(candidate, "login");
   return (
-    candidate?.id === actor.id &&
-    typeof candidate.login === "string" &&
-    candidate.login.toLowerCase() === actor.login.toLowerCase()
+    readPositiveInteger(candidate, "id") === actor.id &&
+    login !== null &&
+    login.toLowerCase() === actor.login.toLowerCase()
   );
 }
 
@@ -94,24 +57,23 @@ function withinWindow(date: Date, window: LocalDayWindow) {
   return date >= window.startsAt && date < window.endsAt;
 }
 
-function validGistUrl(value: unknown): value is string {
-  if (!nonEmptyString(value)) return false;
+/** Narrows a decoded string to an absolute URL on the given host. */
+function validUrlOn(host: string, value: string | null): value is string {
+  if (value === null || value.trim().length === 0) return false;
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && url.hostname === "gist.github.com";
+    return url.protocol === "https:" && url.hostname === host;
   } catch {
     return false;
   }
 }
 
-function validGitHubUrl(value: unknown): value is string {
-  if (!nonEmptyString(value)) return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && url.hostname === "github.com";
-  } catch {
-    return false;
-  }
+function validGistUrl(value: string | null): value is string {
+  return validUrlOn("gist.github.com", value);
+}
+
+function validGitHubUrl(value: string | null): value is string {
+  return validUrlOn("github.com", value);
 }
 
 export function normalizeGistActivity({
@@ -122,28 +84,30 @@ export function normalizeGistActivity({
   window,
   observedAt,
 }: {
-  gist: GistMetadata;
-  commits: GistCommitMetadata[];
-  comments: GistCommentMetadata[];
-  actor: { id: number; login: string };
+  gist: JsonObject;
+  commits: readonly JsonObject[];
+  comments: readonly JsonObject[];
+  actor: ReconciledActor;
   window: LocalDayWindow;
   observedAt: Date;
 }): ActivityRecord[] {
+  const gistId = readNonEmptyString(gist, "id");
+  const evidenceUrl = readString(gist, "html_url");
+  const isPublic = readBoolean(gist, "public");
   if (
-    !nonEmptyString(gist.id) ||
-    !validGistUrl(gist.html_url) ||
-    typeof gist.public !== "boolean" ||
-    !sameActor(gist.owner, actor)
+    gistId === null ||
+    !validGistUrl(evidenceUrl) ||
+    isPublic === null ||
+    !sameActor(readObject(gist, "owner"), actor)
   ) {
     return [];
   }
 
-  const gistId = gist.id.trim();
-  const evidenceUrl = gist.html_url;
-  const visibility: ActivityRecord["visibility"] = gist.public
+  const visibility: ActivityRecord["visibility"] = isPublic
     ? "public"
     : "private";
-  const title = boundedDescription(gist.description);
+  const title = boundedDescription(readString(gist, "description"));
+  const forkOf = readObject(gist, "fork_of");
   const base = {
     localDate: window.localDate,
     actorId: String(actor.id),
@@ -161,22 +125,23 @@ export function normalizeGistActivity({
     narrativeEligible: true,
   };
   const records: ActivityRecord[] = [];
-  const createdAt = parseDate(gist.created_at);
+  const createdAt = parseDate(readString(gist, "created_at"));
 
   for (const commit of commits) {
-    const committedAt = parseDate(commit.committed_at);
+    const version = readNonEmptyString(commit, "version");
+    const committedAt = parseDate(readString(commit, "committed_at"));
     if (
-      !nonEmptyString(commit.version) ||
+      version === null ||
       !committedAt ||
       !withinWindow(committedAt, window) ||
-      !sameActor(commit.user, actor)
+      !sameActor(readObject(commit, "user"), actor)
     ) {
       continue;
     }
     const isCreation =
       createdAt !== null && committedAt.getTime() === createdAt.getTime();
     const kind = isCreation
-      ? gist.fork_of
+      ? forkOf !== null
         ? "gist-forked"
         : "gist-created"
       : "gist-updated";
@@ -185,8 +150,8 @@ export function normalizeGistActivity({
       kind,
       deduplicationKey: isCreation
         ? `github:${kind}:${gistId}`
-        : `github:gist-updated:${gistId}:${commit.version.trim()}`,
-      subjectId: isCreation ? gistId : commit.version.trim(),
+        : `github:gist-updated:${gistId}:${version}`,
+      subjectId: isCreation ? gistId : version,
       occurredAt: committedAt,
     });
   }
@@ -194,7 +159,7 @@ export function normalizeGistActivity({
   // A list response can occasionally race the commits endpoint. Preserve a
   // metadata-only creation observation rather than reading Gist files.
   if (records.length === 0 && createdAt && withinWindow(createdAt, window)) {
-    const kind = gist.fork_of ? "gist-forked" : "gist-created";
+    const kind = forkOf !== null ? "gist-forked" : "gist-created";
     records.push({
       ...base,
       kind,
@@ -205,20 +170,21 @@ export function normalizeGistActivity({
   }
 
   for (const comment of comments) {
-    const commentAt = parseDate(comment.created_at);
+    const commentId = readPositiveInteger(comment, "id");
+    const commentAt = parseDate(readString(comment, "created_at"));
     if (
-      !positiveInteger(comment.id) ||
+      commentId === null ||
       !commentAt ||
       !withinWindow(commentAt, window) ||
-      !sameActor(comment.user, actor)
+      !sameActor(readObject(comment, "user"), actor)
     ) {
       continue;
     }
     records.push({
       ...base,
       kind: "gist-comment",
-      deduplicationKey: `github:gist-comment:${gistId}:${comment.id}`,
-      subjectId: String(comment.id),
+      deduplicationKey: `github:gist-comment:${gistId}:${commentId}`,
+      subjectId: String(commentId),
       occurredAt: commentAt,
     });
   }
@@ -236,20 +202,18 @@ export function normalizeGistStarActivity({
   window,
   observedAt,
 }: {
-  gist: GistMetadata;
-  actor: { id: number; login: string };
+  gist: JsonObject;
+  actor: ReconciledActor;
   window: LocalDayWindow;
   observedAt: Date;
 }): ActivityRecord | null {
-  if (
-    !nonEmptyString(gist.id) ||
-    !validGistUrl(gist.html_url) ||
-    typeof gist.public !== "boolean"
-  ) {
+  const gistId = readNonEmptyString(gist, "id");
+  const evidenceUrl = readString(gist, "html_url");
+  const isPublic = readBoolean(gist, "public");
+  if (gistId === null || !validGistUrl(evidenceUrl) || isPublic === null) {
     return null;
   }
 
-  const gistId = gist.id.trim();
   return {
     deduplicationKey: `github:gist-starred:${gistId}`,
     localDate: window.localDate,
@@ -258,12 +222,12 @@ export function normalizeGistStarActivity({
     actorLogin: actor.login,
     repositoryId: `gists:${actor.id}`,
     repositoryName: `${actor.login}/Gists`,
-    evidenceUrl: gist.html_url,
-    visibility: gist.public ? "public" : "private",
+    evidenceUrl,
+    visibility: isPublic ? "public" : "private",
     source: "github-gists",
     subjectId: gistId,
     subjectNumber: null,
-    subjectTitle: boundedDescription(gist.description),
+    subjectTitle: boundedDescription(readString(gist, "description")),
     occurredAt: observedAt,
     observedAt,
     authoredBeforeDay: false,
@@ -278,55 +242,69 @@ export function normalizeSocialEvent({
   window,
   observedAt,
 }: {
-  event: SocialEventMetadata;
-  actor: { id: number; login: string };
+  event: JsonObject;
+  actor: ReconciledActor;
   window: LocalDayWindow;
   observedAt: Date;
 }): ActivityRecord | null {
-  const occurredAt = parseDate(event.created_at);
-  const repositoryName = event.repo?.name;
+  const eventId = readNonEmptyString(event, "id");
+  const occurredAt = parseDate(readString(event, "created_at"));
+  const repository = readObject(event, "repo");
+  const repositoryId = readPositiveInteger(repository, "id");
+  const repositoryName = readString(repository, "name");
+  const isPublic = readBoolean(event, "public");
   if (
-    !nonEmptyString(event.id) ||
-    !sameActor(event.actor, actor) ||
-    !positiveInteger(event.repo?.id) ||
+    eventId === null ||
+    !sameActor(readObject(event, "actor"), actor) ||
+    repositoryId === null ||
     !validRepositoryName(repositoryName) ||
-    typeof event.public !== "boolean" ||
+    isPublic === null ||
     !occurredAt ||
     !withinWindow(occurredAt, window)
   ) {
     return null;
   }
 
+  const eventType = readString(event, "type");
+  const payload = readObject(event, "payload");
+  const forkee = readObject(payload, "forkee");
+  const forkeeId = readPositiveInteger(forkee, "id");
+  const forkeeName = readString(forkee, "full_name");
+  const forkeeUrl = readString(forkee, "html_url");
+
   let kind: "repository-starred" | "repository-forked";
   let evidenceUrl = `https://github.com/${repositoryName}`;
-  let subjectId = String(event.repo.id);
+  let subjectId = String(repositoryId);
   let subjectTitle: string | null = repositoryName;
-  if (event.type === "WatchEvent" && event.payload?.action === "started") {
+  if (
+    eventType === "WatchEvent" &&
+    readString(payload, "action") === "started"
+  ) {
     kind = "repository-starred";
   } else if (
-    event.type === "ForkEvent" &&
-    positiveInteger(event.payload?.forkee?.id) &&
-    validRepositoryName(event.payload.forkee.full_name) &&
-    validGitHubUrl(event.payload.forkee.html_url)
+    eventType === "ForkEvent" &&
+    forkeeId !== null &&
+    validRepositoryName(forkeeName) &&
+    validGitHubUrl(forkeeUrl)
   ) {
     kind = "repository-forked";
-    evidenceUrl = event.payload.forkee.html_url;
-    subjectId = String(event.payload.forkee.id);
-    subjectTitle = event.payload.forkee.full_name;
+    evidenceUrl = forkeeUrl;
+    subjectId = String(forkeeId);
+    subjectTitle = forkeeName;
   } else {
     return null;
   }
 
   return {
-    deduplicationKey: `github:${kind}:${event.id.trim()}`,
+    deduplicationKey: `github:${kind}:${eventId}`,
     localDate: window.localDate,
     kind,
     actorId: String(actor.id),
     actorLogin: actor.login,
-    repositoryId: String(event.repo.id),
+    repositoryId: String(repositoryId),
     repositoryName,
     evidenceUrl,
-    visibility: event.public ? "public" : "private",
+    visibility: isPublic ? "public" : "private",
     source: "github-events",
     subjectId,
     subjectNumber: null,

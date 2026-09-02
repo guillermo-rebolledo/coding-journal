@@ -2,22 +2,31 @@ declare const ianaTimeZone: unique symbol;
 
 export type IanaTimeZone = string & { readonly [ianaTimeZone]: true };
 
-export function normalizeTimeZone(value: unknown): IanaTimeZone | null {
-  if (typeof value !== "string") return null;
-
-  const timeZone = value.trim();
-  if (!timeZone || /^[+-]\d{2}:\d{2}$/.test(timeZone)) return null;
-
+/**
+ * Narrows a candidate to a time zone the platform can actually format with.
+ * A fixed UTC offset is rejected: it names an instant's offset, not the zone
+ * whose rules decide when a user's day starts and ends.
+ */
+export function isIanaTimeZone(value: string | null): value is IanaTimeZone {
+  if (value === null) return false;
+  if (value !== value.trim() || value.length === 0) return false;
+  if (/^[+-]\d{2}:\d{2}$/.test(value)) return false;
   try {
-    new Intl.DateTimeFormat("en-US", { timeZone }).format();
-    return timeZone as IanaTimeZone;
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+    return true;
   } catch {
-    return null;
+    return false;
   }
 }
 
-export function parseDate(value: unknown) {
-  if (typeof value !== "string") return null;
+export function normalizeTimeZone(value: string | null): IanaTimeZone | null {
+  const timeZone = value === null ? null : value.trim();
+  return isIanaTimeZone(timeZone) ? timeZone : null;
+}
+
+/** Decodes an ISO-8601 instant that has already been read as a string. */
+export function parseDate(value: string | null): Date | null {
+  if (value === null) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 }

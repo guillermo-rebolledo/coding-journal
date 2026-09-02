@@ -20,10 +20,20 @@ export function createGitHubActivityRepository<
   TQueryResult extends PgQueryResultHKT,
 >(
   database: PgDatabase<TQueryResult, typeof import("@/db/auth-schema")>,
+  // The batch driver returns one result per query; this caller only needs the
+  // batch to have completed, so the contract discards them.
   runAtomicBatch?: (
     queries: readonly [BatchItem<"pg">, ...BatchItem<"pg">[]],
-  ) => Promise<unknown>,
+  ) => Promise<void>,
 ) {
+  /**
+   * The columns `finish` may write. Every column is optional so an absent
+   * value is left untouched by the UPDATE instead of overwriting it.
+   */
+  type ReconciliationUpdate = Partial<
+    typeof journalReconciliation.$inferInsert
+  >;
+
   function serializeSourceFreshness(
     sources: TodayJournal["sourceFreshness"],
   ): StoredSecondarySourceFreshness[] | undefined {
@@ -84,17 +94,21 @@ export function createGitHubActivityRepository<
         records.map((record) => [record.deduplicationKey, record]),
       ).values(),
     ];
-    const reconciliationUpdate = {
+    // Built in steps: an absent column must stay out of the UPDATE rather
+    // than being written as an explicit NULL.
+    const reconciliationUpdate: ReconciliationUpdate = {
       timeZone: journal.timeZone,
       status: journal.status,
-      ...(journal.refreshedAt ? { refreshedAt: journal.refreshedAt } : {}),
-      ...(journal.sourceFreshness
-        ? {
-            sourceFreshness: serializeSourceFreshness(journal.sourceFreshness),
-          }
-        : {}),
       updatedAt: new Date(),
     };
+    if (journal.refreshedAt) {
+      reconciliationUpdate.refreshedAt = journal.refreshedAt;
+    }
+    if (journal.sourceFreshness) {
+      reconciliationUpdate.sourceFreshness = serializeSourceFreshness(
+        journal.sourceFreshness,
+      );
+    }
 
     if (runAtomicBatch) {
       const reconciliationQuery = database
@@ -243,5 +257,7 @@ export function createGitHubActivityRepository<
 
 export const githubActivityRepository = createGitHubActivityRepository(
   db,
-  (queries) => db.batch(queries),
+  async (queries) => {
+    await db.batch(queries);
+  },
 );

@@ -5,6 +5,17 @@ import {
   type ActivityRecord,
   type CollaborationKind,
 } from "@/lib/github-activity";
+import {
+  asString,
+  readArray,
+  readBoolean,
+  readNonEmptyString,
+  readNumber,
+  readObject,
+  readPositiveInteger,
+  readString,
+  type JsonObject,
+} from "@/lib/json-payload";
 import { getLocalDayWindow, parseDate } from "@/lib/time-zone";
 
 // Deliveries whose action happened this long before receipt describe history
@@ -33,7 +44,8 @@ export const collaborationWebhookEvents = [
 export type CollaborationWebhookEvent =
   (typeof collaborationWebhookEvents)[number];
 
-const eventsApiCollaborationTypes: Record<string, CollaborationWebhookEvent> = {
+/** The events feed names the same activities differently from webhooks. */
+const eventsApiCollaborationTypes = {
   CreateEvent: "create",
   DeleteEvent: "delete",
   ReleaseEvent: "release",
@@ -43,20 +55,24 @@ const eventsApiCollaborationTypes: Record<string, CollaborationWebhookEvent> = {
   PullRequestEvent: "pull_request",
   PullRequestReviewEvent: "pull_request_review",
   PullRequestReviewCommentEvent: "pull_request_review_comment",
-};
+} as const satisfies Readonly<Record<string, CollaborationWebhookEvent>>;
+
+type EventsApiType = keyof typeof eventsApiCollaborationTypes;
+
+function isEventsApiType(value: string | null): value is EventsApiType {
+  return Object.hasOwn(eventsApiCollaborationTypes, value ?? "");
+}
 
 export function collaborationEventForApiType(
-  type: unknown,
+  type: string | null,
 ): CollaborationWebhookEvent | null {
-  return typeof type === "string"
-    ? (eventsApiCollaborationTypes[type] ?? null)
-    : null;
+  return isEventsApiType(type) ? eventsApiCollaborationTypes[type] : null;
 }
 
 export function isCollaborationWebhookEvent(
   value: string,
 ): value is CollaborationWebhookEvent {
-  return (collaborationWebhookEvents as readonly string[]).includes(value);
+  return collaborationWebhookEvents.some((event) => event === value);
 }
 
 export type CollaborationSubject = {
@@ -74,64 +90,19 @@ export type CollaborationDerivation =
   | { ok: true; subject: CollaborationSubject }
   | { ok: false; reason: "unsupported" | "invalid" };
 
-type CollaborationPayload = {
-  action?: unknown;
-  ref?: unknown;
-  ref_type?: unknown;
-  pusher_type?: unknown;
-  release?: {
-    id?: unknown;
-    tag_name?: unknown;
-    name?: unknown;
-    draft?: unknown;
-    published_at?: unknown;
-    updated_at?: unknown;
-  } | null;
-  discussion?: {
-    number?: unknown;
-    title?: unknown;
-    created_at?: unknown;
-    updated_at?: unknown;
-  } | null;
-  answer?: { id?: unknown } | null;
-  issue?: {
-    number?: unknown;
-    title?: unknown;
-    created_at?: unknown;
-    closed_at?: unknown;
-    updated_at?: unknown;
-    pull_request?: unknown;
-  } | null;
-  pull_request?: {
-    number?: unknown;
-    title?: unknown;
-    created_at?: unknown;
-    closed_at?: unknown;
-    merged_at?: unknown;
-    updated_at?: unknown;
-    merged?: unknown;
-    merge_commit_sha?: unknown;
-  } | null;
-  comment?: { id?: unknown; created_at?: unknown } | null;
-  review?: {
-    id?: unknown;
-    submitted_at?: unknown;
-    state?: unknown;
-    body?: unknown;
-  } | null;
-};
-
-function positiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
-}
-
-function boundSubjectTitle(value: unknown): string | null {
-  if (typeof value !== "string") return null;
+function boundSubjectTitle(value: string | null): string | null {
+  if (value === null) return null;
   const title = value.trim();
   if (!title) return null;
   return title.length > subjectTitleMaxLength
     ? `${title.slice(0, subjectTitleMaxLength - 1)}…`
     : title;
+}
+
+/** Reads a ref name, rejecting one that is empty or implausibly long. */
+function readRefName(source: JsonObject | null, key: string): string | null {
+  const ref = readNonEmptyString(source, key);
+  return ref !== null && ref.length <= refNameMaxLength ? ref : null;
 }
 
 const unsupported = { ok: false, reason: "unsupported" } as const;
@@ -153,31 +124,35 @@ function collaborationDeduplicationKey(
 // key for the same underlying action.
 export function deriveCollaborationSubject(
   eventType: CollaborationWebhookEvent,
-  payload: unknown,
+  payload: JsonObject | null,
   repository: { id: string; name: string },
   eventOccurredAt?: Date,
   eventIdentity?: string,
 ): CollaborationDerivation {
-  if (typeof payload !== "object" || payload === null) return invalid;
-  const collaboration = payload as CollaborationPayload;
-  const action = collaboration.action;
+  if (payload === null) return invalid;
+  const action = readString(payload, "action");
 
   if (eventType === "create" || eventType === "delete") {
-    if (collaboration.pusher_type !== "user") return unsupported;
+    if (readString(payload, "pusher_type") !== "user") return unsupported;
+    const refType = readString(payload, "ref_type");
+    const ref = readRefName(payload, "ref");
     if (
-      (collaboration.ref_type !== "branch" &&
-        collaboration.ref_type !== "tag") ||
-      typeof collaboration.ref !== "string" ||
-      !collaboration.ref.trim() ||
-      collaboration.ref.trim().length > refNameMaxLength ||
+      (refType !== "branch" && refType !== "tag") ||
+      ref === null ||
       !eventOccurredAt ||
       !eventIdentity
     ) {
       return invalid;
     }
-    const ref = collaboration.ref.trim();
-    const kind =
-      `${collaboration.ref_type}-${eventType === "create" ? "created" : "deleted"}` as CollaborationKind;
+    const created = eventType === "create";
+    const kind: CollaborationKind =
+      refType === "branch"
+        ? created
+          ? "branch-created"
+          : "branch-deleted"
+        : created
+          ? "tag-created"
+          : "tag-deleted";
     return {
       ok: true,
       subject: {
@@ -190,13 +165,13 @@ export function deriveCollaborationSubject(
         subjectId: ref,
         subjectNumber: null,
         title: boundSubjectTitle(ref),
-        evidenceUrl: `https://github.com/${repository.name}/${collaboration.ref_type === "branch" ? "branches" : "tags"}`,
+        evidenceUrl: `https://github.com/${repository.name}/${refType === "branch" ? "branches" : "tags"}`,
         occurredAt: eventOccurredAt,
       },
     };
   }
 
-  if (typeof action !== "string") return invalid;
+  if (action === null) return invalid;
 
   if (eventType === "release") {
     if (
@@ -206,28 +181,25 @@ export function deriveCollaborationSubject(
     ) {
       return unsupported;
     }
-    const release = collaboration.release;
-    if (
-      !positiveInteger(release?.id) ||
-      typeof release.tag_name !== "string" ||
-      !release.tag_name.trim() ||
-      release.tag_name.trim().length > refNameMaxLength ||
-      typeof release.draft !== "boolean"
-    ) {
-      return invalid;
-    }
-    if (release.draft) return unsupported;
+    const release = readObject(payload, "release");
+    const releaseId = readPositiveInteger(release, "id");
+    const tag = readRefName(release, "tag_name");
+    const draft = readBoolean(release, "draft");
+    if (releaseId === null || tag === null || draft === null) return invalid;
+    if (draft) return unsupported;
     const kind: CollaborationKind =
       action === "edited" ? "release-updated" : "release-published";
     const occurredAt = parseDate(
-      kind === "release-updated" ? release.updated_at : release.published_at,
+      readString(
+        release,
+        kind === "release-updated" ? "updated_at" : "published_at",
+      ),
     );
     if (!occurredAt) return invalid;
     const discriminator =
       kind === "release-published"
-        ? String(release.id)
-        : `${release.id}:${occurredAt.toISOString()}`;
-    const tag = release.tag_name.trim();
+        ? String(releaseId)
+        : `${releaseId}:${occurredAt.toISOString()}`;
     return {
       ok: true,
       subject: {
@@ -237,9 +209,11 @@ export function deriveCollaborationSubject(
           repository.id,
           discriminator,
         ),
-        subjectId: String(release.id),
+        subjectId: String(releaseId),
         subjectNumber: null,
-        title: boundSubjectTitle(release.name) ?? boundSubjectTitle(tag),
+        title:
+          boundSubjectTitle(readString(release, "name")) ??
+          boundSubjectTitle(tag),
         evidenceUrl: `https://github.com/${repository.name}/releases/tag/${encodeURIComponent(tag)}`,
         occurredAt,
         attributionKeys: [
@@ -251,11 +225,12 @@ export function deriveCollaborationSubject(
 
   if (eventType === "discussion") {
     if (action !== "created" && action !== "answered") return unsupported;
-    const discussion = collaboration.discussion;
-    const number = discussion?.number;
-    if (!discussion || !positiveInteger(number)) return invalid;
+    const discussion = readObject(payload, "discussion");
+    const number = readPositiveInteger(discussion, "number");
+    if (discussion === null || number === null) return invalid;
+    const title = boundSubjectTitle(readString(discussion, "title"));
     if (action === "created") {
-      const occurredAt = parseDate(discussion.created_at);
+      const occurredAt = parseDate(readString(discussion, "created_at"));
       if (!occurredAt) return invalid;
       return {
         ok: true,
@@ -268,15 +243,16 @@ export function deriveCollaborationSubject(
           ),
           subjectId: String(number),
           subjectNumber: number,
-          title: boundSubjectTitle(discussion.title),
+          title,
           evidenceUrl: `https://github.com/${repository.name}/discussions/${number}`,
           occurredAt,
         },
       };
     }
-    const answerId = collaboration.answer?.id;
-    const occurredAt = parseDate(discussion.updated_at) ?? eventOccurredAt;
-    if (!positiveInteger(answerId) || !occurredAt) return invalid;
+    const answerId = readPositiveInteger(readObject(payload, "answer"), "id");
+    const occurredAt =
+      parseDate(readString(discussion, "updated_at")) ?? eventOccurredAt;
+    if (answerId === null || !occurredAt) return invalid;
     return {
       ok: true,
       subject: {
@@ -288,7 +264,7 @@ export function deriveCollaborationSubject(
         ),
         subjectId: String(answerId),
         subjectNumber: number,
-        title: boundSubjectTitle(discussion.title),
+        title,
         evidenceUrl: `https://github.com/${repository.name}/discussions/${number}#discussioncomment-${answerId}`,
         occurredAt,
       },
@@ -297,12 +273,14 @@ export function deriveCollaborationSubject(
 
   if (eventType === "discussion_comment") {
     if (action !== "created") return unsupported;
-    const discussion = collaboration.discussion;
-    const number = discussion?.number;
-    const commentId = collaboration.comment?.id;
-    if (!discussion || !positiveInteger(number) || !positiveInteger(commentId))
+    const discussion = readObject(payload, "discussion");
+    const number = readPositiveInteger(discussion, "number");
+    const comment = readObject(payload, "comment");
+    const commentId = readPositiveInteger(comment, "id");
+    if (discussion === null || number === null || commentId === null) {
       return invalid;
-    const occurredAt = parseDate(collaboration.comment?.created_at);
+    }
+    const occurredAt = parseDate(readString(comment, "created_at"));
     if (!occurredAt) return invalid;
     return {
       ok: true,
@@ -315,7 +293,7 @@ export function deriveCollaborationSubject(
         ),
         subjectId: String(commentId),
         subjectNumber: number,
-        title: boundSubjectTitle(discussion.title),
+        title: boundSubjectTitle(readString(discussion, "title")),
         evidenceUrl: `https://github.com/${repository.name}/discussions/${number}#discussioncomment-${commentId}`,
         occurredAt,
       },
@@ -323,18 +301,29 @@ export function deriveCollaborationSubject(
   }
 
   if (eventType === "issues") {
-    if (!["opened", "closed", "reopened"].includes(action)) return unsupported;
-    const issue = collaboration.issue;
-    const number = issue?.number;
-    if (!positiveInteger(number)) return invalid;
-    const occurredAt =
+    const kind: CollaborationKind | null =
       action === "opened"
-        ? parseDate(issue?.created_at)
+        ? "issue-opened"
         : action === "closed"
-          ? parseDate(issue?.closed_at)
-          : parseDate(issue?.updated_at);
+          ? "issue-closed"
+          : action === "reopened"
+            ? "issue-reopened"
+            : null;
+    if (kind === null) return unsupported;
+    const issue = readObject(payload, "issue");
+    const number = readPositiveInteger(issue, "number");
+    if (number === null) return invalid;
+    const occurredAt = parseDate(
+      readString(
+        issue,
+        action === "opened"
+          ? "created_at"
+          : action === "closed"
+            ? "closed_at"
+            : "updated_at",
+      ),
+    );
     if (!occurredAt) return invalid;
-    const kind = `issue-${action}` as CollaborationKind;
     // Opening happens once; closing and reopening can repeat, so their keys
     // carry the state-change instant both sources report identically.
     const discriminator =
@@ -352,7 +341,7 @@ export function deriveCollaborationSubject(
         ),
         subjectId: String(number),
         subjectNumber: number,
-        title: boundSubjectTitle(issue?.title),
+        title: boundSubjectTitle(readString(issue, "title")),
         evidenceUrl: `https://github.com/${repository.name}/issues/${number}`,
         occurredAt,
       },
@@ -361,15 +350,16 @@ export function deriveCollaborationSubject(
 
   if (eventType === "issue_comment") {
     if (action !== "created") return unsupported;
-    const issue = collaboration.issue;
-    const comment = collaboration.comment;
-    const number = issue?.number;
-    const commentId = comment?.id;
-    if (!positiveInteger(number) || !positiveInteger(commentId)) return invalid;
-    const occurredAt = parseDate(comment?.created_at);
+    const issue = readObject(payload, "issue");
+    const comment = readObject(payload, "comment");
+    const number = readPositiveInteger(issue, "number");
+    const commentId = readPositiveInteger(comment, "id");
+    if (number === null || commentId === null) return invalid;
+    const occurredAt = parseDate(readString(comment, "created_at"));
     if (!occurredAt) return invalid;
-    const onPullRequest =
-      typeof issue?.pull_request === "object" && issue.pull_request !== null;
+    // GitHub delivers pull-request conversation comments on the issue event,
+    // distinguished only by this member.
+    const onPullRequest = readObject(issue, "pull_request") !== null;
     const kind = onPullRequest ? "pull-request-comment" : "issue-comment";
     return {
       ok: true,
@@ -382,7 +372,7 @@ export function deriveCollaborationSubject(
         ),
         subjectId: String(commentId),
         subjectNumber: number,
-        title: boundSubjectTitle(issue?.title),
+        title: boundSubjectTitle(readString(issue, "title")),
         evidenceUrl: `https://github.com/${repository.name}/${onPullRequest ? "pull" : "issues"}/${number}#issuecomment-${commentId}`,
         occurredAt,
       },
@@ -400,27 +390,31 @@ export function deriveCollaborationSubject(
     ) {
       return unsupported;
     }
-    const pullRequest = collaboration.pull_request;
-    const number = pullRequest?.number;
-    if (!positiveInteger(number)) return invalid;
+    const pullRequest = readObject(payload, "pull_request");
+    const number = readPositiveInteger(pullRequest, "number");
+    if (number === null) return invalid;
     const kind: CollaborationKind =
       action === "opened"
         ? "pull-request-opened"
         : action === "closed"
-          ? pullRequest?.merged === true
+          ? readBoolean(pullRequest, "merged") === true
             ? "pull-request-merged"
             : "pull-request-closed"
           : action === "reopened"
             ? "pull-request-reopened"
             : "pull-request-updated";
-    const occurredAt =
-      kind === "pull-request-opened"
-        ? parseDate(pullRequest?.created_at)
-        : kind === "pull-request-merged"
-          ? parseDate(pullRequest?.merged_at)
-          : kind === "pull-request-closed"
-            ? parseDate(pullRequest?.closed_at)
-            : parseDate(pullRequest?.updated_at);
+    const occurredAt = parseDate(
+      readString(
+        pullRequest,
+        kind === "pull-request-opened"
+          ? "created_at"
+          : kind === "pull-request-merged"
+            ? "merged_at"
+            : kind === "pull-request-closed"
+              ? "closed_at"
+              : "updated_at",
+      ),
+    );
     if (!occurredAt) return invalid;
     // Opening and merging happen once; the repeatable transitions carry the
     // state-change instant.
@@ -428,49 +422,47 @@ export function deriveCollaborationSubject(
       kind === "pull-request-opened" || kind === "pull-request-merged"
         ? `${number}`
         : `${number}:${occurredAt.toISOString()}`;
-    return {
-      ok: true,
-      subject: {
+    const subject: CollaborationSubject = {
+      kind,
+      deduplicationKey: collaborationDeduplicationKey(
         kind,
-        deduplicationKey: collaborationDeduplicationKey(
-          kind,
-          repository.id,
-          discriminator,
-        ),
-        subjectId: String(number),
-        subjectNumber: number,
-        title: boundSubjectTitle(pullRequest?.title),
-        evidenceUrl: `https://github.com/${repository.name}/pull/${number}`,
-        occurredAt,
-        ...(kind === "pull-request-merged" &&
-        validSha(pullRequest?.merge_commit_sha)
-          ? {
-              attributionKeys: [
-                `github:commit:${repository.id}:${pullRequest.merge_commit_sha}`,
-              ],
-            }
-          : {}),
-      },
+        repository.id,
+        discriminator,
+      ),
+      subjectId: String(number),
+      subjectNumber: number,
+      title: boundSubjectTitle(readString(pullRequest, "title")),
+      evidenceUrl: `https://github.com/${repository.name}/pull/${number}`,
+      occurredAt,
     };
+    // A merge also attributes the merge commit, so the commit observation and
+    // the merge observation collapse into one activity.
+    const mergeCommitSha = readString(pullRequest, "merge_commit_sha");
+    if (kind === "pull-request-merged" && validSha(mergeCommitSha)) {
+      subject.attributionKeys = [
+        `github:commit:${repository.id}:${mergeCommitSha}`,
+      ];
+    }
+    return { ok: true, subject };
   }
 
   if (eventType === "pull_request_review") {
     // Webhooks say "submitted"; the events feed says "created".
     if (action !== "submitted" && action !== "created") return unsupported;
-    const review = collaboration.review;
-    const pullRequest = collaboration.pull_request;
-    const number = pullRequest?.number;
-    const reviewId = review?.id;
-    if (!positiveInteger(number) || !positiveInteger(reviewId)) return invalid;
+    const review = readObject(payload, "review");
+    const pullRequest = readObject(payload, "pull_request");
+    const number = readPositiveInteger(pullRequest, "number");
+    const reviewId = readPositiveInteger(review, "id");
+    if (number === null || reviewId === null) return invalid;
     // A lone diff comment auto-submits an empty "commented" review shell; the
     // review-comment observation already carries that work.
     if (
-      review?.state === "commented" &&
-      !(typeof review.body === "string" && review.body.trim())
+      readString(review, "state") === "commented" &&
+      readNonEmptyString(review, "body") === null
     ) {
       return unsupported;
     }
-    const occurredAt = parseDate(review?.submitted_at);
+    const occurredAt = parseDate(readString(review, "submitted_at"));
     if (!occurredAt) return invalid;
     return {
       ok: true,
@@ -483,7 +475,7 @@ export function deriveCollaborationSubject(
         ),
         subjectId: String(reviewId),
         subjectNumber: number,
-        title: boundSubjectTitle(pullRequest?.title),
+        title: boundSubjectTitle(readString(pullRequest, "title")),
         evidenceUrl: `https://github.com/${repository.name}/pull/${number}#pullrequestreview-${reviewId}`,
         occurredAt,
       },
@@ -491,12 +483,12 @@ export function deriveCollaborationSubject(
   }
 
   if (action !== "created") return unsupported;
-  const comment = collaboration.comment;
-  const pullRequest = collaboration.pull_request;
-  const number = pullRequest?.number;
-  const commentId = comment?.id;
-  if (!positiveInteger(number) || !positiveInteger(commentId)) return invalid;
-  const occurredAt = parseDate(comment?.created_at);
+  const comment = readObject(payload, "comment");
+  const pullRequest = readObject(payload, "pull_request");
+  const number = readPositiveInteger(pullRequest, "number");
+  const commentId = readPositiveInteger(comment, "id");
+  if (number === null || commentId === null) return invalid;
+  const occurredAt = parseDate(readString(comment, "created_at"));
   if (!occurredAt) return invalid;
   return {
     ok: true,
@@ -509,7 +501,7 @@ export function deriveCollaborationSubject(
       ),
       subjectId: String(commentId),
       subjectNumber: number,
-      title: boundSubjectTitle(pullRequest?.title),
+      title: boundSubjectTitle(readString(pullRequest, "title")),
       evidenceUrl: `https://github.com/${repository.name}/pull/${number}#discussion_r${commentId}`,
       occurredAt,
     },
@@ -544,12 +536,6 @@ export type CollaborationExtraction =
   | { ok: true; message: CollaborationDeliveryMessage }
   | { ok: false; reason: "malformed" | "stale" | "no-activity" };
 
-type CollaborationWebhookEnvelope = {
-  repository?: { id?: unknown; full_name?: unknown; private?: unknown } | null;
-  sender?: { id?: unknown; login?: unknown; type?: unknown } | null;
-  installation?: { id?: unknown } | null;
-};
-
 export function extractCollaborationDelivery({
   eventType,
   payload,
@@ -557,43 +543,49 @@ export function extractCollaborationDelivery({
   receivedAt,
 }: {
   eventType: CollaborationWebhookEvent;
-  payload: unknown;
+  payload: JsonObject | null;
   deliveryId: string;
   receivedAt: Date;
 }): CollaborationExtraction {
-  if (typeof payload !== "object" || payload === null) {
-    return { ok: false, reason: "malformed" };
-  }
-  const envelope = payload as CollaborationWebhookEnvelope;
-  const repository = envelope.repository;
-  const sender = envelope.sender;
-  const installationId = envelope.installation?.id;
+  if (payload === null) return { ok: false, reason: "malformed" };
+
+  const repository = readObject(payload, "repository");
+  const repositoryNumericId = readPositiveInteger(repository, "id");
+  const repositoryName = readString(repository, "full_name");
+  const isPrivate = readBoolean(repository, "private");
+  const sender = readObject(payload, "sender");
+  const senderId = readPositiveInteger(sender, "id");
+  const senderLogin = readString(sender, "login");
+  const installationId = readPositiveInteger(
+    readObject(payload, "installation"),
+    "id",
+  );
 
   if (
-    typeof repository?.id !== "number" ||
-    !validRepositoryName(repository.full_name) ||
-    typeof repository.private !== "boolean" ||
-    typeof sender?.id !== "number" ||
-    typeof sender.login !== "string" ||
-    typeof installationId !== "number" ||
-    installationId <= 0
+    repositoryNumericId === null ||
+    !validRepositoryName(repositoryName) ||
+    isPrivate === null ||
+    senderId === null ||
+    senderLogin === null ||
+    installationId === null
   ) {
     return { ok: false, reason: "malformed" };
   }
 
   // The journal records the signed-in user's direct activity; bot actors
   // never produce an activity effect.
-  if (sender.type === "Bot" || sender.login.toLowerCase().endsWith("[bot]")) {
+  if (
+    readString(sender, "type") === "Bot" ||
+    senderLogin.toLowerCase().endsWith("[bot]")
+  ) {
     return { ok: false, reason: "no-activity" };
   }
 
+  const repositoryId = String(repositoryNumericId);
   const derivation = deriveCollaborationSubject(
     eventType,
     payload,
-    {
-      id: String(repository.id),
-      name: repository.full_name,
-    },
+    { id: repositoryId, name: repositoryName },
     receivedAt,
     deliveryId,
   );
@@ -616,11 +608,11 @@ export function extractCollaborationDelivery({
       installationId: String(installationId),
       receivedAt: receivedAt.toISOString(),
       collaboration: {
-        repositoryId: String(repository.id),
-        repositoryName: repository.full_name,
-        private: repository.private,
-        senderId: String(sender.id),
-        senderLogin: sender.login,
+        repositoryId,
+        repositoryName,
+        private: isPrivate,
+        senderId: String(senderId),
+        senderLogin,
         subject: {
           kind: subject.kind,
           deduplicationKey: subject.deduplicationKey,
@@ -636,56 +628,141 @@ export function extractCollaborationDelivery({
   };
 }
 
+function isCollaborationKind(value: string | null): value is CollaborationKind {
+  return value !== null && collaborationKindSet.has(value);
+}
+
+/**
+ * Decodes a queue message this service published earlier. The message crossed
+ * a queue, so every field is read and checked before the message is rebuilt.
+ */
 export function parseCollaborationDeliveryMessage(
-  value: unknown,
+  value: JsonObject | null,
 ): CollaborationDeliveryMessage | null {
-  if (typeof value !== "object" || value === null) return null;
-  const message = value as Partial<CollaborationDeliveryMessage>;
-  const collaboration = message.collaboration;
-  const subject = collaboration?.subject;
+  if (value === null || readNumber(value, "version") !== 1) return null;
+
+  const deliveryId = readNonEmptyString(value, "deliveryId");
+  const installationId = readString(value, "installationId");
+  const receivedAt = readString(value, "receivedAt");
+  const collaboration = readObject(value, "collaboration");
+  const repositoryId = readString(collaboration, "repositoryId");
+  const repositoryName = readString(collaboration, "repositoryName");
+  const isPrivate = readBoolean(collaboration, "private");
+  const senderId = readString(collaboration, "senderId");
+  const senderLogin = readString(collaboration, "senderLogin");
+  const subject = readObject(collaboration, "subject");
   if (
-    message.version !== 1 ||
-    typeof message.deliveryId !== "string" ||
-    message.deliveryId.length === 0 ||
-    typeof message.installationId !== "string" ||
-    !parseDate(message.receivedAt) ||
-    typeof collaboration !== "object" ||
-    collaboration === null ||
-    typeof collaboration.repositoryId !== "string" ||
-    !validRepositoryName(collaboration.repositoryName) ||
-    typeof collaboration.private !== "boolean" ||
-    typeof collaboration.senderId !== "string" ||
-    typeof collaboration.senderLogin !== "string" ||
-    typeof subject !== "object" ||
-    subject === null ||
-    typeof subject.kind !== "string" ||
-    !collaborationKindSet.has(subject.kind) ||
-    typeof subject.deduplicationKey !== "string" ||
-    subject.deduplicationKey.length === 0 ||
-    subject.deduplicationKey.length > 1024 ||
-    typeof subject.subjectId !== "string" ||
-    subject.subjectId.length === 0 ||
-    subject.subjectId.length > refNameMaxLength ||
-    (subject.subjectNumber !== null &&
-      !positiveInteger(subject.subjectNumber)) ||
-    (subject.title !== null &&
-      (typeof subject.title !== "string" ||
-        subject.title.length > subjectTitleMaxLength)) ||
-    typeof subject.evidenceUrl !== "string" ||
-    subject.evidenceUrl.length > 2048 ||
-    !subject.evidenceUrl.startsWith("https://github.com/") ||
-    !parseDate(subject.occurredAt) ||
-    (subject.attributionKeys !== undefined &&
-      (!Array.isArray(subject.attributionKeys) ||
-        subject.attributionKeys.length === 0 ||
-        subject.attributionKeys.length > 4 ||
-        subject.attributionKeys.some(
-          (key) => typeof key !== "string" || key.length > 1024,
-        )))
+    deliveryId === null ||
+    installationId === null ||
+    receivedAt === null ||
+    !parseDate(receivedAt) ||
+    repositoryId === null ||
+    !validRepositoryName(repositoryName) ||
+    isPrivate === null ||
+    senderId === null ||
+    senderLogin === null ||
+    subject === null
   ) {
     return null;
   }
-  return message as CollaborationDeliveryMessage;
+
+  const kind = readString(subject, "kind");
+  const deduplicationKey = readString(subject, "deduplicationKey");
+  const subjectId = readString(subject, "subjectId");
+  const subjectNumber = readNumber(subject, "subjectNumber");
+  const evidenceUrl = readString(subject, "evidenceUrl");
+  const occurredAt = readString(subject, "occurredAt");
+
+  // `subjectNumber` is nullable rather than optional: refs have no number,
+  // but a present number must be a real one.
+  const numberMember = subject["subjectNumber"];
+  if (
+    numberMember !== null &&
+    (subjectNumber === null ||
+      !Number.isSafeInteger(subjectNumber) ||
+      subjectNumber <= 0)
+  ) {
+    return null;
+  }
+
+  // `title` is nullable in the same way: absent is malformed, null is a
+  // subject that genuinely has no title.
+  const titleMember = subject["title"];
+  const title = readString(subject, "title");
+  if (
+    titleMember !== null &&
+    (title === null || title.length > subjectTitleMaxLength)
+  ) {
+    return null;
+  }
+
+  const attributionKeys = readSubjectAttributionKeys(subject);
+  if (attributionKeys === "invalid") return null;
+
+  if (
+    !isCollaborationKind(kind) ||
+    deduplicationKey === null ||
+    deduplicationKey.length === 0 ||
+    deduplicationKey.length > 1024 ||
+    subjectId === null ||
+    subjectId.length === 0 ||
+    subjectId.length > refNameMaxLength ||
+    evidenceUrl === null ||
+    evidenceUrl.length > 2048 ||
+    !evidenceUrl.startsWith("https://github.com/") ||
+    occurredAt === null ||
+    !parseDate(occurredAt)
+  ) {
+    return null;
+  }
+
+  const message: CollaborationDeliveryMessage = {
+    version: 1,
+    deliveryId,
+    installationId,
+    receivedAt,
+    collaboration: {
+      repositoryId,
+      repositoryName,
+      private: isPrivate,
+      senderId,
+      senderLogin,
+      subject: {
+        kind,
+        deduplicationKey,
+        subjectId,
+        subjectNumber,
+        title,
+        evidenceUrl,
+        occurredAt,
+      },
+    },
+  };
+  if (attributionKeys !== undefined) {
+    message.collaboration.subject.attributionKeys = attributionKeys;
+  }
+  return message;
+}
+
+/**
+ * Reads the optional `attributionKeys` list. Returns `undefined` when the
+ * member is absent and the sentinel `"invalid"` when it is present but is not
+ * a list of between one and four bounded keys.
+ */
+function readSubjectAttributionKeys(
+  subject: JsonObject,
+): string[] | undefined | "invalid" {
+  if (subject["attributionKeys"] === undefined) return undefined;
+  const entries = readArray(subject, "attributionKeys");
+  if (entries === null || entries.length === 0 || entries.length > 4) {
+    return "invalid";
+  }
+  const keys = entries.map((entry) => asString(entry));
+  return keys.every((key) => isBoundedAttributionKey(key)) ? keys : "invalid";
+}
+
+function isBoundedAttributionKey(value: string | null): value is string {
+  return value !== null && value.length <= 1024;
 }
 
 export function normalizeCollaborationMessage(

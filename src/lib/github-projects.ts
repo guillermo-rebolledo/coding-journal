@@ -4,6 +4,14 @@ import {
   type ProjectKind,
 } from "@/lib/github-activity";
 import { subjectTitleMaxLength } from "@/lib/github-collaboration";
+import {
+  readNonEmptyString,
+  readNumber,
+  readObject,
+  readPositiveInteger,
+  readString,
+  type JsonObject,
+} from "@/lib/json-payload";
 import { getLocalDayWindow, parseDate } from "@/lib/time-zone";
 
 export const projectsWebhookEvents = [
@@ -39,15 +47,17 @@ export type ProjectsExtraction =
   | { ok: true; message: ProjectsDeliveryMessage }
   | { ok: false; reason: "malformed" | "no-activity" };
 
-const projectActions: Record<string, ProjectKind> = {
+/** The activity each `projects_v2` action records. */
+const projectActions = {
   created: "project-created",
   edited: "project-updated",
   closed: "project-closed",
   reopened: "project-reopened",
   deleted: "project-deleted",
-};
+} as const satisfies Readonly<Record<string, ProjectKind>>;
 
-const projectItemActions: Record<string, ProjectKind> = {
+/** The activity each `projects_v2_item` action records. */
+const projectItemActions = {
   archived: "project-item-archived",
   converted: "project-item-converted",
   created: "project-item-added",
@@ -55,30 +65,31 @@ const projectItemActions: Record<string, ProjectKind> = {
   edited: "project-item-edited",
   reordered: "project-item-reordered",
   restored: "project-item-restored",
-};
+} as const satisfies Readonly<Record<string, ProjectKind>>;
 
-function positiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+function projectKindFor(
+  actions: Readonly<Record<string, ProjectKind>>,
+  action: string,
+): ProjectKind | null {
+  return Object.hasOwn(actions, action) ? (actions[action] ?? null) : null;
 }
 
-function nonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
+function validDeliveryId(value: string | null): value is string {
+  return value !== null && /^[A-Za-z0-9-]{1,100}$/.test(value);
 }
 
-function validDeliveryId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9-]{1,100}$/.test(value);
-}
-
-function boundedTitle(value: unknown) {
-  if (!nonEmptyString(value)) return null;
+function boundedTitle(value: string | null) {
+  if (value === null) return null;
   const title = value.trim();
+  if (!title) return null;
   return title.length > subjectTitleMaxLength
     ? `${title.slice(0, subjectTitleMaxLength - 1)}…`
     : title;
 }
 
-function githubUrl(value: unknown) {
-  if (!nonEmptyString(value)) return null;
+/** Narrows a decoded string to an absolute github.com URL. */
+function githubUrl(value: string | null) {
+  if (value === null || value.trim().length === 0) return null;
   try {
     const url = new URL(value);
     return url.protocol === "https:" && url.hostname === "github.com"
@@ -89,19 +100,28 @@ function githubUrl(value: unknown) {
   }
 }
 
-function previewObject(payload: Record<string, unknown>, ...keys: string[]) {
+/**
+ * Preview Project payloads name the same member in snake and camel case
+ * depending on the delivery, so both spellings are tried in order.
+ */
+function readEitherObject(
+  source: JsonObject | null,
+  ...keys: readonly string[]
+): JsonObject | null {
   for (const key of keys) {
-    const candidate = payload[key];
-    if (typeof candidate === "object" && candidate !== null) {
-      return candidate as Record<string, unknown>;
-    }
+    const value = readObject(source, key);
+    if (value !== null) return value;
   }
   return null;
 }
 
-function firstString(object: Record<string, unknown>, ...keys: string[]) {
+function readEitherString(
+  source: JsonObject | null,
+  ...keys: readonly string[]
+): string | null {
   for (const key of keys) {
-    if (nonEmptyString(object[key])) return object[key].trim();
+    const value = readNonEmptyString(source, key);
+    if (value !== null) return value;
   }
   return null;
 }
@@ -109,7 +129,7 @@ function firstString(object: Record<string, unknown>, ...keys: string[]) {
 export function isProjectsWebhookEvent(
   value: string,
 ): value is ProjectsWebhookEvent {
-  return (projectsWebhookEvents as readonly string[]).includes(value);
+  return projectsWebhookEvents.some((event) => event === value);
 }
 
 export function extractProjectsDelivery({
@@ -119,52 +139,62 @@ export function extractProjectsDelivery({
   receivedAt,
 }: {
   eventType: ProjectsWebhookEvent;
-  payload: unknown;
+  payload: JsonObject | null;
   deliveryId: string;
   receivedAt: Date;
 }): ProjectsExtraction {
-  if (typeof payload !== "object" || payload === null) {
-    return { ok: false, reason: "malformed" };
-  }
-  const root = payload as Record<string, unknown>;
-  const organization = previewObject(root, "organization");
+  if (payload === null) return { ok: false, reason: "malformed" };
+
+  const organization = readObject(payload, "organization");
   // Preview Project webhooks are organization-only. A payload without this
   // boundary is either personal Projects activity or an incompatible schema.
-  if (!organization) return { ok: false, reason: "no-activity" };
-  const sender = previewObject(root, "sender");
-  const installation = previewObject(root, "installation");
-  const action = root.action;
+  if (organization === null) return { ok: false, reason: "no-activity" };
+
+  const organizationId = readPositiveInteger(organization, "id");
+  const organizationLogin = readNonEmptyString(organization, "login");
+  const sender = readObject(payload, "sender");
+  const senderId = readPositiveInteger(sender, "id");
+  const senderLogin = readNonEmptyString(sender, "login");
+  const installationId = readPositiveInteger(
+    readObject(payload, "installation"),
+    "id",
+  );
+  const action = readString(payload, "action");
   if (
-    !positiveInteger(organization.id) ||
-    !nonEmptyString(organization.login) ||
-    !positiveInteger(sender?.id) ||
-    !nonEmptyString(sender.login) ||
-    !positiveInteger(installation?.id) ||
-    typeof action !== "string"
+    organizationId === null ||
+    organizationLogin === null ||
+    senderId === null ||
+    senderLogin === null ||
+    installationId === null ||
+    action === null
   ) {
     return { ok: false, reason: "malformed" };
   }
 
   const isItem = eventType === "projects_v2_item";
-  const kind = (isItem ? projectItemActions : projectActions)[action];
-  if (!kind) return { ok: false, reason: "no-activity" };
+  const kind = projectKindFor(
+    isItem ? projectItemActions : projectActions,
+    action,
+  );
+  if (kind === null) return { ok: false, reason: "no-activity" };
 
   const subject = isItem
-    ? previewObject(root, "projects_v2_item", "project_v2_item")
-    : previewObject(root, "projects_v2", "project_v2");
-  if (!subject || !positiveInteger(subject.id)) {
+    ? readEitherObject(payload, "projects_v2_item", "project_v2_item")
+    : readEitherObject(payload, "projects_v2", "project_v2");
+  const subjectNumericId = readPositiveInteger(subject, "id");
+  if (subject === null || subjectNumericId === null) {
     return { ok: false, reason: "malformed" };
   }
+
   const subjectId =
-    firstString(subject, "node_id", "nodeId") ?? String(subject.id);
+    readEitherString(subject, "node_id", "nodeId") ?? String(subjectNumericId);
   const projectId = isItem
-    ? (firstString(subject, "project_node_id", "projectNodeId") ??
-      String(organization.id))
+    ? (readEitherString(subject, "project_node_id", "projectNodeId") ??
+      String(organizationId))
     : subjectId;
-  const number = positiveInteger(subject.number) ? subject.number : null;
-  const organizationLogin = organization.login.trim();
+  const number = readPositiveInteger(subject, "number");
   const evidenceUrl =
-    githubUrl(subject.html_url ?? subject.htmlUrl) ??
+    githubUrl(readEitherString(subject, "html_url", "htmlUrl")) ??
     (number
       ? `https://github.com/orgs/${encodeURIComponent(organizationLogin)}/projects/${number}`
       : `https://github.com/orgs/${encodeURIComponent(organizationLogin)}/projects`);
@@ -175,19 +205,19 @@ export function extractProjectsDelivery({
     message: {
       version: 1,
       deliveryId,
-      installationId: String(installation.id),
+      installationId: String(installationId),
       receivedAt: occurredAt,
       project: {
         kind,
         deduplicationKey: `github:${kind}:${projectId}:${subjectId}:${deliveryId}`,
-        organizationId: String(organization.id),
+        organizationId: String(organizationId),
         organizationLogin,
-        senderId: String(sender.id),
-        senderLogin: sender.login.trim(),
+        senderId: String(senderId),
+        senderLogin,
         projectId,
         subjectId,
         subjectNumber: number,
-        title: isItem ? null : boundedTitle(subject.title),
+        title: isItem ? null : boundedTitle(readString(subject, "title")),
         evidenceUrl,
         occurredAt,
         completeness: "best-effort",
@@ -198,39 +228,100 @@ export function extractProjectsDelivery({
 
 const projectKindSet = new Set<string>(projectKinds);
 
+function isProjectKind(value: string | null): value is ProjectKind {
+  return value !== null && projectKindSet.has(value);
+}
+
+/**
+ * Decodes a queue message this service published earlier. The message crossed
+ * a queue, so every field is read and checked before the message is rebuilt.
+ */
 export function parseProjectsDeliveryMessage(
-  value: unknown,
+  value: JsonObject | null,
 ): ProjectsDeliveryMessage | null {
-  if (typeof value !== "object" || value === null) return null;
-  const message = value as Partial<ProjectsDeliveryMessage>;
-  const project = message.project;
+  if (value === null || readNumber(value, "version") !== 1) return null;
+
+  const deliveryId = readString(value, "deliveryId");
+  const installationId = readNonEmptyString(value, "installationId");
+  const receivedAt = readString(value, "receivedAt");
+  const project = readObject(value, "project");
+  const kind = readString(project, "kind");
+  const deduplicationKey = readNonEmptyString(project, "deduplicationKey");
+  const organizationId = readNonEmptyString(project, "organizationId");
+  const organizationLogin = readNonEmptyString(project, "organizationLogin");
+  const senderId = readNonEmptyString(project, "senderId");
+  const senderLogin = readNonEmptyString(project, "senderLogin");
+  const projectId = readNonEmptyString(project, "projectId");
+  const subjectId = readNonEmptyString(project, "subjectId");
+  const subjectNumber = readNumber(project, "subjectNumber");
+  const evidenceUrl = readString(project, "evidenceUrl");
+  const occurredAt = readString(project, "occurredAt");
+
+  if (project === null) return null;
+
+  // `subjectNumber` and `title` are nullable rather than optional: an absent
+  // member is malformed, an explicit null is a project that has neither.
+  const numberMember = project["subjectNumber"];
   if (
-    message.version !== 1 ||
-    !validDeliveryId(message.deliveryId) ||
-    !nonEmptyString(message.installationId) ||
-    !parseDate(message.receivedAt) ||
-    typeof project !== "object" ||
-    project === null ||
-    !projectKindSet.has(project.kind) ||
-    !nonEmptyString(project.deduplicationKey) ||
-    !nonEmptyString(project.organizationId) ||
-    !nonEmptyString(project.organizationLogin) ||
-    !nonEmptyString(project.senderId) ||
-    !nonEmptyString(project.senderLogin) ||
-    !nonEmptyString(project.projectId) ||
-    !nonEmptyString(project.subjectId) ||
-    (project.subjectNumber !== null &&
-      !positiveInteger(project.subjectNumber)) ||
-    (project.title !== null &&
-      (!nonEmptyString(project.title) ||
-        project.title.length > subjectTitleMaxLength)) ||
-    !githubUrl(project.evidenceUrl) ||
-    !parseDate(project.occurredAt) ||
-    project.completeness !== "best-effort"
+    numberMember !== null &&
+    (subjectNumber === null ||
+      !Number.isSafeInteger(subjectNumber) ||
+      subjectNumber <= 0)
   ) {
     return null;
   }
-  return message as ProjectsDeliveryMessage;
+  const titleMember = project["title"];
+  const title = readNonEmptyString(project, "title");
+  if (
+    titleMember !== null &&
+    (title === null || title.length > subjectTitleMaxLength)
+  ) {
+    return null;
+  }
+
+  if (
+    !validDeliveryId(deliveryId) ||
+    installationId === null ||
+    receivedAt === null ||
+    !parseDate(receivedAt) ||
+    !isProjectKind(kind) ||
+    deduplicationKey === null ||
+    organizationId === null ||
+    organizationLogin === null ||
+    senderId === null ||
+    senderLogin === null ||
+    projectId === null ||
+    subjectId === null ||
+    evidenceUrl === null ||
+    githubUrl(evidenceUrl) === null ||
+    occurredAt === null ||
+    !parseDate(occurredAt) ||
+    readString(project, "completeness") !== "best-effort"
+  ) {
+    return null;
+  }
+
+  return {
+    version: 1,
+    deliveryId,
+    installationId,
+    receivedAt,
+    project: {
+      kind,
+      deduplicationKey,
+      organizationId,
+      organizationLogin,
+      senderId,
+      senderLogin,
+      projectId,
+      subjectId,
+      subjectNumber,
+      title,
+      evidenceUrl,
+      occurredAt,
+      completeness: "best-effort",
+    },
+  };
 }
 
 export function normalizeProjectsMessage(

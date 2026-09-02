@@ -81,6 +81,18 @@ export async function disconnectGitHubInstallation(
   await markInstallationDisconnected(userId, installationId);
 }
 
+/** The fixture installations a smoke-test user starts with, if any. */
+function fixtureInstallations(
+  userId: string,
+): readonly StoredGitHubInstallation[] {
+  return Object.hasOwn(e2eGitHubInstallations, userId)
+    ? (e2eGitHubInstallations[
+        // SAFETY: `Object.hasOwn` established that this user has fixtures.
+        userId as keyof typeof e2eGitHubInstallations
+      ] ?? [])
+    : [];
+}
+
 export async function getGitHubInstallations(
   userId: string,
 ): Promise<StoredGitHubInstallation[]> {
@@ -89,10 +101,9 @@ export async function getGitHubInstallations(
     process.env.E2E_AUTH_MODE === "true" &&
     userId.startsWith("e2e-")
   ) {
-    return (
-      e2eGitHubInstallations[userId as keyof typeof e2eGitHubInstallations] ??
-      []
-    ).map((installation) => ({ ...installation }));
+    return fixtureInstallations(userId).map((installation) => ({
+      ...installation,
+    }));
   }
 
   return findInstallations(userId);

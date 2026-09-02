@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import type { JsonObject } from "@/lib/json-payload";
 import {
   extractProjectsDelivery,
   normalizeProjectsMessage,
@@ -10,8 +11,16 @@ import {
 
 const receivedAt = new Date("2026-08-31T12:05:00.000Z");
 
-function projectPayload(overrides: Record<string, unknown> = {}) {
-  return {
+/**
+ * A preview Projects payload. `omit` drops a member entirely, which is how the
+ * preview schema differs between deliveries — an absent member is not the same
+ * as one present and empty.
+ */
+function projectPayload(
+  overrides: JsonObject = {},
+  omit: readonly string[] = [],
+): JsonObject {
+  const payload: JsonObject = {
     action: "edited",
     organization: { id: 84, login: "acme" },
     sender: { id: 7, login: "ada", type: "User" },
@@ -26,6 +35,9 @@ function projectPayload(overrides: Record<string, unknown> = {}) {
     changes: { title: { from: "PRIVATE ROADMAP" } },
     ...overrides,
   };
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => !omit.includes(key)),
+  );
 }
 
 describe("GitHub organization Projects preview contract", () => {
@@ -74,16 +86,18 @@ describe("GitHub organization Projects preview contract", () => {
   it("absorbs a preview object rename without changing the canonical message", () => {
     const extraction = extractProjectsDelivery({
       eventType: "projects_v2",
-      payload: projectPayload({
-        projects_v2: undefined,
-        project_v2: {
-          id: 501,
-          nodeId: "PVT_kwDOA1",
-          number: 12,
-          title: "Engineering roadmap",
-          htmlUrl: "https://github.com/orgs/acme/projects/12",
+      payload: projectPayload(
+        {
+          project_v2: {
+            id: 501,
+            nodeId: "PVT_kwDOA1",
+            number: 12,
+            title: "Engineering roadmap",
+            htmlUrl: "https://github.com/orgs/acme/projects/12",
+          },
         },
-      }),
+        ["projects_v2"],
+      ),
       deliveryId: "project-delivery-2",
       receivedAt,
     });
@@ -119,11 +133,12 @@ describe("GitHub organization Projects preview contract", () => {
       deliveryId: "project-item-delivery-1",
       receivedAt,
     });
+    // A personal project carries a `user` boundary where an organization
+    // project carries `organization`.
     const personal = extractProjectsDelivery({
       eventType: "projects_v2",
       payload: {
-        ...projectPayload(),
-        organization: undefined,
+        ...projectPayload({}, ["organization"]),
         user: { id: 7, login: "ada" },
       },
       deliveryId: "personal-project-delivery-1",

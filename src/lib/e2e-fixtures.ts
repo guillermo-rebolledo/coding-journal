@@ -192,6 +192,9 @@ export function getE2EJournalHistory() {
 }
 
 export function getE2EHistoricalJournal(localDate: string) {
+  if (localDate === "2026-08-29") {
+    throw new Error("E2E journal-day render failure");
+  }
   if (localDate !== "2026-08-30") return null;
   const correction: ActivityRecord = {
     ...e2eHistoricalActivity,

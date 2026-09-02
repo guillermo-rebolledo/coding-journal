@@ -33,6 +33,16 @@ const routes = [
   { name: "data access", session: null, path: "/data-access" },
   { name: "Today", session: "all", path: "/journal" },
   { name: "History", session: "all", path: "/journal/history" },
+  {
+    name: "missing journal day",
+    session: "all",
+    path: "/journal/history/not-a-date",
+  },
+  {
+    name: "journal day error",
+    session: "all",
+    path: "/journal/history/2026-08-29",
+  },
   { name: "Settings", session: "all", path: "/settings" },
 ] as const;
 

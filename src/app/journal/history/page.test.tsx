@@ -179,4 +179,18 @@ describe("journal history browsing", () => {
       screen.getByText(/Recorded facts, aggregate metrics, evidence/),
     ).toBeInTheDocument();
   });
+
+  it.each(["not-a-date", "2026-08-01"])(
+    "routes an unavailable day through the not-found boundary (%s)",
+    async (localDate) => {
+      if (localDate === "2026-08-01")
+        historyBoundary.read.mockResolvedValue(null);
+
+      await expect(
+        JournalHistoryDetailPage({
+          params: Promise.resolve({ localDate }),
+        }),
+      ).rejects.toThrow("NEXT_NOT_FOUND");
+    },
+  );
 });

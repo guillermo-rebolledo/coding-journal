@@ -5,10 +5,16 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { db } from "@/db";
 import {
+  githubAccessBlock,
   githubActivity,
   journalFinalization,
   journalOnboarding,
+  journalSummary,
 } from "@/db/auth-schema";
+import {
+  isActivityBlocked,
+  neutralizeBlockedActivity,
+} from "@/lib/github-access-block";
 import type { ActivityMetrics, ActivityRecord } from "@/lib/github-activity";
 import type {
   FinalizationCandidate,
@@ -182,7 +188,49 @@ export function createJournalFinalizationRepository<
         ),
       )
       .returning({ id: journalFinalization.id });
-    return finalized.length > 0;
+    const finalizedId = finalized[0]?.id;
+    if (!finalizedId) return false;
+
+    // A revocation can race after reconciliation has captured its evidence.
+    // Recheck the durable access fence after the write; the revocation sweep
+    // handles the opposite ordering, so stale private evidence cannot persist.
+    const blocks = await database.query.githubAccessBlock.findMany({
+      where: eq(githubAccessBlock.userId, input.userId),
+    });
+    if (
+      input.evidence.some((activity) => isActivityBlocked(activity, blocks))
+    ) {
+      const evidence = input.evidence.map((activity, index) =>
+        isActivityBlocked(activity, blocks)
+          ? neutralizeBlockedActivity(activity, input.localDate, index)
+          : activity,
+      );
+      await database
+        .update(journalFinalization)
+        .set({
+          narrative: {
+            overview: "Details unavailable because GitHub access changed.",
+            overviewEvidenceIds: [],
+            accomplishments: [],
+            collaboration: [],
+            inProgress: [],
+          },
+          evidence,
+          evidenceKeys: evidence.map((activity) => activity.deduplicationKey),
+          narrativeRedactedAt: input.finalizedAt,
+          updatedAt: input.finalizedAt,
+        })
+        .where(eq(journalFinalization.id, finalizedId));
+      await database
+        .delete(journalSummary)
+        .where(
+          and(
+            eq(journalSummary.userId, input.userId),
+            eq(journalSummary.localDate, input.localDate),
+          ),
+        );
+    }
+    return true;
   }
 
   async function fail(

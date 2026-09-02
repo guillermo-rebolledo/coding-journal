@@ -6,10 +6,15 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import {
   githubInstallation,
+  githubAccessBlock,
   githubInstallationState,
   journalOnboarding,
 } from "@/db/auth-schema";
 import type { GitHubInstallationDetails } from "@/lib/github-app";
+import {
+  clearGitHubAccessBlocks,
+  githubAccessBlockScopeKey,
+} from "@/lib/github-access-block";
 
 export function createGitHubInstallationRepository<
   TQueryResult extends PgQueryResultHKT,
@@ -76,6 +81,22 @@ export function createGitHubInstallationRepository<
           updatedAt: new Date(),
         },
       });
+    await database
+      .delete(githubAccessBlock)
+      .where(
+        and(
+          eq(githubAccessBlock.userId, userId),
+          eq(
+            githubAccessBlock.scopeKey,
+            githubAccessBlockScopeKey("installation", details.installationId),
+          ),
+        ),
+      );
+    await clearGitHubAccessBlocks(
+      database,
+      [userId],
+      [{ kind: "authorization", identifier: "all-private" }],
+    );
   }
 
   async function setGitHubAccessMode(userId: string) {

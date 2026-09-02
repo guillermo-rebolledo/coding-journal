@@ -5,6 +5,8 @@ import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const neonBoundary = vi.hoisted(() => ({
+  applyAccessChange: vi.fn(),
+  restoreAccess: vi.fn(),
   claimDelivery: vi.fn(),
   markDeliveryEnqueued: vi.fn(),
   markDeliveryEnqueueFailed: vi.fn(),
@@ -67,6 +69,12 @@ describe("GitHub webhook endpoint", () => {
   beforeEach(() => {
     vi.stubEnv("GITHUB_WEBHOOK_SECRET", secret);
     neonBoundary.claimDelivery.mockReset().mockResolvedValue("claimed");
+    neonBoundary.applyAccessChange.mockReset().mockResolvedValue({
+      affectedUsers: 1,
+      redactedJournals: 2,
+      deletedActivities: 3,
+    });
+    neonBoundary.restoreAccess.mockReset().mockResolvedValue(undefined);
     neonBoundary.markDeliveryEnqueued.mockReset().mockResolvedValue(undefined);
     neonBoundary.markDeliveryEnqueueFailed
       .mockReset()
@@ -108,6 +116,113 @@ describe("GitHub webhook endpoint", () => {
     expect(neonBoundary.markDeliveryEnqueued).toHaveBeenCalledWith(
       "d0b74ba1-575e-4a52-9c1c-b8f2f4b0a111",
     );
+  });
+
+  it("immediately blocks and redacts a suspended installation without queueing private metadata", async () => {
+    const body = JSON.stringify({
+      action: "suspend",
+      installation: { id: 99, account: { id: 84 } },
+      sender: { id: 7, login: "ada" },
+      suspension_reason: "PRIVATE-BILLING-DISPUTE",
+    });
+
+    const response = await POST(
+      webhookRequest({ body, event: "installation" }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ status: "redacted" });
+    expect(neonBoundary.applyAccessChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryId: "d0b74ba1-575e-4a52-9c1c-b8f2f4b0a111",
+        kind: "installation-suspended",
+        installationId: "99",
+      }),
+    );
+    expect(
+      JSON.stringify(neonBoundary.applyAccessChange.mock.calls),
+    ).not.toContain("PRIVATE-BILLING-DISPUTE");
+    expect(queueBoundary.publish).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      event: "installation",
+      body: {
+        action: "deleted",
+        installation: { id: 99, account: { id: 84 } },
+        sender: { id: 7, login: "ada" },
+      },
+      kind: "installation-removed",
+    },
+    {
+      event: "installation_repositories",
+      body: {
+        action: "removed",
+        installation: { id: 99, account: { id: 84 } },
+        repositories_removed: [{ id: 42, full_name: "acme/private-engine" }],
+        sender: { id: 7, login: "ada" },
+      },
+      kind: "repositories-removed",
+    },
+    {
+      event: "github_app_authorization",
+      body: {
+        action: "revoked",
+        sender: { id: 7, login: "ada" },
+      },
+      kind: "authorization-revoked",
+    },
+  ])(
+    "handles $kind synchronously at the signed webhook boundary",
+    async (fixture) => {
+      const response = await POST(
+        webhookRequest({
+          body: JSON.stringify(fixture.body),
+          event: fixture.event,
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(neonBoundary.applyAccessChange).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: fixture.kind }),
+      );
+      expect(queueBoundary.publish).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    {
+      event: "installation",
+      body: { action: "unsuspend", installation: { id: 99 } },
+      kind: "installation-unsuspended",
+      repositoryIds: [],
+    },
+    {
+      event: "installation_repositories",
+      body: {
+        action: "added",
+        installation: { id: 99 },
+        repositories_added: [{ id: 42, full_name: "acme/private-engine" }],
+      },
+      kind: "repositories-added",
+      repositoryIds: ["42"],
+    },
+  ])("restores $body.action access synchronously", async (fixture) => {
+    const response = await POST(
+      webhookRequest({
+        body: JSON.stringify(fixture.body),
+        event: fixture.event,
+      }),
+    );
+
+    await expect(response.json()).resolves.toEqual({ status: "restored" });
+    expect(neonBoundary.restoreAccess).toHaveBeenCalledWith({
+      kind: fixture.kind,
+      installationId: "99",
+      repositoryIds: fixture.repositoryIds,
+    });
+    expect(queueBoundary.publish).not.toHaveBeenCalled();
   });
 
   it("acknowledges a duplicated delivery id without publishing again", async () => {

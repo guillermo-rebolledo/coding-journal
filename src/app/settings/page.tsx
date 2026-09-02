@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { deleteAccount } from "@/app/settings/actions";
 import { GitHubAccessOverview } from "@/components/github-access-overview";
 import { AppShell } from "@/components/journal/app-shell";
 import {
@@ -11,6 +12,7 @@ import {
 } from "@/components/journal/section-list";
 import { PalettePicker } from "@/components/palette-picker";
 import { ThemeModePicker } from "@/components/theme-mode-picker";
+import { Button } from "@/components/ui/button";
 import { refreshGitHubConnections } from "@/lib/github-connection";
 import { getJournalOnboarding } from "@/lib/journal";
 import { getJournalSession } from "@/lib/session";
@@ -73,9 +75,9 @@ export default async function SettingsPage() {
         </SectionGroup>
 
         <SectionGroup
-          id="coverage-limits-heading"
-          title="Coverage and privacy"
-          description="What Coding Journal can and cannot see, and how it handles what it stores."
+          id="coverage-heading"
+          title="Coverage limits"
+          description="Two sources are always labelled best-effort, because GitHub does not expose them reliably."
           className="mt-10"
         >
           <ListSurface>
@@ -87,9 +89,51 @@ export default async function SettingsPage() {
               label="Reconciliation only"
               supporting="User-authorized Gists and lightweight activity can arrive later because GitHub does not provide matching repository webhooks."
             />
+          </ListSurface>
+        </SectionGroup>
+
+        <SectionGroup
+          id="privacy-heading"
+          title="Access and retention"
+          className="mt-10"
+        >
+          <ListSurface>
             <SettingsRow
-              label="Private by design"
-              supporting="OAuth and installation credentials stay encrypted on the server. Repository names and private visibility are handled only on the signed-in server boundary and are excluded from telemetry."
+              label="What is processed"
+              supporting="Coding Journal processes only the GitHub account and active App installations shown above. OAuth and installation credentials stay encrypted on the server, and repository names and private visibility never leave the signed-in server boundary."
+            />
+            <SettingsRow
+              label="Retention"
+              supporting="Normalized GitHub activity is retained for 30 days. Final daily summaries and aggregate counts remain so journal history still works without repository-level details."
+            />
+            <SettingsRow
+              label="Revoking access on GitHub"
+              supporting={
+                <>
+                  Suspending or removing access stops new processing;
+                  inaccessible private details are removed from stored activity
+                  and replaced by a neutral marker in history. You can revoke
+                  installation access in{" "}
+                  <a
+                    href="https://github.com/settings/installations"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-m3-primary underline underline-offset-4"
+                  >
+                    GitHub App settings
+                  </a>{" "}
+                  or revoke the OAuth grant in{" "}
+                  <a
+                    href="https://github.com/settings/applications"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-m3-primary underline underline-offset-4"
+                  >
+                    GitHub application settings
+                  </a>
+                  .
+                </>
+              }
             />
           </ListSurface>
         </SectionGroup>
@@ -119,6 +163,50 @@ export default async function SettingsPage() {
             </SettingsRow>
           </ListSurface>
         </SectionGroup>
+
+        {/*
+         * The destructive zone — frame 1k and pattern 12. It is the only
+         * outlined-error element in the product, it sits last, and a full
+         * section break separates it so it never shares a row group with a
+         * routine setting. The typed confirmation is the friction the
+         * reference asks for: this destroys 30 days of irreplaceable record.
+         */}
+        <section
+          aria-labelledby="delete-account-heading"
+          className="mt-16 border-t border-m3-outline-variant pt-10"
+        >
+          <div className="rounded-m3-md border border-m3-error p-5 sm:p-6">
+            <h2
+              id="delete-account-heading"
+              className="text-m3-title-md text-m3-error"
+            >
+              Delete account
+            </h2>
+            <p className="mt-2 max-w-[62ch] text-m3-body-md text-m3-on-surface-variant">
+              This permanently deletes your journal, summaries, settings, and
+              every session. Coding Journal will also revoke its GitHub OAuth
+              grant when GitHub is reachable. This cannot be undone.
+            </p>
+            <form
+              action={deleteAccount}
+              className="mt-5 flex max-w-xl flex-col gap-3 sm:flex-row sm:items-end"
+            >
+              <label className="flex-1 text-m3-label-lg text-m3-on-surface">
+                Type DELETE to confirm
+                <input
+                  name="confirmation"
+                  required
+                  pattern="DELETE"
+                  autoComplete="off"
+                  className="mt-2 min-h-12 w-full rounded-m3-xs border border-m3-error bg-transparent px-4 text-m3-body-md text-m3-on-surface"
+                />
+              </label>
+              <Button type="submit" variant="destructive" className="sm:mb-0.5">
+                Delete my account
+              </Button>
+            </form>
+          </div>
+        </section>
       </div>
     </AppShell>
   );

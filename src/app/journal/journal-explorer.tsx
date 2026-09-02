@@ -251,7 +251,13 @@ function ActivityItem({
             ) : null}
           </div>
         ) : null}
-        <EvidenceLink href={activity.evidenceUrl} noun={evidenceNoun} />
+        {activity.evidenceUrl ? (
+          <EvidenceLink href={activity.evidenceUrl} noun={evidenceNoun} />
+        ) : (
+          <p className="mt-1.5 text-m3-body-sm text-m3-on-surface-variant">
+            No evidence link
+          </p>
+        )}
       </div>
     </li>
   );

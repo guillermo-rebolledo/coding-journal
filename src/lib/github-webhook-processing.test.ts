@@ -45,18 +45,16 @@ class MemoryStore implements WebhookDeliveryStore {
         existing.status &&
         (!record.status ||
           statusRank[existing.status] > statusRank[record.status]);
-      this.activities.set(key, {
-        ...existing,
-        ...record,
-        ...(keepExistingStatus ? { status: existing.status } : {}),
-        ...(record.attributed
-          ? {}
-          : {
-              actorId: existing.actorId,
-              actorLogin: existing.actorLogin,
-            }),
-        attributed: Boolean(existing.attributed || record.attributed),
-      });
+      const merged: ActivityRecord = { ...existing, ...record };
+      // A concluded status is never walked back by a later pending delivery.
+      if (keepExistingStatus) merged.status = existing.status;
+      // An unattributed observation keeps the actor the attributed one named.
+      if (!record.attributed) {
+        merged.actorId = existing.actorId;
+        merged.actorLogin = existing.actorLogin;
+      }
+      merged.attributed = Boolean(existing.attributed || record.attributed);
+      this.activities.set(key, merged);
     }
   }
 

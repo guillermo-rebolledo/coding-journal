@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import type { JsonObject } from "@/lib/json-payload";
 import { computeActivityMetrics } from "@/lib/github-activity";
 import {
   extractOperationsDelivery,
@@ -11,7 +12,7 @@ import {
 
 const receivedAt = new Date("2026-08-31T12:05:00.000Z");
 
-function workflowPayload(overrides: Record<string, unknown> = {}) {
+function workflowPayload(overrides: JsonObject = {}) {
   return {
     action: "completed",
     repository: {

@@ -9,6 +9,18 @@ import {
   redactMessage,
 } from "@/lib/telemetry";
 
+/**
+ * Members a future caller might add to a telemetry call. They are not declared
+ * on `ServiceEvent`, and reaching the call through a variable rather than a
+ * literal is what lets them past the compiler — exactly how the leak this test
+ * guards against would happen.
+ */
+const undeclaredMembers = {
+  repositoryName: "acme/private-api",
+  subjectTitle: "Fix the private billing bug",
+  summary: "Ada shipped the billing fix",
+};
+
 describe("service telemetry", () => {
   afterEach(() => vi.unstubAllEnvs());
 
@@ -56,12 +68,10 @@ describe("service telemetry", () => {
       jobId: "user-42:2026-09-01",
       service: "github",
       count: 12,
-      // A future caller widening the object must not be able to leak.
-      ...({
-        repositoryName: "acme/private-api",
-        subjectTitle: "Fix the private billing bug",
-        summary: "Ada shipped the billing fix",
-      } as unknown as Record<string, never>),
+      // A future caller widening the object must not be able to leak. These
+      // members are not declared on `ServiceEvent`; they reach the call
+      // through a variable, which is exactly how a real widening would.
+      ...undeclaredMembers,
     });
 
     expect(Object.keys(record).sort()).toEqual([
@@ -99,9 +109,10 @@ describe("service telemetry", () => {
     });
 
     expect(error).toHaveBeenCalledTimes(1);
-    const [line] = error.mock.calls[0] as [string];
-    expect(line.startsWith("[coding-journal] ")).toBe(true);
-    expect(JSON.parse(line.slice("[coding-journal] ".length))).toEqual({
+    const [line] = error.mock.calls[0] ?? [];
+    const text = String(line);
+    expect(text.startsWith("[coding-journal] ")).toBe(true);
+    expect(JSON.parse(text.slice("[coding-journal] ".length))).toEqual({
       category: "queue",
       event: "delivery-failed",
       outcome: "failed",

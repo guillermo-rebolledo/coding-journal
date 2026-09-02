@@ -50,6 +50,9 @@ describe("GitHub privacy lifecycle with Postgres", () => {
   const database = drizzle(client, { schema });
   const webhookRepository = createGitHubWebhookRepository(database);
   const activityRepository = createGitHubActivityRepository(database);
+  // SAFETY: the repository is generic over the Neon HTTP driver's result type;
+  // PGlite implements the same Drizzle query surface this repository uses, and
+  // the two driver types do not otherwise overlap.
   const historyRepository = createJournalFinalizationRepository(
     database as never,
   );

@@ -1,6 +1,7 @@
 // @vitest-environment node
 
 import { PGlite } from "@electric-sql/pglite";
+import type { JsonValue } from "@/lib/json-payload";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -107,7 +108,7 @@ describe("GitHub webhook repository with Postgres", () => {
 
   it("keeps one canonical record when reconciliation and the webhook overlap", async () => {
     const now = new Date("2026-03-08T18:00:00Z");
-    const jsonResponse = (body: unknown, status = 200) =>
+    const jsonResponse = (body: JsonValue, status = 200) =>
       new Response(JSON.stringify(body), {
         status,
         headers: { "Content-Type": "application/json" },
@@ -188,7 +189,7 @@ describe("GitHub webhook repository with Postgres", () => {
       installationIds: [],
       accessToken: "fixture-token",
       now,
-      fetchImplementation: fetchFixture as typeof fetch,
+      fetchImplementation: fetchFixture,
       store: activityRepository,
     });
 
@@ -223,7 +224,7 @@ describe("GitHub webhook repository with Postgres", () => {
   });
 
   it("keeps one canonical record when reconciliation and the webhook observe the same comment", async () => {
-    const jsonResponse = (body: unknown) =>
+    const jsonResponse = (body: JsonValue) =>
       new Response(JSON.stringify(body), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -287,7 +288,7 @@ describe("GitHub webhook repository with Postgres", () => {
       installationIds: [],
       accessToken: "fixture-token",
       now: new Date("2026-03-08T18:20:00Z"),
-      fetchImplementation: fetchFixture as typeof fetch,
+      fetchImplementation: fetchFixture,
       store: activityRepository,
     });
 

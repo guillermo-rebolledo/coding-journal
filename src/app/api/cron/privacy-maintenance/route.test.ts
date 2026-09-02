@@ -2,18 +2,16 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const privacyBoundary = vi.hoisted(() => ({ run: vi.fn() }));
+import { createPrivacyMaintenanceRoute } from "@/app/api/cron/privacy-maintenance/handler";
+import type { PrivacyMaintenanceResult } from "@/lib/privacy-maintenance";
 
-vi.mock("@/lib/privacy-maintenance", () => ({
-  runPrivacyMaintenance: privacyBoundary.run,
-}));
-
-import { GET } from "@/app/api/cron/privacy-maintenance/route";
+const run = vi.fn<(now: Date) => Promise<PrivacyMaintenanceResult>>();
+const GET = createPrivacyMaintenanceRoute({ run });
 
 describe("privacy maintenance endpoint", () => {
   beforeEach(() => {
     vi.stubEnv("CRON_SECRET", "privacy-secret");
-    privacyBoundary.run.mockReset().mockResolvedValue({
+    run.mockReset().mockResolvedValue({
       deletedActivities: 500,
       hasMore: true,
     });
@@ -33,7 +31,7 @@ describe("privacy maintenance endpoint", () => {
       deletedActivities: 500,
       hasMore: true,
     });
-    expect(privacyBoundary.run).toHaveBeenCalledWith(expect.any(Date));
+    expect(run).toHaveBeenCalledWith(expect.any(Date));
   });
 
   it("rejects an unauthenticated maintenance request", async () => {
@@ -42,6 +40,6 @@ describe("privacy maintenance endpoint", () => {
     );
 
     expect(response.status).toBe(401);
-    expect(privacyBoundary.run).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
   });
 });

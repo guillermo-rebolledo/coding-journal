@@ -1,36 +1,36 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const authBoundary = vi.hoisted(() => ({ getSession: vi.fn() }));
-const neonBoundary = vi.hoisted(() => ({ insertState: vi.fn() }));
+import { createInstallStartRoute } from "@/app/api/github/install/handler";
+import { createGitHubInstallationState } from "@/lib/github-installation";
+import type { JournalSession } from "@/lib/session";
+import { installationStore } from "~test/installation-store";
+import { journalSession } from "~test/session-fixture";
 
-vi.mock("@/lib/session", () => ({
-  getJournalSession: authBoundary.getSession,
-}));
-vi.mock("@/lib/github-installation-repository", () => ({
-  insertInstallationState: neonBoundary.insertState,
-  consumeInstallationState: vi.fn(),
-  deletePendingInstallation: vi.fn(),
-  findInstallations: vi.fn(),
-  insertPendingInstallation: vi.fn(),
-  markInstallationDisconnected: vi.fn(),
-  setGitHubAccessMode: vi.fn(),
-  upsertActiveInstallation: vi.fn(),
-}));
+const getSession =
+  vi.fn<(headers: Headers) => Promise<JournalSession | null>>();
+const store = installationStore();
+const insertState = store.insertInstallationState;
 
-import { GET } from "@/app/api/github/install/route";
+// The real state builder runs against a stand-in store, so the token hashing
+// this test asserts on is the production implementation.
+const GET = createInstallStartRoute({
+  getSession,
+  createState: (userId, returnTo) =>
+    createGitHubInstallationState(userId, returnTo, store),
+});
 
 describe("GitHub App installation start", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   beforeEach(() => {
-    authBoundary.getSession.mockReset();
-    neonBoundary.insertState.mockReset();
-    neonBoundary.insertState.mockResolvedValue(undefined);
+    getSession.mockReset();
+    insertState.mockReset();
+    insertState.mockResolvedValue(undefined);
     vi.stubEnv("GITHUB_APP_SLUG", "coding-journal-test");
   });
 
   it("returns signed-out users to the same authenticated Settings flow", async () => {
-    authBoundary.getSession.mockResolvedValue(null);
+    getSession.mockResolvedValue(null);
 
     const response = await GET(
       new Request("https://journal.example/api/github/install?from=settings"),
@@ -40,16 +40,16 @@ describe("GitHub App installation start", () => {
     expect(response.headers.get("location")).toBe(
       "https://journal.example/sign-in?next=%2Fsettings",
     );
-    expect(neonBoundary.insertState).not.toHaveBeenCalled();
+    expect(insertState).not.toHaveBeenCalled();
   });
 
   it("binds an opaque state to the user and starts the GitHub install flow", async () => {
-    authBoundary.getSession.mockResolvedValue({ user: { id: "user-1" } });
+    getSession.mockResolvedValue(journalSession("user-1"));
     const response = await GET(
       new Request("https://journal.example/api/github/install?from=settings"),
     );
 
-    expect(neonBoundary.insertState).toHaveBeenCalledWith(
+    expect(insertState).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: "user-1",
         returnTo: "/settings",
@@ -63,7 +63,7 @@ describe("GitHub App installation start", () => {
       "https://github.com/apps/coding-journal-test/installations/new",
     );
     expect(location.searchParams.get("state")).toMatch(/^[\w-]{40,}$/);
-    expect(neonBoundary.insertState.mock.calls[0]?.[0].tokenHash).not.toBe(
+    expect(insertState.mock.calls[0]?.[0].tokenHash).not.toBe(
       location.searchParams.get("state"),
     );
   });

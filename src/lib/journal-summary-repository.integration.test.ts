@@ -15,6 +15,9 @@ import { createJournalSummaryRepository } from "@/lib/journal-summary-repository
 describe("journal summary application boundary with Postgres", () => {
   const client = new PGlite();
   const database = drizzle(client, { schema });
+  // SAFETY: the repository is generic over the Neon HTTP driver's result type;
+  // PGlite implements the same Drizzle query surface this repository uses, and
+  // the two driver types do not otherwise overlap.
   const repository = createJournalSummaryRepository(database as never);
   const now = new Date("2026-09-01T16:00:00Z");
   const record: ActivityRecord = {

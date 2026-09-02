@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
+import type { JsonObject, JsonValue } from "@/lib/json-payload";
 import {
   computeActivityMetrics,
   getLocalDayWindow,
@@ -63,7 +64,7 @@ class MemoryStore implements ReconciliationStore {
   }
 }
 
-function jsonResponse(body: unknown, status = 200) {
+function jsonResponse(body: JsonValue, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
@@ -141,7 +142,7 @@ describe("GitHub current-day reconciliation", () => {
       installationIds: [],
       accessToken: "fixture-token",
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture as typeof fetch,
+      fetchImplementation: fetchFixture,
       store,
     });
     const repeated = await reconcileGitHubActivity({
@@ -151,7 +152,7 @@ describe("GitHub current-day reconciliation", () => {
       installationIds: [],
       accessToken: "fixture-token",
       now: new Date("2026-03-08T18:16:00Z"),
-      fetchImplementation: fetchFixture as typeof fetch,
+      fetchImplementation: fetchFixture,
       store,
     });
 
@@ -251,7 +252,7 @@ describe("GitHub current-day reconciliation", () => {
       installationIds: ["99"],
       accessToken: "fixture-token",
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture as typeof fetch,
+      fetchImplementation: fetchFixture,
       store,
     });
 
@@ -363,7 +364,7 @@ describe("GitHub current-day reconciliation", () => {
       installationIds: [],
       accessToken: "fixture-token",
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture as typeof fetch,
+      fetchImplementation: fetchFixture,
       store,
     });
 
@@ -404,7 +405,7 @@ describe("GitHub current-day reconciliation", () => {
       installationIds: [],
       accessToken: "fixture-token",
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture as typeof fetch,
+      fetchImplementation: fetchFixture,
       store,
       reportDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     });
@@ -439,7 +440,7 @@ describe("GitHub current-day reconciliation", () => {
       installationIds: [],
       accessToken: "fixture-token",
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture as typeof fetch,
+      fetchImplementation: fetchFixture,
       store,
       reportDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     });
@@ -488,7 +489,7 @@ describe("GitHub current-day reconciliation", () => {
       installationIds: [],
       accessToken: "fixture-token",
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture as typeof fetch,
+      fetchImplementation: fetchFixture,
       store,
       reportDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     });
@@ -518,7 +519,7 @@ describe("GitHub current-day reconciliation", () => {
       installationIds: [],
       accessToken: "fixture-token",
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture as typeof fetch,
+      fetchImplementation: fetchFixture,
       store,
     });
 
@@ -537,7 +538,7 @@ describe("GitHub current-day reconciliation", () => {
       installationIds: [],
       accessToken: "fixture-token",
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture as typeof fetch,
+      fetchImplementation: fetchFixture,
       store,
     });
 
@@ -558,9 +559,9 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
   function collaborationEvent(
     id: string,
     type: string,
-    payload: unknown,
-    overrides: Record<string, unknown> = {},
-  ) {
+    payload: JsonObject,
+    overrides: JsonObject = {},
+  ): JsonObject {
     return {
       id,
       type,
@@ -675,7 +676,7 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
       installationIds: [],
       accessToken: "fixture-token",
       now: window.now,
-      fetchImplementation: fetchFixture as typeof fetch,
+      fetchImplementation: fetchFixture,
       store,
     });
 
@@ -786,7 +787,7 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
       installationIds: [],
       accessToken: "fixture-token",
       now: window.now,
-      fetchImplementation: fetchFixture as typeof fetch,
+      fetchImplementation: fetchFixture,
       store,
     });
 
@@ -810,7 +811,7 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
       installationIds: ["99"],
       accessToken: "fixture-token",
       now: window.now,
-      fetchImplementation: fetchFixture as typeof fetch,
+      fetchImplementation: fetchFixture,
       store: new MemoryStore(),
     });
     expect(

@@ -6,7 +6,13 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { privacyOperation, user } from "@/db/auth-schema";
 
-type DeleteAccountInput = {
+/** What one account deletion removed, and whether GitHub's grant went with it. */
+export type DeleteAccountResult = {
+  deleted: boolean;
+  providerRevoked: boolean;
+};
+
+export type DeleteAccountInput = {
   userId: string;
   accessToken: string | null;
   clientId: string;
@@ -77,7 +83,11 @@ export function createAccountDeletion<TQueryResult extends PgQueryResultHKT>(
           updatedAt: now,
         })
         .where(eq(privacyOperation.id, operationId));
-      return { deleted: deleted.length > 0, providerRevoked };
+      const result: DeleteAccountResult = {
+        deleted: deleted.length > 0,
+        providerRevoked,
+      };
+      return result;
     } catch (error) {
       await database
         .update(privacyOperation)

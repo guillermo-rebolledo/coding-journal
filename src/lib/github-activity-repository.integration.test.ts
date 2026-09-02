@@ -150,6 +150,8 @@ describe("GitHub activity repository with the Neon HTTP driver contract", () => 
     });
     const batch = vi.fn().mockResolvedValue(undefined);
     const findAccessBlocks = vi.fn().mockResolvedValue([]);
+    // SAFETY: this double stands in for the Drizzle database and implements
+    // exactly the members `finish` reaches on the atomic-batch path under test.
     const repository = createGitHubActivityRepository(
       {
         insert,

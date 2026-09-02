@@ -1,143 +1,89 @@
-import { isJsonObject } from "@/lib/json-payload";
 import { handleCallback } from "@vercel/queue";
 
 import { getGitHubInstallations } from "@/lib/github-installation";
+import { isJsonObject } from "@/lib/json-payload";
 import { getGitHubUserAccessTokenForJob } from "@/lib/github-user-token";
-import {
-  processJournalFinalization,
-  parseJournalFinalizationMessage,
-} from "@/lib/journal-finalization";
-import { journalFinalizationRepository } from "@/lib/journal-finalization-repository";
 import { getJournalOnboarding } from "@/lib/journal";
+import { processJournalFinalization } from "@/lib/journal-finalization";
+import { journalFinalizationRepository } from "@/lib/journal-finalization-repository";
 import { generateJournalSummary } from "@/lib/journal-summary";
 import { journalSummaryRepository } from "@/lib/journal-summary-repository";
 import { openAiSummaryProvider } from "@/lib/openai-summary";
-import {
-  QueueSaturatedError,
-  withQueueSlot,
-  type QueueTopic,
-} from "@/lib/queue-lease";
 import { queueLeaseRepository } from "@/lib/queue-lease-repository";
-import {
-  assertProviderAvailable,
-  ProviderUnavailableError,
-} from "@/lib/service-circuit";
 import { serviceCircuitRepository } from "@/lib/service-circuit-repository";
-import { logServiceEvent } from "@/lib/telemetry";
 import { getTodayJournal } from "@/lib/today-journal";
 
-const topic: QueueTopic = "journal-finalization";
+import { createFinalizationConsumer } from "./handler";
 
 function configuredNumber(value: string | undefined, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
-/**
- * Finalization is the most expensive job in the product: a full day
- * reconciliation followed by a narrative generation. Before any of it starts
- * the consumer takes a concurrency slot and checks both provider circuits, so
- * a GitHub or summary outage delays the day rather than spending a retry
- * budget on calls that cannot succeed.
- */
-export const POST = handleCallback(
-  async (message, metadata) => {
-    const now = new Date();
-    // The one place a queue payload becomes a decoded message.
-    const payload = isJsonObject(message) ? message : null;
-    const parsed = parseJournalFinalizationMessage(payload);
-    const jobId = parsed ? `${parsed.userId}:${parsed.localDate}` : undefined;
-
-    await withQueueSlot(
-      { topic, store: queueLeaseRepository, now, jobId },
-      async () => {
-        await assertProviderAvailable({
-          service: "github",
-          store: serviceCircuitRepository,
-          now,
-          jobId,
-        });
-        if (process.env.OPENAI_API_KEY) {
-          await assertProviderAvailable({
-            service: "openai",
-            store: serviceCircuitRepository,
-            now,
-            jobId,
-          });
+const consumer = createFinalizationConsumer({
+  leases: queueLeaseRepository,
+  circuits: serviceCircuitRepository,
+  process: (payload, deliveryCount, now) =>
+    processJournalFinalization(
+      payload,
+      deliveryCount,
+      journalFinalizationRepository,
+      async (candidate) => {
+        const [onboarding, installations, accessToken] = await Promise.all([
+          // A queue message never carries a fixture session.
+          getJournalOnboarding(candidate.userId, null),
+          getGitHubInstallations(candidate.userId),
+          getGitHubUserAccessTokenForJob(candidate.userId),
+        ]);
+        if (!onboarding.githubAccessMode) {
+          throw new Error("Journal access mode is not configured");
         }
-
-        await processJournalFinalization(
-          payload,
-          metadata.deliveryCount,
-          journalFinalizationRepository,
-          async (candidate) => {
-            const [onboarding, installations, accessToken] = await Promise.all([
-              // A queue message never carries a fixture session.
-              getJournalOnboarding(candidate.userId, null),
-              getGitHubInstallations(candidate.userId),
-              getGitHubUserAccessTokenForJob(candidate.userId),
-            ]);
-            if (!onboarding.githubAccessMode) {
-              throw new Error("Journal access mode is not configured");
-            }
-            return getTodayJournal({
-              requestHeaders: new Headers(),
-              userId: candidate.userId,
-              timeZone: candidate.timeZone,
-              accessMode: onboarding.githubAccessMode,
-              installations,
-              localDate: candidate.localDate,
-              accessToken,
-              now,
-            });
-          },
-          ({ userId, localDate, activities }) =>
-            generateJournalSummary({
-              userId,
-              localDate,
-              activities,
-              store: journalSummaryRepository,
-              provider: openAiSummaryProvider,
-              now,
-              limits: {
-                globalDaily: configuredNumber(
-                  process.env.SUMMARY_GLOBAL_DAILY_LIMIT,
-                  1_000,
-                ),
-                monthlySpendUsd: configuredNumber(
-                  process.env.SUMMARY_MONTHLY_SPEND_LIMIT_USD,
-                  100,
-                ),
-                maximumInputBytes: configuredNumber(
-                  process.env.SUMMARY_MAXIMUM_INPUT_BYTES,
-                  16_000,
-                ),
-                queueConcurrency: configuredNumber(
-                  process.env.SUMMARY_QUEUE_CONCURRENCY,
-                  5,
-                ),
-              },
-            }),
+        return getTodayJournal({
+          requestHeaders: new Headers(),
+          userId: candidate.userId,
+          timeZone: candidate.timeZone,
+          accessMode: onboarding.githubAccessMode,
+          installations,
+          localDate: candidate.localDate,
+          accessToken,
           now,
-        );
-
-        logServiceEvent({
-          category: "finalization",
-          event: "delivery-processed",
-          outcome: "ok",
-          jobId,
-          attempt: metadata.deliveryCount,
         });
       },
-    );
-  },
-  {
-    // Neither refusal is a failure of this day's journal, so the message is
-    // redelivered instead of counting against the finalization attempts.
-    retry: (error) =>
-      error instanceof QueueSaturatedError ||
-      error instanceof ProviderUnavailableError
-        ? { afterSeconds: error.retryAfterSeconds }
-        : undefined,
-  },
+      ({ userId, localDate, activities }) =>
+        generateJournalSummary({
+          userId,
+          localDate,
+          activities,
+          store: journalSummaryRepository,
+          provider: openAiSummaryProvider,
+          now,
+          limits: {
+            globalDaily: configuredNumber(
+              process.env.SUMMARY_GLOBAL_DAILY_LIMIT,
+              1_000,
+            ),
+            monthlySpendUsd: configuredNumber(
+              process.env.SUMMARY_MONTHLY_SPEND_LIMIT_USD,
+              100,
+            ),
+            maximumInputBytes: configuredNumber(
+              process.env.SUMMARY_MAXIMUM_INPUT_BYTES,
+              16_000,
+            ),
+            queueConcurrency: configuredNumber(
+              process.env.SUMMARY_QUEUE_CONCURRENCY,
+              5,
+            ),
+          },
+        }),
+      now,
+    ),
+});
+
+// The platform boundary: a queue payload becomes a decoded message here, and
+// the consumer below only ever sees one.
+export const POST = handleCallback(
+  (message, metadata) =>
+    consumer.handle(isJsonObject(message) ? message : null, metadata),
+  { retry: consumer.retry },
 );

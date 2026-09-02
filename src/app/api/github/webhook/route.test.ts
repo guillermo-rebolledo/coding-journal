@@ -4,21 +4,27 @@ import { createHmac } from "node:crypto";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const neonBoundary = vi.hoisted(() => ({
-  applyAccessChange: vi.fn(),
-  restoreAccess: vi.fn(),
-  claimDelivery: vi.fn(),
-  markDeliveryEnqueued: vi.fn(),
-  markDeliveryEnqueueFailed: vi.fn(),
-}));
-const queueBoundary = vi.hoisted(() => ({ publish: vi.fn() }));
+import {
+  createGitHubWebhookRoute,
+  type WebhookRouteDependencies,
+} from "@/app/api/github/webhook/handler";
+import type { QueuePublisher } from "@/lib/queue";
 
-vi.mock("@/lib/github-webhook-repository", () => ({
-  githubWebhookRepository: neonBoundary,
-}));
-vi.mock("@/lib/queue", () => ({ queuePublisher: queueBoundary }));
+type WebhookStore = WebhookRouteDependencies["store"];
 
-import { POST } from "@/app/api/github/webhook/route";
+const neonBoundary = {
+  applyAccessChange: vi.fn<WebhookStore["applyAccessChange"]>(),
+  restoreAccess: vi.fn<WebhookStore["restoreAccess"]>(),
+  claimDelivery: vi.fn<WebhookStore["claimDelivery"]>(),
+  markDeliveryEnqueued: vi.fn<WebhookStore["markDeliveryEnqueued"]>(),
+  markDeliveryEnqueueFailed: vi.fn<WebhookStore["markDeliveryEnqueueFailed"]>(),
+};
+const queueBoundary = { publish: vi.fn<QueuePublisher["publish"]>() };
+
+const POST = createGitHubWebhookRoute({
+  store: neonBoundary,
+  queue: queueBoundary,
+});
 
 const secret = "webhook-secret";
 

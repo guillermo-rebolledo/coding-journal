@@ -1,15 +1,9 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import HomePage from "@/app/page";
-import { DeletedAccountNotice } from "@/components/deleted-account-notice";
+import { DeletedAccountNoticeView } from "@/components/deleted-account-notice";
 import { ThemeProvider } from "@/components/theme-provider";
-
-const searchParams = vi.hoisted(() => new URLSearchParams());
-
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => searchParams,
-}));
 
 function renderHome() {
   render(
@@ -59,17 +53,15 @@ describe("landing page", () => {
 
 describe("deleted account notice", () => {
   it("confirms what was deleted and what the visitor still has to do on GitHub", () => {
-    searchParams.set("account", "deleted");
-    render(<DeletedAccountNotice />);
+    render(<DeletedAccountNoticeView account="deleted" />);
 
     const status = screen.getByRole("status");
     expect(status).toHaveTextContent("Your account is deleted");
     expect(status).toHaveTextContent(/GitHub App may still be installed/);
-    searchParams.delete("account");
   });
 
   it("says nothing on an ordinary visit", () => {
-    render(<DeletedAccountNotice />);
+    render(<DeletedAccountNoticeView account={null} />);
 
     expect(screen.queryByRole("status")).toBeNull();
   });

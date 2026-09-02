@@ -2,51 +2,52 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const boundaries = vi.hoisted(() => ({
-  deleteAccount: vi.fn(),
-  getSession: vi.fn(),
-  getToken: vi.fn(),
-  increment: vi.fn(),
-  redirect: vi.fn((url: string) => {
-    throw new Error(`NEXT_REDIRECT:${url}`);
+import {
+  runDeleteAccount,
+  type DeleteAccountDependencies,
+} from "@/app/settings/delete-account";
+import type { JournalSession } from "@/lib/session";
+import { journalSession } from "~test/session-fixture";
+
+const boundaries = {
+  deleteAccount: vi.fn<DeleteAccountDependencies["deleteAccount"]>(),
+  getSession: vi.fn<(headers: Headers) => Promise<JournalSession | null>>(),
+  getToken: vi.fn<DeleteAccountDependencies["getAccessToken"]>(),
+  spendBudget: vi.fn<DeleteAccountDependencies["spendBudget"]>(),
+  endFixtureSession: vi.fn<() => Promise<void>>(),
+  redirect: vi.fn((destination: string): never => {
+    throw new Error(`NEXT_REDIRECT:${destination}`);
   }),
-}));
+};
 
-vi.mock("@/lib/account-deletion", () => ({
-  deleteJournalAccount: boundaries.deleteAccount,
-}));
-vi.mock("@/lib/github-user-token", () => ({
-  getGitHubUserAccessToken: boundaries.getToken,
-}));
-vi.mock("@/lib/session", () => ({ getJournalSession: boundaries.getSession }));
-vi.mock("@/lib/rate-limit-repository", () => ({
-  rateLimitRepository: {
-    increment: boundaries.increment,
-  },
-}));
-vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
-vi.mock("next/navigation", () => ({ redirect: boundaries.redirect }));
-
-import { deleteAccount } from "@/app/settings/actions";
+function deleteAccount(formData: FormData) {
+  return runDeleteAccount(formData, {
+    requestHeaders: new Headers(),
+    getSession: boundaries.getSession,
+    spendBudget: boundaries.spendBudget,
+    isFixtureUser: () => false,
+    endFixtureSession: boundaries.endFixtureSession,
+    getAccessToken: boundaries.getToken,
+    deleteAccount: boundaries.deleteAccount,
+    credentials: {
+      clientId: "github-client",
+      clientSecret: "github-secret",
+    },
+    redirect: boundaries.redirect,
+  });
+}
 
 describe("account deletion action", () => {
   beforeEach(() => {
-    vi.stubEnv("GITHUB_CLIENT_ID", "github-client");
-    vi.stubEnv("GITHUB_CLIENT_SECRET", "github-secret");
-    boundaries.deleteAccount.mockReset().mockResolvedValue({ deleted: true });
-    boundaries.getSession.mockReset().mockResolvedValue({
-      user: { id: "user-1" },
-      session: { id: "session-1" },
-    });
-    boundaries.getToken.mockReset().mockResolvedValue("provider-token");
-    boundaries.increment
+    boundaries.deleteAccount
       .mockReset()
-      .mockImplementation(
-        async ({ now, windowMs }: { now: Date; windowMs: number }) => ({
-          count: 1,
-          windowEndsAt: new Date(now.getTime() + windowMs),
-        }),
-      );
+      .mockResolvedValue({ deleted: true, providerRevoked: true });
+    boundaries.getSession
+      .mockReset()
+      .mockResolvedValue(journalSession("user-1"));
+    boundaries.getToken.mockReset().mockResolvedValue("provider-token");
+    boundaries.endFixtureSession.mockReset().mockResolvedValue(undefined);
+    boundaries.spendBudget.mockReset().mockResolvedValue(null);
     boundaries.redirect.mockClear();
   });
 
@@ -73,9 +74,13 @@ describe("account deletion action", () => {
   });
 
   it("refuses a repeated deletion request without touching the account", async () => {
-    boundaries.increment.mockResolvedValue({
-      count: 99,
-      windowEndsAt: new Date("2026-09-01T13:00:00Z"),
+    boundaries.spendBudget.mockResolvedValue({
+      allowed: false,
+      policy: "account-deletion",
+      limit: 3,
+      remaining: 0,
+      retryAfterSeconds: 3600,
+      resetAt: new Date("2026-09-01T13:00:00Z"),
     });
     const formData = new FormData();
     formData.set("confirmation", "DELETE");

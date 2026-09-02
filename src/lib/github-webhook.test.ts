@@ -2,6 +2,7 @@
 
 import { createHmac } from "node:crypto";
 
+import { isJsonObject, type JsonObject } from "@/lib/json-payload";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -9,7 +10,6 @@ import {
   normalizePushMessage,
   parsePushDeliveryMessage,
   verifyGitHubSignature,
-  type PushDeliveryMessage,
 } from "@/lib/github-webhook";
 
 const secret = "webhook-secret";
@@ -18,8 +18,15 @@ function sign(body: string, signingSecret = secret) {
   return `sha256=${createHmac("sha256", signingSecret).update(body).digest("hex")}`;
 }
 
-function pushPayload(overrides: Record<string, unknown> = {}) {
-  return {
+/**
+ * `omit` drops a member entirely: a webhook without an installation is not the
+ * same as one whose installation is empty.
+ */
+function pushPayload(
+  overrides: JsonObject = {},
+  omit: readonly string[] = [],
+): JsonObject {
+  const payload: JsonObject = {
     ref: "refs/heads/main",
     before: "1111111",
     after: "2222222",
@@ -45,13 +52,16 @@ function pushPayload(overrides: Record<string, unknown> = {}) {
     ],
     ...overrides,
   };
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => !omit.includes(key)),
+  );
 }
 
 const receivedAt = new Date("2026-03-08T15:00:05Z");
 
-function extract(overrides: Record<string, unknown> = {}) {
+function extract(overrides: JsonObject = {}, omit: readonly string[] = []) {
   return extractPushDelivery({
-    payload: pushPayload(overrides),
+    payload: pushPayload(overrides, omit),
     deliveryId: "delivery-1",
     receivedAt,
   });
@@ -113,7 +123,7 @@ describe("GitHub push delivery extraction", () => {
   });
 
   it("rejects payloads missing an installation or repository identity", () => {
-    expect(extract({ installation: undefined })).toEqual({
+    expect(extract({}, ["installation"])).toEqual({
       ok: false,
       reason: "malformed",
     });
@@ -239,9 +249,10 @@ describe("GitHub push delivery message parsing", () => {
   })();
 
   it("round-trips a producer message through JSON", () => {
+    const roundTripped: unknown = JSON.parse(JSON.stringify(message));
     expect(
       parsePushDeliveryMessage(
-        JSON.parse(JSON.stringify(message)) as PushDeliveryMessage,
+        isJsonObject(roundTripped) ? roundTripped : null,
       ),
     ).toEqual(message);
   });

@@ -38,6 +38,9 @@ describe("privacy maintenance with Postgres", () => {
   const client = new PGlite();
   const database = drizzle(client, { schema });
   const activities = createGitHubActivityRepository(database);
+  // SAFETY: the repository is generic over the Neon HTTP driver's result type;
+  // PGlite implements the same Drizzle query surface this repository uses, and
+  // the two driver types do not otherwise overlap.
   const summaries = createJournalSummaryRepository(database as never);
   const maintain = createPrivacyMaintenance(database);
 

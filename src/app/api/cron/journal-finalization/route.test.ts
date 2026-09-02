@@ -2,33 +2,41 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const repositoryBoundary = vi.hoisted(() => ({
-  findDueCandidates: vi.fn(),
-  schedule: vi.fn(),
-  fail: vi.fn(),
-}));
-const queueBoundary = vi.hoisted(() => ({ publish: vi.fn() }));
+import { createFinalizationScheduleRoute } from "@/app/api/cron/journal-finalization/handler";
+import type { FinalizationStore } from "@/lib/journal-finalization";
+import type { QueuePublisher } from "@/lib/queue";
 
-vi.mock("@/lib/journal-finalization-repository", () => ({
-  journalFinalizationRepository: repositoryBoundary,
-}));
-vi.mock("@/lib/queue", () => ({ queuePublisher: queueBoundary }));
+const findDueCandidates = vi.fn<FinalizationStore["findDueCandidates"]>();
+const schedule = vi.fn<FinalizationStore["schedule"]>();
+const fail = vi.fn<FinalizationStore["fail"]>();
+const publish = vi.fn<QueuePublisher["publish"]>();
 
-import { GET } from "@/app/api/cron/journal-finalization/route";
+// Only the scheduling path is reachable from this route; the remaining store
+// members refuse rather than pretend, so an unexpected call fails the test.
+const store: FinalizationStore = {
+  findDueCandidates,
+  schedule,
+  fail,
+  claim: () => Promise.reject(new Error("claim is not part of scheduling")),
+  finalize: () =>
+    Promise.reject(new Error("finalize is not part of scheduling")),
+};
+
+const GET = createFinalizationScheduleRoute({ store, queue: { publish } });
 
 describe("journal finalization schedule endpoint", () => {
   beforeEach(() => {
     vi.stubEnv("CRON_SECRET", "schedule-secret");
-    repositoryBoundary.findDueCandidates.mockReset().mockResolvedValue([
+    findDueCandidates.mockReset().mockResolvedValue([
       {
         userId: "user-1",
         localDate: "2026-08-31",
         timeZone: "America/Mexico_City",
       },
     ]);
-    repositoryBoundary.schedule.mockReset().mockResolvedValue(true);
-    repositoryBoundary.fail.mockReset().mockResolvedValue(undefined);
-    queueBoundary.publish.mockReset().mockResolvedValue(undefined);
+    schedule.mockReset().mockResolvedValue(true);
+    fail.mockReset().mockResolvedValue(undefined);
+    publish.mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(() => vi.unstubAllEnvs());
@@ -39,7 +47,7 @@ describe("journal finalization schedule endpoint", () => {
     );
 
     expect(response.status).toBe(401);
-    expect(repositoryBoundary.findDueCandidates).not.toHaveBeenCalled();
+    expect(findDueCandidates).not.toHaveBeenCalled();
   });
 
   it("enqueues due journals for an authenticated scheduler request", async () => {
@@ -51,7 +59,7 @@ describe("journal finalization schedule endpoint", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ enqueued: 1 });
-    expect(queueBoundary.publish).toHaveBeenCalledWith(
+    expect(publish).toHaveBeenCalledWith(
       "journal-finalization",
       {
         version: 1,

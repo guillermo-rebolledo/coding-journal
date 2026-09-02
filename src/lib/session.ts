@@ -1,6 +1,11 @@
 import { auth } from "@/lib/auth";
 import { getE2ESessionMode, getE2EUserId } from "@/lib/e2e-fixtures";
 
+/** The signed-in session a journal request carries. */
+export type JournalSession = NonNullable<
+  Awaited<ReturnType<typeof getJournalSession>>
+>;
+
 export async function getJournalSession(requestHeaders: Headers) {
   const e2eMode = getE2ESessionMode(requestHeaders);
   if (

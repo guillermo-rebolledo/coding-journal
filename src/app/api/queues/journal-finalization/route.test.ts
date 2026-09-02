@@ -2,88 +2,46 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const boundaries = vi.hoisted(() => ({
-  process: vi.fn(),
-  acquire: vi.fn(),
-  release: vi.fn(),
-  activeCount: vi.fn(),
-  tryEnter: vi.fn(),
-  recordSuccess: vi.fn(),
-  recordFailure: vi.fn(),
-  readAll: vi.fn(),
-}));
+import { createFinalizationConsumer } from "@/app/api/queues/journal-finalization/handler";
+import type { JsonObject } from "@/lib/json-payload";
+import { QueueSaturatedError, type QueueLeaseStore } from "@/lib/queue-lease";
+import {
+  ProviderUnavailableError,
+  type CircuitStore,
+} from "@/lib/service-circuit";
 
-// `handleCallback` is the platform's wrapper; the test needs the handler and
-// the retry policy the route hands it.
-const registered = vi.hoisted(
-  () =>
-    ({}) as {
-      handler?: (
-        message: unknown,
-        metadata: { deliveryCount: number },
-      ) => Promise<void>;
-      options?: {
-        retry?: (error: unknown) => { afterSeconds: number } | undefined;
-      };
-    },
-);
+const boundaries = {
+  process:
+    vi.fn<
+      (
+        payload: JsonObject | null,
+        deliveryCount: number,
+        now: Date,
+      ) => Promise<void>
+    >(),
+  acquire: vi.fn<QueueLeaseStore["acquire"]>(),
+  release: vi.fn<QueueLeaseStore["release"]>(),
+  activeCount: vi.fn<QueueLeaseStore["activeCount"]>(),
+  tryEnter: vi.fn<CircuitStore["tryEnter"]>(),
+  recordSuccess: vi.fn<CircuitStore["recordSuccess"]>(),
+  recordFailure: vi.fn<CircuitStore["recordFailure"]>(),
+  readAll: vi.fn<CircuitStore["readAll"]>(),
+};
 
-vi.mock("@vercel/queue", () => ({
-  handleCallback: (
-    handler: (
-      message: unknown,
-      metadata: { deliveryCount: number },
-    ) => Promise<void>,
-    options?: {
-      retry?: (error: unknown) => { afterSeconds: number } | undefined;
-    },
-  ) => {
-    registered.handler = handler;
-    registered.options = options;
-    return handler;
-  },
-}));
-
-vi.mock("@/lib/journal-finalization", async () => {
-  const actual = await vi.importActual<
-    typeof import("@/lib/journal-finalization")
-  >("@/lib/journal-finalization");
-  return { ...actual, processJournalFinalization: boundaries.process };
-});
-vi.mock("@/lib/journal-finalization-repository", () => ({
-  journalFinalizationRepository: {},
-}));
-vi.mock("@/lib/journal-summary-repository", () => ({
-  journalSummaryRepository: {},
-}));
-vi.mock("@/lib/openai-summary", () => ({ openAiSummaryProvider: vi.fn() }));
-vi.mock("@/lib/journal", () => ({ getJournalOnboarding: vi.fn() }));
-vi.mock("@/lib/github-installation", () => ({
-  getGitHubInstallations: vi.fn(),
-}));
-vi.mock("@/lib/github-user-token", () => ({
-  getGitHubUserAccessTokenForJob: vi.fn(),
-}));
-vi.mock("@/lib/today-journal", () => ({ getTodayJournal: vi.fn() }));
-vi.mock("@/lib/queue-lease-repository", () => ({
-  queueLeaseRepository: {
+const consumer = createFinalizationConsumer({
+  leases: {
     acquire: boundaries.acquire,
     release: boundaries.release,
     activeCount: boundaries.activeCount,
   },
-}));
-vi.mock("@/lib/service-circuit-repository", () => ({
-  serviceCircuitRepository: {
+  circuits: {
     tryEnter: boundaries.tryEnter,
     recordSuccess: boundaries.recordSuccess,
     recordFailure: boundaries.recordFailure,
     readAll: boundaries.readAll,
   },
-}));
-
-import "@/app/api/queues/journal-finalization/route";
-import { ProviderUnavailableError } from "@/lib/service-circuit";
-import { QueueSaturatedError } from "@/lib/queue-lease";
+  process: boundaries.process,
+});
 
 const message = {
   version: 1,
@@ -93,8 +51,7 @@ const message = {
 };
 
 function deliver() {
-  if (!registered.handler) throw new Error("The route registered no handler");
-  return registered.handler(message, { deliveryCount: 1 });
+  return consumer.handle(message, { deliveryCount: 1 });
 }
 
 describe("journal finalization consumer", () => {
@@ -156,8 +113,7 @@ describe("journal finalization consumer", () => {
   });
 
   it("reschedules a refused delivery instead of failing the journal", () => {
-    const retry = registered.options?.retry;
-    if (!retry) throw new Error("The route registered no retry policy");
+    const retry = consumer.retry;
 
     expect(retry(new QueueSaturatedError("journal-finalization", 60))).toEqual({
       afterSeconds: 60,

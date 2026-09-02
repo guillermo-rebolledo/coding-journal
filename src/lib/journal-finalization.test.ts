@@ -82,7 +82,7 @@ function finalizationWork(githubAvailable: boolean) {
         installationIds: [],
         accessToken: "github-token",
         now,
-        fetchImplementation: fetchImplementation as typeof fetch,
+        fetchImplementation: fetchImplementation,
         store: reconciliationStore,
       }),
     summarize: (input: {

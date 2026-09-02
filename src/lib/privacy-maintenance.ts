@@ -6,13 +6,22 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { githubActivity, privacyOperation } from "@/db/auth-schema";
 
+/** What one bounded retention batch removed, and whether more remains. */
+export type PrivacyMaintenanceResult = {
+  deletedActivities: number;
+  hasMore: boolean;
+};
+
 export const retentionDays = 30;
 export const retentionBatchSize = 500;
 
 export function createPrivacyMaintenance<TQueryResult extends PgQueryResultHKT>(
   database: PgDatabase<TQueryResult, typeof import("@/db/auth-schema")>,
 ) {
-  return async function run(now: Date, batchSize = retentionBatchSize) {
+  return async function run(
+    now: Date,
+    batchSize = retentionBatchSize,
+  ): Promise<PrivacyMaintenanceResult> {
     const cutoff = new Date(
       now.getTime() - retentionDays * 24 * 60 * 60 * 1000,
     );
@@ -45,7 +54,7 @@ export function createPrivacyMaintenance<TQueryResult extends PgQueryResultHKT>(
             )
             .returning({ id: githubActivity.id })
         : [];
-      const result = {
+      const result: PrivacyMaintenanceResult = {
         deletedActivities: deleted.length,
         hasMore: candidates.length === batchSize,
       };

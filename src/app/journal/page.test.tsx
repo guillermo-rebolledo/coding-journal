@@ -5,6 +5,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import type { JsonValue } from "@/lib/json-payload";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -127,7 +128,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 let storedJournal: Omit<TodayJournal, "activities" | "metrics"> | null;
 let storedActivities: Map<string, ActivityRecord>;
 
-function jsonResponse(body: unknown, status = 200) {
+function jsonResponse(body: JsonValue, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },

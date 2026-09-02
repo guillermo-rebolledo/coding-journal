@@ -43,6 +43,9 @@ const initialActivity: ActivityRecord = {
 describe("journal finalization repository with Postgres", () => {
   const client = new PGlite();
   const database = drizzle(client, { schema });
+  // SAFETY: the repository is generic over the Neon HTTP driver's result type;
+  // PGlite implements the same Drizzle query surface this repository uses, and
+  // the two driver types do not otherwise overlap.
   const repository = createJournalFinalizationRepository(database as never);
 
   beforeAll(async () => {

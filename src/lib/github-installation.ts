@@ -15,6 +15,33 @@ import {
 
 const installationStateLifetimeMs = 10 * 60 * 1000;
 
+/**
+ * The installation repository, as the operations below use it. Each takes it
+ * as a parameter with the production default, so a test can supply a real
+ * stand-in and still exercise the state hashing and ordering done here.
+ */
+export type InstallationStore = {
+  consumeInstallationState: typeof consumeInstallationState;
+  deletePendingInstallation: typeof deletePendingInstallation;
+  findInstallations: typeof findInstallations;
+  insertInstallationState: typeof insertInstallationState;
+  insertPendingInstallation: typeof insertPendingInstallation;
+  markInstallationDisconnected: typeof markInstallationDisconnected;
+  setGitHubAccessMode: typeof setGitHubAccessMode;
+  upsertActiveInstallation: typeof upsertActiveInstallation;
+};
+
+const productionStore: InstallationStore = {
+  consumeInstallationState,
+  deletePendingInstallation,
+  findInstallations,
+  insertInstallationState,
+  insertPendingInstallation,
+  markInstallationDisconnected,
+  setGitHubAccessMode,
+  upsertActiveInstallation,
+};
+
 function hashInstallationState(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -22,10 +49,11 @@ function hashInstallationState(token: string) {
 export async function createGitHubInstallationState(
   userId: string,
   returnTo: "/journal" | "/settings",
+  store: InstallationStore = productionStore,
 ) {
   const token = randomBytes(32).toString("base64url");
 
-  await insertInstallationState({
+  await store.insertInstallationState({
     id: randomUUID(),
     userId,
     tokenHash: hashInstallationState(token),
@@ -36,11 +64,15 @@ export async function createGitHubInstallationState(
   return token;
 }
 
+/** Where the install flow returns to once GitHub hands the user back. */
+export type InstallationReturnTo = "/journal" | "/settings";
+
 export async function consumeGitHubInstallationState(
   userId: string,
   token: string,
-) {
-  const state = await consumeInstallationState(
+  store: InstallationStore = productionStore,
+): Promise<{ returnTo: InstallationReturnTo } | null> {
+  const state = await store.consumeInstallationState(
     userId,
     hashInstallationState(token),
     new Date(),
@@ -56,18 +88,20 @@ export async function consumeGitHubInstallationState(
 export async function saveGitHubInstallation(
   userId: string,
   details: GitHubInstallationDetails,
+  store: InstallationStore = productionStore,
 ) {
-  await deletePendingInstallation(userId, details.accountId);
-  await upsertActiveInstallation(userId, details);
-  await setGitHubAccessMode(userId);
+  await store.deletePendingInstallation(userId, details.accountId);
+  await store.upsertActiveInstallation(userId, details);
+  await store.setGitHubAccessMode(userId);
 }
 
 export async function savePendingGitHubInstallation(
   userId: string,
   accountId: string,
+  store: InstallationStore = productionStore,
 ) {
-  await deletePendingInstallation(userId, accountId);
-  await insertPendingInstallation(userId, accountId);
+  await store.deletePendingInstallation(userId, accountId);
+  await store.insertPendingInstallation(userId, accountId);
 }
 
 export type StoredGitHubInstallation = Awaited<
@@ -77,8 +111,9 @@ export type StoredGitHubInstallation = Awaited<
 export async function disconnectGitHubInstallation(
   userId: string,
   installationId: string,
+  store: InstallationStore = productionStore,
 ) {
-  await markInstallationDisconnected(userId, installationId);
+  await store.markInstallationDisconnected(userId, installationId);
 }
 
 /** The fixture installations a smoke-test user starts with, if any. */
@@ -95,6 +130,7 @@ function fixtureInstallations(
 
 export async function getGitHubInstallations(
   userId: string,
+  store: InstallationStore = productionStore,
 ): Promise<StoredGitHubInstallation[]> {
   if (
     process.env.NODE_ENV !== "production" &&
@@ -106,5 +142,5 @@ export async function getGitHubInstallations(
     }));
   }
 
-  return findInstallations(userId);
+  return store.findInstallations(userId);
 }

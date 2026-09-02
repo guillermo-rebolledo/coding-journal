@@ -17,7 +17,7 @@ function circuitStore(decision: CircuitDecision) {
     recordSuccess: vi.fn(async () => {}),
     recordFailure: vi.fn(async () => {}),
     readAll: vi.fn(async () => []),
-  } satisfies CircuitStore & Record<string, unknown>;
+  } satisfies CircuitStore;
 }
 
 describe("provider circuits", () => {
@@ -37,14 +37,16 @@ describe("provider circuits", () => {
   it("carries how long the caller should wait", async () => {
     const store = circuitStore({ allowed: false, retryAfterSeconds: 90 });
 
-    const error = await assertProviderAvailable({
-      service: "github",
-      store,
-    }).catch((thrown: unknown) => thrown);
+    let refusal: ProviderUnavailableError | null = null;
+    try {
+      await assertProviderAvailable({ service: "github", store });
+    } catch (cause) {
+      if (cause instanceof ProviderUnavailableError) refusal = cause;
+    }
 
-    expect(error).toBeInstanceOf(ProviderUnavailableError);
-    expect((error as ProviderUnavailableError).retryAfterSeconds).toBe(90);
-    expect((error as ProviderUnavailableError).service).toBe("github");
+    expect(refusal).toBeInstanceOf(ProviderUnavailableError);
+    expect(refusal?.retryAfterSeconds).toBe(90);
+    expect(refusal?.service).toBe("github");
   });
 
   it("records a success and returns the provider's own result", async () => {

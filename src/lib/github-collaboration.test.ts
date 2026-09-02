@@ -22,8 +22,15 @@ const envelope = {
   installation: { id: 99 },
 };
 
-function issuePayload(overrides: Record<string, unknown> = {}) {
-  return {
+/**
+ * `omit` drops a member entirely: a webhook without an installation is not the
+ * same as one whose installation is empty.
+ */
+function issuePayload(
+  overrides: JsonObject = {},
+  omit: readonly string[] = [],
+): JsonObject {
+  const payload: JsonObject = {
     ...envelope,
     action: "opened",
     issue: {
@@ -36,9 +43,12 @@ function issuePayload(overrides: Record<string, unknown> = {}) {
     },
     ...overrides,
   };
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => !omit.includes(key)),
+  );
 }
 
-function pullRequestPayload(overrides: Record<string, unknown> = {}) {
+function pullRequestPayload(overrides: JsonObject = {}) {
   return {
     ...envelope,
     action: "opened",
@@ -588,9 +598,10 @@ describe("GitHub collaboration delivery extraction", () => {
 
   it("rejects deliveries missing identity or content fields as malformed", () => {
     expect(extract("issues", null)).toEqual({ ok: false, reason: "malformed" });
-    expect(
-      extract("issues", issuePayload({ installation: undefined })),
-    ).toEqual({ ok: false, reason: "malformed" });
+    expect(extract("issues", issuePayload({}, ["installation"]))).toEqual({
+      ok: false,
+      reason: "malformed",
+    });
     expect(extract("issues", issuePayload({ repository: { id: 42 } }))).toEqual(
       { ok: false, reason: "malformed" },
     );

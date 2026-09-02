@@ -12,7 +12,24 @@ import { useSearchParams } from "next/navigation";
  * function invocation for every visitor.
  */
 export function DeletedAccountNotice() {
-  if (useSearchParams().get("account") !== "deleted") return null;
+  // Rendered outside a router — a unit test, or a tree mounted before the
+  // app router exists — there is no query to read, which is the same outcome
+  // as an ordinary visit.
+  const account = useSearchParams()?.get("account") ?? null;
+  return <DeletedAccountNoticeView account={account} />;
+}
+
+/**
+ * The notice itself, given the `account` query value. Keeping the reading and
+ * the rendering apart lets a caller — including a test — state the outcome it
+ * is describing instead of arranging a router around it.
+ */
+export function DeletedAccountNoticeView({
+  account,
+}: {
+  account: string | null;
+}) {
+  if (account !== "deleted") return null;
 
   return (
     <div role="status" className="mx-auto max-w-[76rem] px-4 pt-8 sm:px-6">

@@ -6,42 +6,64 @@ import {
   type ActivityRecord,
 } from "@/lib/github-activity";
 
-const authBoundary = vi.hoisted(() => ({ getSession: vi.fn() }));
-const historyBoundary = vi.hoisted(() => ({ list: vi.fn(), read: vi.fn() }));
-const navigation = vi.hoisted(() => ({
-  redirect: vi.fn((url: string) => {
-    throw new Error(`NEXT_REDIRECT:${url}`);
-  }),
-  notFound: vi.fn(() => {
-    throw new Error("NEXT_NOT_FOUND");
-  }),
-  replace: vi.fn(),
-  refresh: vi.fn(),
-}));
-
-vi.mock("@/lib/session", () => ({
-  getJournalSession: authBoundary.getSession,
-}));
-vi.mock("@/lib/journal-finalization-repository", () => ({
-  journalFinalizationRepository: historyBoundary,
-}));
-vi.mock("next/headers", () => ({
-  headers: vi.fn(async () => new Headers()),
-}));
-vi.mock("next/navigation", () => ({
-  ...navigation,
-  useRouter: () => ({
-    replace: navigation.replace,
-    refresh: navigation.refresh,
-  }),
-}));
-vi.mock("@/lib/auth-client", () => ({
-  authClient: { signOut: vi.fn() },
-}));
-
-import JournalHistoryPage from "@/app/journal/history/page";
-import JournalHistoryDetailPage from "@/app/journal/history/[localDate]/page";
+import { renderJournalHistoryDetailPage } from "@/app/journal/history/[localDate]/history-detail-page";
+import { renderJournalHistoryPage } from "@/app/journal/history/history-page";
+import {
+  AppServicesProvider,
+  type AppServices,
+} from "@/components/app-services";
 import { ThemeProvider } from "@/components/theme-provider";
+import type { JournalFinalizationRepository } from "@/lib/journal-finalization-repository";
+import type { JournalSession } from "@/lib/session";
+import { journalSession } from "~test/session-fixture";
+
+const authBoundary = {
+  getSession: vi.fn<(headers: Headers) => Promise<JournalSession | null>>(),
+};
+const historyBoundary = {
+  list: vi.fn<JournalFinalizationRepository["list"]>(),
+  read: vi.fn<JournalFinalizationRepository["read"]>(),
+};
+const navigation = {
+  replace: vi.fn<(href: string) => void>(),
+  refresh: vi.fn<() => void>(),
+};
+
+const services: AppServices = {
+  navigation,
+  session: { signOut: () => Promise.resolve({}) },
+};
+
+function redirect(destination: string): never {
+  throw new Error(`NEXT_REDIRECT:${destination}`);
+}
+
+function notFound(): never {
+  throw new Error("NEXT_NOT_FOUND");
+}
+
+function JournalHistoryPage() {
+  return renderJournalHistoryPage({
+    requestHeaders: new Headers(),
+    getSession: authBoundary.getSession,
+    store: historyBoundary,
+    redirect,
+  });
+}
+
+function JournalHistoryDetailPage({
+  params,
+}: {
+  params: Promise<{ localDate: string }>;
+}) {
+  return renderJournalHistoryDetailPage(params, {
+    requestHeaders: new Headers(),
+    getSession: authBoundary.getSession,
+    store: historyBoundary,
+    redirect,
+    notFound,
+  });
+}
 
 const evidence: ActivityRecord = {
   deduplicationKey: "github:issue:42:7",
@@ -65,9 +87,9 @@ const evidence: ActivityRecord = {
 
 describe("journal history browsing", () => {
   beforeEach(() => {
-    authBoundary.getSession.mockReset().mockResolvedValue({
-      user: { id: "user-1", name: "Ada Lovelace" },
-    });
+    authBoundary.getSession
+      .mockReset()
+      .mockResolvedValue(journalSession("user-1"));
     historyBoundary.list.mockReset().mockResolvedValue([
       {
         localDate: "2026-08-31",
@@ -109,9 +131,11 @@ describe("journal history browsing", () => {
 
   it("lists prior days with timezone and correction status", async () => {
     render(
-      <ThemeProvider storageKey={null}>
-        {await JournalHistoryPage()}
-      </ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>
+          {await JournalHistoryPage()}
+        </ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(
@@ -126,11 +150,13 @@ describe("journal history browsing", () => {
 
   it("opens a frozen day with completeness, narrative, evidence, and corrections", async () => {
     render(
-      <ThemeProvider storageKey={null}>
-        {await JournalHistoryDetailPage({
-          params: Promise.resolve({ localDate: "2026-08-31" }),
-        })}
-      </ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>
+          {await JournalHistoryDetailPage({
+            params: Promise.resolve({ localDate: "2026-08-31" }),
+          })}
+        </ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(

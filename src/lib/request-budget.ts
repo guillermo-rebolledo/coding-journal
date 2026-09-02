@@ -21,17 +21,23 @@ export async function spendRequestBudget({
   now = new Date(),
   event,
   service,
+  store = rateLimitRepository,
 }: {
   policy: RateLimitPolicyName;
   userId?: string | null;
   now?: Date;
   event: string;
   service?: "github" | "openai";
+  /**
+   * Where the spend is counted. It is a parameter with the production default
+   * so a caller can supply a real stand-in and still exercise the policy.
+   */
+  store?: typeof rateLimitRepository;
 }): Promise<RateLimitDecision | null> {
   if (userId && isE2EJournalUser(userId)) return null;
 
   const decision = await consumeRateLimit({
-    store: rateLimitRepository,
+    store,
     policy,
     userId,
     now,

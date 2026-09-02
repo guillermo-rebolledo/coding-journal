@@ -406,5 +406,10 @@ export function createJournalFinalizationRepository<
   };
 }
 
+/** Every operation the finalization repository offers. */
+export type JournalFinalizationRepository = ReturnType<
+  typeof createJournalFinalizationRepository
+>;
+
 export const journalFinalizationRepository =
   createJournalFinalizationRepository(db);

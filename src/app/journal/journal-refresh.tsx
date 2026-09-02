@@ -1,13 +1,10 @@
 "use client";
 
 import { RotateCcw } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 
-import {
-  refreshTodayJournal,
-  type RefreshActionResult,
-} from "@/app/journal/actions";
+import type { RefreshActionResult } from "@/app/journal/refresh-action";
+import { useAppServices } from "@/components/app-services";
 import { LimitNotice } from "@/components/journal/limit-notice";
 import { Button } from "@/components/ui/button";
 
@@ -22,20 +19,23 @@ const storedReloadIntervalMs = 30 * 60 * 1000;
 export function JournalRefresh({
   nextSyncAt,
   timeZone,
+  refresh,
 }: {
   nextSyncAt: string | null;
   timeZone: string;
+  /** The server action this button runs. The page supplies it. */
+  refresh: () => Promise<RefreshActionResult>;
 }) {
-  const router = useRouter();
+  const { navigation } = useAppServices();
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<RefreshActionResult | null>(null);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      if (document.visibilityState === "visible") router.refresh();
+      if (document.visibilityState === "visible") navigation.refresh();
     }, storedReloadIntervalMs);
     return () => window.clearInterval(interval);
-  }, [router]);
+  }, [navigation]);
 
   const availableAt = result?.nextSyncAt ?? nextSyncAt;
 
@@ -47,7 +47,7 @@ export function JournalRefresh({
         onClick={() =>
           startTransition(async () => {
             try {
-              const nextResult = await refreshTodayJournal();
+              const nextResult = await refresh();
               setResult(nextResult);
             } catch {
               setResult({
@@ -57,7 +57,7 @@ export function JournalRefresh({
                 nextSyncAt: null,
               });
             } finally {
-              router.refresh();
+              navigation.refresh();
             }
           })
         }

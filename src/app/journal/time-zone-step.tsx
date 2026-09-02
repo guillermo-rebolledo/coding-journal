@@ -2,10 +2,8 @@
 
 import { useActionState, useEffect, useRef } from "react";
 
-import {
-  confirmTimeZone,
-  type TimeZoneActionState,
-} from "@/app/journal/actions";
+import type { TimeZoneActionState } from "@/app/journal/onboarding-actions";
+import { confirmTimeZone } from "@/app/journal/actions";
 import { Button } from "@/components/ui/button";
 
 const initialState: TimeZoneActionState = { error: null };

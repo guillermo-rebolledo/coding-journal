@@ -1,64 +1,58 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const authBoundary = vi.hoisted(() => ({
-  getSession: vi.fn(),
-  signOut: vi.fn(),
-}));
-
-const journalBoundary = vi.hoisted(() => ({
-  getOnboarding: vi.fn(),
-  refreshConnections: vi.fn(),
-}));
-
-const navigation = vi.hoisted(() => ({
-  redirect: vi.fn((url: string) => {
-    throw new Error(`NEXT_REDIRECT:${url}`);
-  }),
-  replace: vi.fn(),
-  refresh: vi.fn(),
-}));
-
-vi.mock("@/lib/session", () => ({
-  getJournalSession: authBoundary.getSession,
-}));
-
-vi.mock("@/lib/journal", () => ({
-  getJournalOnboarding: journalBoundary.getOnboarding,
-}));
-
-vi.mock("@/lib/github-connection", () => ({
-  refreshGitHubConnections: journalBoundary.refreshConnections,
-}));
-
-vi.mock("@/lib/auth-client", () => ({
-  authClient: { signOut: authBoundary.signOut },
-}));
-
-vi.mock("next/headers", () => ({
-  headers: vi.fn(async () => new Headers()),
-}));
-
-vi.mock("next/navigation", () => ({
-  redirect: navigation.redirect,
-  useRouter: () => ({
-    replace: navigation.replace,
-    refresh: navigation.refresh,
-  }),
-}));
-
-import SettingsPage from "@/app/settings/page";
+import {
+  renderSettingsPage,
+  type SettingsPageDependencies,
+} from "@/app/settings/settings-page";
+import {
+  AppServicesProvider,
+  type AppServices,
+} from "@/components/app-services";
 import { ThemeProvider } from "@/components/theme-provider";
+import type { JournalSession } from "@/lib/session";
+import { journalSession } from "~test/session-fixture";
+
+const authBoundary = {
+  getSession: vi.fn<(headers: Headers) => Promise<JournalSession | null>>(),
+  signOut: vi.fn<AppServices["session"]["signOut"]>(),
+};
+const journalBoundary = {
+  getOnboarding: vi.fn<SettingsPageDependencies["getOnboarding"]>(),
+  refreshConnections: vi.fn<SettingsPageDependencies["refreshConnections"]>(),
+};
+const navigation = {
+  replace: vi.fn<(href: string) => void>(),
+  refresh: vi.fn<() => void>(),
+};
+
+const services: AppServices = {
+  navigation,
+  session: { signOut: authBoundary.signOut },
+};
+
+function SettingsPage(
+  options: {
+    searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  } = {},
+) {
+  return renderSettingsPage(options.searchParams, {
+    requestHeaders: new Headers(),
+    getSession: authBoundary.getSession,
+    getOnboarding: journalBoundary.getOnboarding,
+    refreshConnections: journalBoundary.refreshConnections,
+    redirect: (destination: string): never => {
+      throw new Error(`NEXT_REDIRECT:${destination}`);
+    },
+  });
+}
 
 describe("settings page", () => {
   beforeEach(() => {
     authBoundary.getSession.mockReset();
     journalBoundary.getOnboarding.mockReset();
     journalBoundary.refreshConnections.mockReset();
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "best-effort",
@@ -70,9 +64,11 @@ describe("settings page", () => {
 
   it("offers the theme palettes alongside GitHub access", async () => {
     render(
-      <ThemeProvider storageKey={null} paletteStorageKey={null}>
-        {await SettingsPage()}
-      </ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null} paletteStorageKey={null}>
+          {await SettingsPage()}
+        </ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(
@@ -112,11 +108,13 @@ describe("settings page", () => {
 
   it("states a refused deletion in the destructive zone without hiding the action", async () => {
     render(
-      <ThemeProvider storageKey={null} paletteStorageKey={null}>
-        {await SettingsPage({
-          searchParams: Promise.resolve({ limited: "deletion" }),
-        })}
-      </ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null} paletteStorageKey={null}>
+          {await SettingsPage({
+            searchParams: Promise.resolve({ limited: "deletion" }),
+          })}
+        </ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(
@@ -132,9 +130,11 @@ describe("settings page", () => {
 
   it("applies a chosen theme to the document", async () => {
     render(
-      <ThemeProvider storageKey={null} paletteStorageKey={null}>
-        {await SettingsPage()}
-      </ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null} paletteStorageKey={null}>
+          {await SettingsPage()}
+        </ThemeProvider>
+      </AppServicesProvider>,
     );
 
     fireEvent.click(screen.getByRole("radio", { name: /Warm ink/ }));

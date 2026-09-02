@@ -15,115 +15,155 @@ import {
 } from "@/lib/github-reconciliation";
 import { JournalNotFoundError } from "@/lib/journal-errors";
 
-const authBoundary = vi.hoisted(() => ({
-  getSession: vi.fn(),
-  signOut: vi.fn(),
-}));
+import { renderJournalPage } from "@/app/journal/journal-page";
+import { runRefreshTodayJournal } from "@/app/journal/refresh-action";
+import {
+  AppServicesProvider,
+  type AppServices,
+} from "@/components/app-services";
+import { ThemeProvider } from "@/components/theme-provider";
+import { isE2EJournalUser } from "@/lib/e2e-fixtures";
+import { getGitHubInstallations } from "@/lib/github-installation";
+import type { JournalOnboarding } from "@/lib/journal";
+import {
+  generateJournalSummary,
+  type SummaryStore,
+} from "@/lib/journal-summary";
+import type { CircuitStore } from "@/lib/service-circuit";
+import type { JournalSession } from "@/lib/session";
+import { spendRequestBudget } from "@/lib/request-budget";
+import {
+  getStoredTodayJournal,
+  getTodayJournal,
+  type TodayJournalStores,
+} from "@/lib/today-journal";
+import type { rateLimitRepository } from "@/lib/rate-limit-repository";
+import { installationStore } from "~test/installation-store";
+import { journalSession } from "~test/session-fixture";
 
-const journalBoundary = vi.hoisted(() => ({
-  getOnboarding: vi.fn(),
-}));
+const authBoundary = {
+  getSession: vi.fn<(headers: Headers) => Promise<JournalSession | null>>(),
+  signOut: vi.fn<AppServices["session"]["signOut"]>(),
+};
 
-const installationBoundary = vi.hoisted(() => ({
-  getInstallations: vi.fn(),
-}));
+const journalBoundary = {
+  getOnboarding:
+    vi.fn<(userId: string, headers: Headers) => Promise<JournalOnboarding>>(),
+};
 
-const activityRepositoryBoundary = vi.hoisted(() => ({
-  tryStart: vi.fn(),
-  finish: vi.fn(),
-  read: vi.fn(),
-}));
+const installations = installationStore();
+const installationBoundary = {
+  getInstallations: installations.findInstallations,
+};
 
-const githubBoundary = vi.hoisted(() => ({
-  getToken: vi.fn(),
+type ActivityStore = TodayJournalStores["activities"];
+
+const activityRepositoryBoundary = {
+  tryStart: vi.fn<ActivityStore["tryStart"]>(),
+  finish: vi.fn<ActivityStore["finish"]>(),
+  read: vi.fn<ActivityStore["read"]>(),
+};
+
+const githubBoundary = {
+  getToken:
+    vi.fn<(headers: Headers, userId: string) => Promise<string | null>>(),
   fetch: vi.fn(),
-}));
+};
 
-const summaryBoundary = vi.hoisted(() => ({
-  findBySnapshotHash: vi.fn(),
-  getUsage: vi.fn(),
-  save: vi.fn(),
-}));
+const summaryBoundary = {
+  findBySnapshotHash: vi.fn<SummaryStore["findBySnapshotHash"]>(),
+  getUsage: vi.fn<SummaryStore["getUsage"]>(),
+  save: vi.fn<SummaryStore["save"]>(),
+};
 
-const navigation = vi.hoisted(() => ({
-  redirect: vi.fn((url: string) => {
-    throw new Error(`NEXT_REDIRECT:${url}`);
-  }),
-  replace: vi.fn(),
-  refresh: vi.fn(),
-}));
+const navigation = {
+  replace: vi.fn<(href: string) => void>(),
+  refresh: vi.fn<() => void>(),
+};
 
 // Request budgets and provider circuits are storage boundaries like any other
 // repository here; the policies themselves are covered by their own tests.
-const budgetBoundary = vi.hoisted(() => ({
-  increment: vi.fn(),
-}));
+const budgetBoundary = {
+  increment: vi.fn<(typeof rateLimitRepository)["increment"]>(),
+};
 
-const circuitBoundary = vi.hoisted(() => ({
-  tryEnter: vi.fn(),
-  recordSuccess: vi.fn(),
-  recordFailure: vi.fn(),
-  readAll: vi.fn(),
-}));
+const circuitBoundary = {
+  tryEnter: vi.fn<CircuitStore["tryEnter"]>(),
+  recordSuccess: vi.fn<CircuitStore["recordSuccess"]>(),
+  recordFailure: vi.fn<CircuitStore["recordFailure"]>(),
+  readAll: vi.fn<CircuitStore["readAll"]>(),
+};
 
-vi.mock("@/lib/session", () => ({
-  getJournalSession: authBoundary.getSession,
-}));
+const services: AppServices = {
+  navigation,
+  session: { signOut: authBoundary.signOut },
+};
 
-vi.mock("@/lib/journal", () => ({
-  getJournalOnboarding: journalBoundary.getOnboarding,
-}));
+function redirect(destination: string): never {
+  throw new Error(`NEXT_REDIRECT:${destination}`);
+}
 
-vi.mock("@/lib/github-activity-repository", () => ({
-  githubActivityRepository: activityRepositoryBoundary,
-}));
+const activityStores = (): TodayJournalStores => ({
+  activities: activityRepositoryBoundary,
+  circuits: circuitBoundary,
+  getAccessToken: githubBoundary.getToken,
+});
 
-vi.mock("@/lib/journal-summary-repository", () => ({
-  journalSummaryRepository: summaryBoundary,
-}));
+function JournalPage(
+  options: { searchParams?: Promise<{ setup?: string }> } = {},
+) {
+  return renderJournalPage(options.searchParams ?? Promise.resolve({}), {
+    requestHeaders: new Headers(),
+    getSession: authBoundary.getSession,
+    getOnboarding: journalBoundary.getOnboarding,
+    getInstallations: (userId) => getGitHubInstallations(userId, installations),
+    readStoredJournal: (input) =>
+      getStoredTodayJournal({ ...input, stores: activityStores() }),
+    findSummary: (userId, snapshotHash) =>
+      summaryBoundary.findBySnapshotHash(userId, snapshotHash),
+    refresh: refreshTodayJournal,
+    redirect,
+  });
+}
 
-vi.mock("@/lib/rate-limit-repository", () => ({
-  rateLimitRepository: budgetBoundary,
-}));
+const limitEvents = {
+  "journal-refresh": "journal-refresh-limited",
+  "github-sync-daily": "github-sync-budget-exhausted",
+} as const;
 
-vi.mock("@/lib/service-circuit-repository", () => ({
-  serviceCircuitRepository: circuitBoundary,
-}));
-
-vi.mock("@/lib/github-user-token", () => ({
-  getGitHubUserAccessToken: githubBoundary.getToken,
-}));
-
-vi.mock("@/lib/github-installation-repository", () => ({
-  findInstallations: installationBoundary.getInstallations,
-  consumeInstallationState: vi.fn(),
-  deletePendingInstallation: vi.fn(),
-  insertInstallationState: vi.fn(),
-  insertPendingInstallation: vi.fn(),
-  markInstallationDisconnected: vi.fn(),
-  setGitHubAccessMode: vi.fn(),
-  upsertActiveInstallation: vi.fn(),
-}));
-
-vi.mock("@/lib/auth-client", () => ({
-  authClient: { signOut: authBoundary.signOut },
-}));
-
-vi.mock("next/headers", () => ({
-  headers: vi.fn(async () => new Headers()),
-}));
-
-vi.mock("next/navigation", () => ({
-  redirect: navigation.redirect,
-  useRouter: () => ({
-    replace: navigation.replace,
-    refresh: navigation.refresh,
-  }),
-}));
-
-import JournalPage from "@/app/journal/page";
-import { refreshTodayJournal } from "@/app/journal/actions";
-import { ThemeProvider } from "@/components/theme-provider";
+function refreshTodayJournal() {
+  return runRefreshTodayJournal({
+    requestHeaders: new Headers(),
+    getSession: authBoundary.getSession,
+    getOnboarding: journalBoundary.getOnboarding,
+    spendBudget: (policy, userId, now) =>
+      spendRequestBudget({
+        policy,
+        userId,
+        now,
+        event: limitEvents[policy],
+        store: budgetBoundary,
+        service: policy === "github-sync-daily" ? "github" : undefined,
+      }),
+    readStoredJournal: (userId, localDate) =>
+      activityRepositoryBoundary.read(userId, localDate),
+    getInstallations: (userId) => getGitHubInstallations(userId, installations),
+    reconcile: (input) =>
+      getTodayJournal({ ...input, stores: activityStores() }),
+    summarize: ({ userId, localDate, activities, now }) =>
+      generateJournalSummary({
+        userId,
+        localDate,
+        activities,
+        store: summaryBoundary,
+        provider: () =>
+          Promise.reject(new Error("no summary provider in this test")),
+        now,
+      }),
+    isFixtureUser: isE2EJournalUser,
+    redirect,
+  });
+}
 
 let storedJournal: Omit<TodayJournal, "activities" | "metrics"> | null;
 let storedActivities: Map<string, ActivityRecord>;
@@ -242,17 +282,16 @@ describe("protected journal boundary", () => {
       numberingSystem: "latn",
       timeZone: "America/Mexico_City",
     });
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: null,
       githubAccessMode: null,
     });
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(
@@ -268,17 +307,16 @@ describe("protected journal boundary", () => {
   });
 
   it("resumes at repository access after the time zone is saved", async () => {
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: null,
     });
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(
@@ -296,17 +334,16 @@ describe("protected journal boundary", () => {
   it("renders an empty Today journal with its local date and completeness", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "best-effort",
     });
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(
@@ -328,10 +365,7 @@ describe("protected journal boundary", () => {
   it("labels selected GitHub App coverage as partial on Today", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "app",
@@ -339,6 +373,7 @@ describe("protected journal boundary", () => {
     installationBoundary.getInstallations.mockResolvedValue([
       {
         installationId: "42",
+        accountId: "84",
         accountLogin: "example-org",
         accountType: "Organization",
         repositorySelection: "selected",
@@ -357,7 +392,9 @@ describe("protected journal boundary", () => {
     ]);
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(screen.getByText("Partial access")).toBeInTheDocument();
@@ -367,10 +404,7 @@ describe("protected journal boundary", () => {
   it("marks Discussions incomplete when the installed App lacks permission", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "app",
@@ -378,6 +412,7 @@ describe("protected journal boundary", () => {
     installationBoundary.getInstallations.mockResolvedValue([
       {
         installationId: "42",
+        accountId: "84",
         accountLogin: "example-org",
         accountType: "Organization",
         repositorySelection: "all",
@@ -395,7 +430,9 @@ describe("protected journal boundary", () => {
     ]);
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(screen.getByText("Limited activity")).toBeInTheDocument();
@@ -407,10 +444,7 @@ describe("protected journal boundary", () => {
   it("marks ref and release coverage incomplete without Contents permission", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "app",
@@ -418,6 +452,7 @@ describe("protected journal boundary", () => {
     installationBoundary.getInstallations.mockResolvedValue([
       {
         installationId: "42",
+        accountId: "84",
         accountLogin: "example-org",
         accountType: "Organization",
         repositorySelection: "all",
@@ -435,7 +470,9 @@ describe("protected journal boundary", () => {
     ]);
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(screen.getByText("Limited activity")).toBeInTheDocument();
@@ -449,10 +486,7 @@ describe("protected journal boundary", () => {
   it("marks organization Projects preview unavailable without its permission", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "app",
@@ -460,6 +494,7 @@ describe("protected journal boundary", () => {
     installationBoundary.getInstallations.mockResolvedValue([
       {
         installationId: "42",
+        accountId: "84",
         accountLogin: "example-org",
         accountType: "Organization",
         repositorySelection: "all",
@@ -477,7 +512,9 @@ describe("protected journal boundary", () => {
     ]);
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(screen.getByText("Limited activity")).toBeInTheDocument();
@@ -491,10 +528,7 @@ describe("protected journal boundary", () => {
   it("summarizes incomplete coverage across multiple active installations", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "app",
@@ -502,6 +536,7 @@ describe("protected journal boundary", () => {
     installationBoundary.getInstallations.mockResolvedValue([
       {
         installationId: "10",
+        accountId: "84",
         accountLogin: "ada",
         accountType: "User",
         repositorySelection: "all",
@@ -519,6 +554,7 @@ describe("protected journal boundary", () => {
       },
       {
         installationId: "42",
+        accountId: "84",
         accountLogin: "example-org",
         accountType: "Organization",
         repositorySelection: "selected",
@@ -536,7 +572,9 @@ describe("protected journal boundary", () => {
     ]);
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(screen.getByText("Partial access")).toBeInTheDocument();
@@ -548,10 +586,7 @@ describe("protected journal boundary", () => {
   it("shows trustworthy metrics and chronological evidence for today's activity", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "app",
@@ -559,6 +594,7 @@ describe("protected journal boundary", () => {
     installationBoundary.getInstallations.mockResolvedValue([
       {
         installationId: "99",
+        accountId: "84",
         accountLogin: "acme",
         accountType: "Organization",
         repositorySelection: "selected",
@@ -619,7 +655,9 @@ describe("protected journal boundary", () => {
 
     await refreshTodayJournal();
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(metricValue("Pushes")).toBe("1");
@@ -646,10 +684,7 @@ describe("protected journal boundary", () => {
   it("distinguishes issues, pull requests, reviews, merges, and comments on Today", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "best-effort",
@@ -747,7 +782,9 @@ describe("protected journal boundary", () => {
 
     await refreshTodayJournal();
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(metricValue("Issue updates")).toBe("1");
@@ -784,10 +821,7 @@ describe("protected journal boundary", () => {
   it("presents refs, releases, and Discussions as distinct private activity", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "best-effort",
@@ -851,7 +885,9 @@ describe("protected journal boundary", () => {
     activityRepositoryBoundary.tryStart.mockResolvedValue(false);
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(metricValue("Ref changes")).toBe("1");
@@ -875,10 +911,7 @@ describe("protected journal boundary", () => {
   it("shows attributable operations with status and package narrative policy", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "app",
@@ -955,7 +988,9 @@ describe("protected journal boundary", () => {
     activityRepositoryBoundary.tryStart.mockResolvedValue(false);
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(metricValue("Workflow runs")).toBe("1");
@@ -971,10 +1006,7 @@ describe("protected journal boundary", () => {
   it("presents Projects, metadata-only Gists, social exclusions, and source freshness", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-31T12:00:00.000Z"));
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "app",
@@ -1071,7 +1103,9 @@ describe("protected journal boundary", () => {
     activityRepositoryBoundary.tryStart.mockResolvedValue(false);
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(metricValue("Project updates")).toBe("1");
@@ -1105,10 +1139,7 @@ describe("protected journal boundary", () => {
   });
 
   it("filters chronologically and groups repositories without losing evidence", async () => {
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "best-effort",
@@ -1159,7 +1190,9 @@ describe("protected journal boundary", () => {
     );
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
 
     expect(screen.getAllByRole("listitem")[0]).toHaveTextContent(
@@ -1187,10 +1220,7 @@ describe("protected journal boundary", () => {
   it("reloads stored data on polling and announces a manual cooldown", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.setSystemTime(new Date("2026-08-31T12:10:00Z"));
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "best-effort",
@@ -1204,7 +1234,9 @@ describe("protected journal boundary", () => {
     };
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Refresh Today" }));
 
@@ -1225,10 +1257,7 @@ describe("protected journal boundary", () => {
 
   it("states a request limit in words and leaves the recorded day untouched", async () => {
     vi.setSystemTime(new Date("2026-08-31T12:10:00Z"));
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "best-effort",
@@ -1265,7 +1294,9 @@ describe("protected journal boundary", () => {
     });
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Refresh Today" }));
 
@@ -1292,10 +1323,7 @@ describe("protected journal boundary", () => {
   it("announces the later of rate-limit reset and reconciliation cooldown", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.setSystemTime(new Date("2026-08-31T12:20:00Z"));
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "best-effort",
@@ -1324,7 +1352,9 @@ describe("protected journal boundary", () => {
     );
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Refresh Today" }));
 
@@ -1343,10 +1373,7 @@ describe("protected journal boundary", () => {
   it("reloads the stored view and announces a failed manual reconciliation", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.setSystemTime(new Date("2026-08-31T12:20:00Z"));
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "best-effort",
@@ -1354,7 +1381,9 @@ describe("protected journal boundary", () => {
     githubBoundary.getToken.mockResolvedValue(null);
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Refresh Today" }));
 
@@ -1370,23 +1399,19 @@ describe("protected journal boundary", () => {
   });
 
   it("keeps sign-out available after onboarding", async () => {
-    authBoundary.getSession.mockResolvedValue({
-      session: { id: "session-1", token: "server-only-token" },
-      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
-    });
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     journalBoundary.getOnboarding.mockResolvedValue({
       timeZone: "America/Mexico_City",
       githubAccessMode: "best-effort",
     });
 
     render(
-      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
+      </AppServicesProvider>,
     );
 
-    authBoundary.signOut.mockResolvedValue({
-      data: { success: true },
-      error: null,
-    });
+    authBoundary.signOut.mockResolvedValue({ error: null });
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await waitFor(() => expect(authBoundary.signOut).toHaveBeenCalledOnce());
     expect(navigation.replace).toHaveBeenCalledWith("/");

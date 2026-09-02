@@ -2,7 +2,6 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import { journalOnboarding } from "@/db/auth-schema";
-import { getE2EOnboardingProgress, isE2EJournalUser } from "@/lib/e2e-fixtures";
 import type { IanaTimeZone } from "@/lib/time-zone";
 
 export type GitHubAccessMode = "best-effort" | "app";
@@ -19,17 +18,9 @@ const emptyOnboarding: JournalOnboarding = {
 
 export async function getJournalOnboarding(
   userId: string,
-  /**
-   * Only read for fixture users, whose onboarding progress lives in a cookie.
-   * Required rather than defaulted: a caller that omitted it would silently
-   * report a fixture user as not onboarded.
-   */
-  requestHeaders: Headers | null,
+  _requestHeaders: Headers | null,
 ): Promise<JournalOnboarding> {
-  if (isE2EJournalUser(userId)) {
-    return getE2EOnboardingProgress(userId, requestHeaders);
-  }
-
+  void _requestHeaders;
   return (
     (await db.query.journalOnboarding.findFirst({
       columns: { timeZone: true, githubAccessMode: true },

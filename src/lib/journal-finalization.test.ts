@@ -9,6 +9,7 @@ import {
   type FinalizationCandidate,
 } from "@/lib/journal-finalization";
 import { computeActivityMetrics } from "@/lib/github-activity";
+import { createGitHubHttpReadClient } from "@/lib/github-read-client";
 import {
   reconcileGitHubActivity,
   type ReconciliationStore,
@@ -70,6 +71,7 @@ function finalizationWork(githubAvailable: boolean) {
       globalDaily: 0,
       monthlyCostUsd: 0,
     }),
+    claimSlot: vi.fn().mockResolvedValue({ finish: vi.fn() }),
     save: vi.fn(),
   };
   const now = new Date("2026-09-01T12:00:00Z");
@@ -80,9 +82,8 @@ function finalizationWork(githubAvailable: boolean) {
         ...candidate,
         accessMode: "best-effort",
         installationIds: [],
-        accessToken: "github-token",
+        client: createGitHubHttpReadClient("github-token", fetchImplementation),
         now,
-        fetchImplementation: fetchImplementation,
         store: reconciliationStore,
       }),
     summarize: (input: {

@@ -2,7 +2,10 @@ import {
   journalFinalizationTopic,
   type JournalFinalizationMessage,
 } from "@/lib/journal-finalization";
-import type { JournalFinalizationRepository } from "@/lib/journal-finalization-repository";
+import {
+  validHistoricalLocalDate,
+  type JournalHistoryStore,
+} from "@/lib/journal-history";
 import type { QueuePublisher } from "@/lib/queue";
 import { rateLimitMessage, type RateLimitDecision } from "@/lib/rate-limit";
 import type { JournalSession } from "@/lib/session";
@@ -19,10 +22,6 @@ export type HistoryActionResult = {
   message: string;
 };
 
-function validLocalDate(localDate: string) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(localDate);
-}
-
 /**
  * The boundaries both history actions reach. They are parameters rather than
  * module imports so a test can supply real stand-ins and still exercise the
@@ -37,7 +36,7 @@ export type HistoryActionDependencies = {
     now: Date,
   ) => Promise<RateLimitDecision | null>;
   store: Pick<
-    JournalFinalizationRepository,
+    JournalHistoryStore,
     "fail" | "retry" | "redactNarrative"
   >;
   queue: QueuePublisher;
@@ -59,7 +58,8 @@ export async function runRetryHistoricalJournal(
   localDate: string,
   dependencies: HistoryActionDependencies,
 ): Promise<HistoryActionResult> {
-  if (!validLocalDate(localDate)) return { status: "idle", message: "" };
+  if (!validHistoricalLocalDate(localDate))
+    return { status: "idle", message: "" };
   const { store, queue, revalidatePath } = dependencies;
   const userId = await authenticatedUserId(dependencies);
   const now = new Date();
@@ -118,7 +118,8 @@ export async function runRedactHistoricalNarrative(
   localDate: string,
   dependencies: HistoryActionDependencies,
 ): Promise<HistoryActionResult> {
-  if (!validLocalDate(localDate)) return { status: "idle", message: "" };
+  if (!validHistoricalLocalDate(localDate))
+    return { status: "idle", message: "" };
   const { store, revalidatePath } = dependencies;
   const userId = await authenticatedUserId(dependencies);
   const now = new Date();

@@ -12,6 +12,7 @@ import {
   rateLimitCounter,
   serviceLease,
 } from "@/db/auth-schema";
+import { privacyOperationStaleAfterMs } from "@/lib/privacy-ledger";
 import { queueConcurrency, type QueueTopic } from "@/lib/queue-lease";
 import { rateLimitPolicies } from "@/lib/rate-limit";
 
@@ -165,8 +166,8 @@ export function createServiceHealthReport<
           and(
             eq(privacyOperation.status, "running"),
             lt(
-              privacyOperation.startedAt,
-              new Date(now.getTime() - 15 * 60 * 1000),
+              privacyOperation.updatedAt,
+              new Date(now.getTime() - privacyOperationStaleAfterMs),
             ),
           ),
         ),

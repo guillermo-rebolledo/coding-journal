@@ -4,10 +4,8 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { journalFinalizationRepository } from "@/lib/journal-finalization-repository";
+import { chooseJournalRequestAdapters } from "@/lib/journal-request-adapters";
 import { queuePublisher } from "@/lib/queue";
-import { spendRequestBudget } from "@/lib/request-budget";
-import { getJournalSession } from "@/lib/session";
 
 import {
   runRedactHistoricalNarrative,
@@ -16,19 +14,16 @@ import {
   type HistoryActionResult,
 } from "./history-actions";
 
-const limitEvents = {
-  "finalization-retry": "finalization-retry-limited",
-  "narrative-redaction": "narrative-redaction-limited",
-} as const;
-
 /** The production wiring for both history actions. */
 async function historyDependencies(): Promise<HistoryActionDependencies> {
+  const requestHeaders = await headers();
+  const adapters = chooseJournalRequestAdapters(requestHeaders);
   return {
-    requestHeaders: await headers(),
-    getSession: getJournalSession,
+    requestHeaders,
+    getSession: adapters.session,
     spendBudget: (policy, userId, now) =>
-      spendRequestBudget({ policy, userId, now, event: limitEvents[policy] }),
-    store: journalFinalizationRepository,
+      adapters.budget(policy, userId, now),
+    store: adapters.finalization,
     queue: queuePublisher,
     revalidatePath,
     redirect,

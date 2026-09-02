@@ -12,9 +12,7 @@ import { journalSession } from "~test/session-fixture";
 const boundaries = {
   deleteAccount: vi.fn<DeleteAccountDependencies["deleteAccount"]>(),
   getSession: vi.fn<(headers: Headers) => Promise<JournalSession | null>>(),
-  getToken: vi.fn<DeleteAccountDependencies["getAccessToken"]>(),
   spendBudget: vi.fn<DeleteAccountDependencies["spendBudget"]>(),
-  endFixtureSession: vi.fn<() => Promise<void>>(),
   redirect: vi.fn((destination: string): never => {
     throw new Error(`NEXT_REDIRECT:${destination}`);
   }),
@@ -25,14 +23,7 @@ function dependencies(): DeleteAccountDependencies {
     requestHeaders: new Headers(),
     getSession: boundaries.getSession,
     spendBudget: boundaries.spendBudget,
-    isFixtureUser: () => false,
-    endFixtureSession: boundaries.endFixtureSession,
-    getAccessToken: boundaries.getToken,
     deleteAccount: boundaries.deleteAccount,
-    credentials: () => ({
-      clientId: "github-client",
-      clientSecret: "github-secret",
-    }),
     redirect: boundaries.redirect,
   };
 }
@@ -45,12 +36,10 @@ describe("account deletion action", () => {
   beforeEach(() => {
     boundaries.deleteAccount
       .mockReset()
-      .mockResolvedValue({ deleted: true, providerRevoked: true });
+      .mockResolvedValue(undefined);
     boundaries.getSession
       .mockReset()
       .mockResolvedValue(journalSession("user-1"));
-    boundaries.getToken.mockReset().mockResolvedValue("provider-token");
-    boundaries.endFixtureSession.mockReset().mockResolvedValue(undefined);
     boundaries.spendBudget.mockReset().mockResolvedValue(null);
     boundaries.redirect.mockClear();
   });
@@ -66,18 +55,17 @@ describe("account deletion action", () => {
     expect(boundaries.deleteAccount).not.toHaveBeenCalled();
   });
 
-  it("does not need GitHub credentials configured to refuse an unconfirmed submit", async () => {
-    // The credentials are read at the point of use, so the confirmation,
-    // session and budget gates all run before anything needs them.
+  it("does not call the account adapter for an unconfirmed submit", async () => {
     const formData = new FormData();
     formData.set("confirmation", "delete");
 
     await expect(
       runDeleteAccount(formData, {
         ...dependencies(),
-        credentials: () => {
-          throw new Error("GITHUB_CLIENT_ID is required. See .env.example.");
-        },
+        deleteAccount: () =>
+          Promise.reject(
+            new Error("GITHUB_CLIENT_ID is required. See .env.example."),
+          ),
       }),
     ).resolves.toBeUndefined();
     expect(boundaries.deleteAccount).not.toHaveBeenCalled();
@@ -119,11 +107,9 @@ describe("account deletion action", () => {
     await expect(deleteAccount(formData)).rejects.toThrow(
       "NEXT_REDIRECT:/?account=deleted",
     );
-    expect(boundaries.deleteAccount).toHaveBeenCalledWith({
-      userId: "user-1",
-      accessToken: "provider-token",
-      clientId: "github-client",
-      clientSecret: "github-secret",
-    });
+    expect(boundaries.deleteAccount).toHaveBeenCalledWith(
+      expect.any(Headers),
+      "user-1",
+    );
   });
 });

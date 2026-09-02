@@ -26,13 +26,6 @@ export async function refreshGitHubConnections(
   userId: string,
 ) {
   const stored = await getGitHubInstallations(userId);
-  if (
-    process.env.NODE_ENV !== "production" &&
-    process.env.E2E_AUTH_MODE === "true"
-  ) {
-    return stored;
-  }
-
   const active = stored.filter(
     (installation) =>
       installation.status === "active" && installation.installationId,

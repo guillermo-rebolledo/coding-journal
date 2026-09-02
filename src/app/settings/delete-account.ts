@@ -1,7 +1,3 @@
-import type {
-  DeleteAccountInput,
-  DeleteAccountResult,
-} from "@/lib/account-deletion";
 import type { RateLimitDecision } from "@/lib/rate-limit";
 import type { JournalSession } from "@/lib/session";
 import { logServiceEvent } from "@/lib/telemetry";
@@ -15,18 +11,10 @@ export type DeleteAccountDependencies = {
   requestHeaders: Headers;
   getSession: (requestHeaders: Headers) => Promise<JournalSession | null>;
   spendBudget: (userId: string) => Promise<RateLimitDecision | null>;
-  isFixtureUser: (userId: string) => boolean;
-  endFixtureSession: () => Promise<void>;
-  getAccessToken: (
+  deleteAccount: (
     requestHeaders: Headers,
     userId: string,
-  ) => Promise<string | null>;
-  deleteAccount: (input: DeleteAccountInput) => Promise<DeleteAccountResult>;
-  /**
-   * Read lazily: an unconfirmed, signed-out or refused request must not
-   * depend on the GitHub credentials being configured.
-   */
-  credentials: () => { clientId: string; clientSecret: string };
+  ) => Promise<void>;
   redirect: (destination: string) => never;
 };
 
@@ -41,11 +29,7 @@ export async function runDeleteAccount(
     requestHeaders,
     getSession,
     spendBudget,
-    isFixtureUser,
-    endFixtureSession,
-    getAccessToken,
     deleteAccount,
-    credentials,
     redirect,
   }: DeleteAccountDependencies,
 ) {
@@ -56,25 +40,7 @@ export async function runDeleteAccount(
   const budget = await spendBudget(session.user.id);
   if (budget && !budget.allowed) return redirect("/settings?limited=deletion");
 
-  // A fixture user has nothing in the database to delete and no GitHub grant
-  // to revoke. Ending the session is the observable outcome the smoke run
-  // checks, and it is the same outcome a real deletion produces.
-  if (isFixtureUser(session.user.id)) {
-    await endFixtureSession();
-    return redirect("/?account=deleted");
-  }
-
-  const accessToken = await getAccessToken(
-    requestHeaders,
-    session.user.id,
-  ).catch(() => null);
-  const { clientId, clientSecret } = credentials();
-  await deleteAccount({
-    userId: session.user.id,
-    accessToken,
-    clientId,
-    clientSecret,
-  });
+  await deleteAccount(requestHeaders, session.user.id);
   logServiceEvent({
     category: "privacy",
     event: "account-deleted",

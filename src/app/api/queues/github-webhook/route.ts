@@ -3,11 +3,8 @@ import { handleCallback } from "@vercel/queue";
 import { processWebhookDeliveryMessage } from "@/lib/github-webhook-processing";
 import { isJsonObject } from "@/lib/json-payload";
 import { githubWebhookRepository } from "@/lib/github-webhook-repository";
-import {
-  QueueSaturatedError,
-  withQueueSlot,
-  type QueueTopic,
-} from "@/lib/queue-lease";
+import { withQueueSlot, type QueueTopic } from "@/lib/queue-lease";
+import { retryableGuardError } from "@/lib/request-guard";
 import { queueLeaseRepository } from "@/lib/queue-lease-repository";
 
 const topic: QueueTopic = "github-webhook-deliveries";
@@ -29,9 +26,6 @@ export const POST = handleCallback(
     );
   },
   {
-    retry: (error) =>
-      error instanceof QueueSaturatedError
-        ? { afterSeconds: error.retryAfterSeconds }
-        : undefined,
+    retry: retryableGuardError,
   },
 );

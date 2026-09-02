@@ -1,10 +1,11 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import { eq } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { db } from "@/db";
-import { privacyOperation, user } from "@/db/auth-schema";
+import { user } from "@/db/auth-schema";
+import { createPrivacyLedger, runPrivacyOperation } from "@/lib/privacy-ledger";
 
 /** What one account deletion removed, and whether GitHub's grant went with it. */
 export type DeleteAccountResult = {
@@ -50,56 +51,41 @@ async function revokeGitHubGrant(
 export function createAccountDeletion<TQueryResult extends PgQueryResultHKT>(
   database: PgDatabase<TQueryResult, typeof import("@/db/auth-schema")>,
 ) {
+  const ledger = createPrivacyLedger(database);
   return async function deleteAccount(input: DeleteAccountInput) {
     const now = input.now ?? new Date();
-    const operationId = randomUUID();
-    const operationHash = createHash("sha256")
-      .update(`account-deletion:${operationId}`)
-      .digest("hex");
-    await database.insert(privacyOperation).values({
-      id: operationId,
-      operationHash,
-      kind: "account-deletion",
-      status: "running",
-      startedAt: now,
-    });
-    const providerRevoked = await revokeGitHubGrant(
-      input,
-      input.fetchImplementation ?? fetch,
-    );
-    try {
-      // Every user-owned table has an ON DELETE CASCADE reference to this row,
-      // so the single statement is the local deletion boundary.
-      const deleted = await database
-        .delete(user)
-        .where(eq(user.id, input.userId))
-        .returning({ id: user.id });
-      await database
-        .update(privacyOperation)
-        .set({
-          status: "complete",
+    const operation = await runPrivacyOperation(
+      ledger,
+      {
+        key: `account-deletion:${randomUUID()}`,
+        kind: "account-deletion",
+        now,
+      },
+      async () => {
+        const providerRevoked = await revokeGitHubGrant(
+          input,
+          input.fetchImplementation ?? fetch,
+        );
+        // Every user-owned table has an ON DELETE CASCADE reference to this row,
+        // so the single statement is the local deletion boundary.
+        const deleted = await database
+          .delete(user)
+          .where(eq(user.id, input.userId))
+          .returning({ id: user.id });
+        return {
           affectedUsers: deleted.length,
-          finishedAt: now,
-          updatedAt: now,
-        })
-        .where(eq(privacyOperation.id, operationId));
-      const result: DeleteAccountResult = {
-        deleted: deleted.length > 0,
-        providerRevoked,
-      };
-      return result;
-    } catch (error) {
-      await database
-        .update(privacyOperation)
-        .set({
-          status: "failed",
-          errorId: randomUUID(),
-          finishedAt: now,
-          updatedAt: now,
-        })
-        .where(eq(privacyOperation.id, operationId));
-      throw error;
+          deleted: deleted.length > 0,
+          providerRevoked,
+        };
+      },
+    );
+    if (operation.status === "skipped") {
+      return { deleted: false, providerRevoked: false };
     }
+    return {
+      deleted: operation.value.deleted,
+      providerRevoked: operation.value.providerRevoked,
+    } satisfies DeleteAccountResult;
   };
 }
 

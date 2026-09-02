@@ -1,3 +1,11 @@
+import {
+  computeActivityMetrics,
+  type ActivityRecord,
+} from "@/lib/github-activity";
+import type { TodayJournal } from "@/lib/github-reconciliation";
+import type { StoredGitHubInstallation } from "@/lib/github-installation";
+import { getLocalDayWindow } from "@/lib/time-zone";
+
 export const E2E_SESSION_COOKIE = "coding-journal-e2e-session";
 
 /**
@@ -86,6 +94,34 @@ export function isE2EJournalUser(userId: string) {
   );
 }
 
+export function getE2ESession(requestHeaders: Headers) {
+  const mode = getE2ESessionMode(requestHeaders);
+  if (!mode) return null;
+  const now = new Date("2026-08-31T12:00:00.000Z");
+  const userId = getE2EUserId(mode);
+  return {
+    session: {
+      id: "e2e-session",
+      token: "e2e-token",
+      userId,
+      expiresAt: new Date("2026-09-30T12:00:00.000Z"),
+      createdAt: now,
+      updatedAt: now,
+      ipAddress: null,
+      userAgent: null,
+    },
+    user: {
+      id: userId,
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      emailVerified: true,
+      image: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+}
+
 export function getE2EAccessMode(userId: string) {
   return userId === "e2e-user" || userId === "e2e-pending"
     ? ("best-effort" as const)
@@ -158,6 +194,81 @@ export const e2eGitHubInstallations = {
   ],
 } as const;
 
+export function getE2EGitHubInstallations(
+  userId: string,
+): StoredGitHubInstallation[] {
+  if (!Object.hasOwn(e2eGitHubInstallations, userId)) return [];
+  return (
+    e2eGitHubInstallations[
+      userId as keyof typeof e2eGitHubInstallations
+    ] ?? []
+  ).map((installation) => ({ ...installation }));
+}
+
+export function getE2ETodayJournal(
+  userId: string,
+  timeZone: string,
+  now = new Date(),
+): TodayJournal {
+  const localDate = getLocalDayWindow(now, timeZone).localDate;
+  const awaitingReconciliation = userId === "e2e-user";
+  const activities =
+    userId === "e2e-all"
+      ? ([
+          {
+            deduplicationKey: "e2e:push:api",
+            localDate,
+            kind: "push",
+            actorId: "7",
+            actorLogin: "ada",
+            repositoryId: "42",
+            repositoryName: "acme/api",
+            evidenceUrl:
+              "https://github.com/acme/api/compare/1111111...2222222",
+            visibility: "private",
+            source: "github-webhook",
+            subjectId: "push-api",
+            subjectNumber: null,
+            subjectTitle: "main",
+            occurredAt: new Date(now.getTime() - 30 * 60 * 1000),
+            observedAt: now,
+            authoredBeforeDay: false,
+            installationId: "10",
+          },
+          {
+            deduplicationKey: "e2e:issue:web",
+            localDate,
+            kind: "issue-opened",
+            actorId: "7",
+            actorLogin: "ada",
+            repositoryId: "43",
+            repositoryName: "acme/web",
+            evidenceUrl: "https://github.com/acme/web/issues/51",
+            visibility: "public",
+            source: "github-events",
+            subjectId: "51",
+            subjectNumber: 51,
+            subjectTitle: "Polish Today filters",
+            occurredAt: new Date(now.getTime() - 15 * 60 * 1000),
+            observedAt: now,
+            authoredBeforeDay: false,
+            installationId: null,
+          },
+        ] satisfies ActivityRecord[])
+      : [];
+  return {
+    localDate,
+    timeZone,
+    status: "complete",
+    refreshedAt: awaitingReconciliation ? null : now,
+    ...(awaitingReconciliation
+      ? { awaitingReconciliation: true }
+      : { storedAt: now, lastAttemptAt: now }),
+    metrics: computeActivityMetrics(activities),
+    activities,
+  };
+}
+
 const e2eHistoricalActivity: ActivityRecord = {
   deduplicationKey: "e2e:history:issue:51",
   localDate: "2026-08-30",
@@ -219,7 +330,3 @@ export function getE2EHistoricalJournal(localDate: string) {
     failure: null,
   };
 }
-import {
-  computeActivityMetrics,
-  type ActivityRecord,
-} from "@/lib/github-activity";

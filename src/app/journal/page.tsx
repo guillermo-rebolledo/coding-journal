@@ -3,11 +3,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { refreshTodayJournal } from "@/app/journal/actions";
-import { getGitHubInstallations } from "@/lib/github-installation";
-import { getJournalOnboarding } from "@/lib/journal";
-import { journalSummaryRepository } from "@/lib/journal-summary-repository";
-import { getJournalSession } from "@/lib/session";
-import { getStoredTodayJournal } from "@/lib/today-journal";
+import { chooseJournalRequestAdapters } from "@/lib/journal-request-adapters";
 
 import { renderJournalPage } from "./journal-page";
 
@@ -19,14 +15,14 @@ export default async function JournalPage({
 }: {
   searchParams?: Promise<{ setup?: string }>;
 } = {}) {
+  const requestHeaders = await headers();
+  const adapters = chooseJournalRequestAdapters(requestHeaders);
   return renderJournalPage(searchParams, {
-    requestHeaders: await headers(),
-    getSession: getJournalSession,
-    getOnboarding: getJournalOnboarding,
-    getInstallations: getGitHubInstallations,
-    readStoredJournal: getStoredTodayJournal,
-    findSummary: (userId, snapshotHash) =>
-      journalSummaryRepository.findBySnapshotHash(userId, snapshotHash),
+    requestHeaders,
+    getSession: adapters.session,
+    getOnboarding: adapters.onboarding.read,
+    getInstallations: adapters.installations,
+    readToday: adapters.reconciliation.read,
     refresh: refreshTodayJournal,
     redirect,
   });

@@ -7,6 +7,7 @@ import {
   circuitConfiguration,
   ProviderUnavailableError,
   withProviderCircuit,
+  withProviderCircuitOutcome,
   type CircuitDecision,
   type CircuitStore,
 } from "@/lib/service-circuit";
@@ -16,7 +17,6 @@ function circuitStore(decision: CircuitDecision) {
     tryEnter: vi.fn(async () => decision),
     recordSuccess: vi.fn(async () => {}),
     recordFailure: vi.fn(async () => {}),
-    readAll: vi.fn(async () => []),
   } satisfies CircuitStore;
 }
 
@@ -73,6 +73,22 @@ describe("provider circuits", () => {
     expect(store.recordFailure).toHaveBeenCalledWith(
       expect.objectContaining({ service: "openai" }),
     );
+  });
+
+  it("pairs a swallowed provider outcome with the circuit record", async () => {
+    const store = circuitStore({ allowed: true });
+
+    await expect(
+      withProviderCircuitOutcome(
+        { service: "github", store },
+        async () => ({ journal: "stored", providerFailed: true }),
+        (result) => (result.providerFailed ? "failure" : "success"),
+      ),
+    ).resolves.toEqual({ journal: "stored", providerFailed: true });
+    expect(store.recordFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ service: "github" }),
+    );
+    expect(store.recordSuccess).not.toHaveBeenCalled();
   });
 
   it("takes its thresholds from configuration", () => {

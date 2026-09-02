@@ -1,14 +1,14 @@
 import { readIdentifier } from "@/lib/github-activity";
 import {
-  isJsonObject,
-  readNumber,
+  createGitHubHttpReadClient,
+  type GitHubReadClient,
+} from "@/lib/github-read-client";
+import {
   readObject,
   readPositiveInteger,
   readString,
   readStringRecord,
 } from "@/lib/json-payload";
-
-const githubApiVersion = "2026-03-10";
 
 export type GitHubInstallationDetails = {
   installationId: string;
@@ -19,14 +19,6 @@ export type GitHubInstallationDetails = {
   repositoryCount: number;
   permissions: Record<string, string>;
 };
-
-function githubHeaders(accessToken: string) {
-  return {
-    Accept: "application/vnd.github+json",
-    Authorization: `Bearer ${accessToken}`,
-    "X-GitHub-Api-Version": githubApiVersion,
-  };
-}
 
 function isReadOnlyPermissionSet(permissions: Record<string, string>) {
   const forbiddenNames =
@@ -43,20 +35,10 @@ function isReadOnlyPermissionSet(permissions: Record<string, string>) {
 export async function getUserGitHubInstallation(
   accessToken: string,
   installationId: string,
-  fetchImplementation: typeof fetch = fetch,
+  client: GitHubReadClient = createGitHubHttpReadClient(accessToken),
 ): Promise<GitHubInstallationDetails | null> {
-  const installationResponse = await fetchImplementation(
-    `https://api.github.com/user/installations/${installationId}`,
-    { headers: githubHeaders(accessToken) },
-  );
-
-  if (installationResponse.status === 404) return null;
-  if (!installationResponse.ok) {
-    throw new Error("GitHub installation validation failed.");
-  }
-
-  const installationBody: unknown = await installationResponse.json();
-  const installation = isJsonObject(installationBody) ? installationBody : null;
+  const installation = await client.installation(installationId);
+  if (!installation) return null;
   const account = readObject(installation, "account");
   const accountId = readPositiveInteger(account, "id");
   const accountLogin = readString(account, "login");
@@ -75,25 +57,8 @@ export async function getUserGitHubInstallation(
     return null;
   }
 
-  const repositoriesResponse = await fetchImplementation(
-    `https://api.github.com/user/installations/${installationId}/repositories?per_page=1`,
-    { headers: githubHeaders(accessToken) },
-  );
-
-  if (!repositoriesResponse.ok) {
-    throw new Error("GitHub repository selection validation failed.");
-  }
-
-  const repositoriesBody: unknown = await repositoriesResponse.json();
-  const repositories = isJsonObject(repositoriesBody) ? repositoriesBody : null;
-  const repositoryCount = readNumber(repositories, "total_count");
-  if (
-    repositoryCount === null ||
-    !Number.isSafeInteger(repositoryCount) ||
-    repositoryCount < 0
-  ) {
-    return null;
-  }
+  const repositoryCount =
+    await client.installationRepositoryCount(installationId);
 
   return {
     installationId,

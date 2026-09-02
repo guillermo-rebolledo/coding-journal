@@ -1,6 +1,5 @@
-import { authorizeOperationsRequest } from "@/lib/operations-auth";
+import { refuseUnauthorizedOperationsRequest } from "@/lib/operations-auth";
 import type { ServiceHealthReport } from "@/lib/service-health";
-import { logServiceEvent } from "@/lib/telemetry";
 
 /**
  * The one boundary this route reaches. It is a parameter rather than a module
@@ -21,14 +20,11 @@ export function createOperationsHealthRoute({
   report,
 }: OperationsHealthDependencies) {
   return async function GET(request: Request) {
-    if (!authorizeOperationsRequest(request)) {
-      logServiceEvent({
-        category: "request",
-        event: "ops-health-unauthorized",
-        outcome: "blocked",
-      });
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const refusal = refuseUnauthorizedOperationsRequest(
+      request,
+      "ops-health-unauthorized",
+    );
+    if (refusal) return refusal;
 
     return Response.json(await report(new Date()), {
       headers: { "cache-control": "no-store" },

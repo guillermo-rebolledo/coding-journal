@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { logServiceEvent } from "@/lib/telemetry";
 
 /**
  * Scheduled dispatches and the operations view share one credential and one
@@ -14,4 +15,13 @@ export function authorizeOperationsRequest(request: Request) {
   return (
     supplied.length === expected.length && timingSafeEqual(supplied, expected)
   );
+}
+
+export function refuseUnauthorizedOperationsRequest(
+  request: Request,
+  event: string,
+) {
+  if (authorizeOperationsRequest(request)) return null;
+  logServiceEvent({ category: "request", event, outcome: "blocked" });
+  return Response.json({ error: "Unauthorized" }, { status: 401 });
 }

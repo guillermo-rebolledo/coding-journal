@@ -1,7 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import type { GitHubInstallationDetails } from "@/lib/github-app";
-import { e2eGitHubInstallations } from "@/lib/e2e-fixtures";
 import {
   consumeInstallationState,
   deletePendingInstallation,
@@ -116,31 +115,9 @@ export async function disconnectGitHubInstallation(
   await store.markInstallationDisconnected(userId, installationId);
 }
 
-/** The fixture installations a smoke-test user starts with, if any. */
-function fixtureInstallations(
-  userId: string,
-): readonly StoredGitHubInstallation[] {
-  return Object.hasOwn(e2eGitHubInstallations, userId)
-    ? (e2eGitHubInstallations[
-        // SAFETY: `Object.hasOwn` established that this user has fixtures.
-        userId as keyof typeof e2eGitHubInstallations
-      ] ?? [])
-    : [];
-}
-
 export async function getGitHubInstallations(
   userId: string,
   store: InstallationStore = productionStore,
 ): Promise<StoredGitHubInstallation[]> {
-  if (
-    process.env.NODE_ENV !== "production" &&
-    process.env.E2E_AUTH_MODE === "true" &&
-    userId.startsWith("e2e-")
-  ) {
-    return fixtureInstallations(userId).map((installation) => ({
-      ...installation,
-    }));
-  }
-
   return store.findInstallations(userId);
 }

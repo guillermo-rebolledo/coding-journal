@@ -1,4 +1,6 @@
 import {
+  activityIdentity,
+  createActivityRecord,
   operationsKinds,
   readAttributionKeys,
   validRepositoryName,
@@ -8,6 +10,7 @@ import {
   type OperationsKind,
 } from "@/lib/github-activity";
 import { validDeliveryId } from "@/lib/github-webhook";
+import { isStaleGitHubDelivery } from "@/lib/github-delivery-rules";
 import {
   readBoolean,
   readNonEmptyString,
@@ -19,7 +22,6 @@ import {
 } from "@/lib/json-payload";
 import { getLocalDayWindow, parseDate } from "@/lib/time-zone";
 
-const staleDeliveryMs = 7 * 24 * 60 * 60 * 1000;
 const subjectTitleMaxLength = 120;
 
 export const operationsWebhookEvents = [
@@ -38,7 +40,7 @@ export function isOperationsWebhookEvent(
   return operationsWebhookEvents.some((event) => event === value);
 }
 
-type OperationsMessage = {
+export type OperationsMessage = {
   version: 1;
   deliveryId: string;
   installationId: string;
@@ -179,7 +181,7 @@ export function extractOperationsDelivery({
   if (!direct && action !== "completed") {
     return { ok: false, reason: "no-activity" };
   }
-  if (receivedAt.getTime() - observedOutcomeAt.getTime() > staleDeliveryMs) {
+  if (isStaleGitHubDelivery(receivedAt, observedOutcomeAt)) {
     return { ok: false, reason: "stale" };
   }
 
@@ -264,7 +266,7 @@ function extractDeploymentDelivery(
   ) {
     return { ok: false, reason: "malformed" };
   }
-  if (receivedAt.getTime() - outcomeAt.getTime() > staleDeliveryMs) {
+  if (isStaleGitHubDelivery(receivedAt, outcomeAt)) {
     return { ok: false, reason: "stale" };
   }
 
@@ -380,7 +382,7 @@ function extractPackageDelivery(
   ) {
     return { ok: false, reason: "malformed" };
   }
-  if (receivedAt.getTime() - occurredAt.getTime() > staleDeliveryMs) {
+  if (isStaleGitHubDelivery(receivedAt, occurredAt)) {
     return { ok: false, reason: "stale" };
   }
 
@@ -603,24 +605,33 @@ export function normalizeOperationsMessage(
     return [];
   }
   const occurredAt = new Date(operation.occurredAt);
+  const window = getLocalDayWindow(occurredAt, user.timeZone);
+  const keyPrefix = `github:${operation.kind}:${operation.repositoryId}:`;
+  if (!operation.deduplicationKey.startsWith(keyPrefix)) return [];
   return [
-    {
-      deduplicationKey: operation.deduplicationKey,
-      localDate: getLocalDayWindow(occurredAt, user.timeZone).localDate,
+    createActivityRecord({
       kind: operation.kind,
-      actorId: operation.actorId,
-      actorLogin: operation.actorLogin,
-      repositoryId: operation.repositoryId,
-      repositoryName: operation.repositoryName,
-      evidenceUrl: operation.evidenceUrl,
-      visibility: operation.private ? "private" : "public",
+      identity: activityIdentity.repository(
+        operation.kind,
+        operation.repositoryId,
+        operation.deduplicationKey.slice(keyPrefix.length),
+      ),
+      evidence: { shape: "absolute", url: operation.evidenceUrl },
+      actor: { id: operation.actorId, login: operation.actorLogin },
+      repository: {
+        id: operation.repositoryId,
+        name: operation.repositoryName,
+        private: operation.private,
+      },
+      subject: {
+        id: operation.subjectId,
+        number: null,
+        title: operation.title,
+      },
       source: "github-webhook",
-      subjectId: operation.subjectId,
-      subjectNumber: null,
-      subjectTitle: operation.title,
       occurredAt,
       observedAt: new Date(message.receivedAt),
-      authoredBeforeDay: false,
+      window,
       installationId: message.installationId,
       status: operation.status,
       statusOccurredAt: new Date(
@@ -630,6 +641,6 @@ export function normalizeOperationsMessage(
       attributionKey: operation.attributionKey,
       attributionKeys: operation.attributionKeys ?? [operation.attributionKey],
       attributed: operation.attribution === "direct",
-    },
+    }),
   ];
 }

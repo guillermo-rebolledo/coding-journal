@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { and, count, eq, gte, lt, ne, sum } from "drizzle-orm";
+import { and, count, eq, gte, lt, sum } from "drizzle-orm";
 
 import { db } from "@/db";
 import { journalSummary, journalSummaryGeneration } from "@/db/auth-schema";
 import type {
   JournalSummary,
   SummaryStore,
-  SummaryClaimRejected,
   SummaryUsage,
 } from "@/lib/journal-summary";
 import { deleteSummaryWhenEvidenceIsBlocked } from "@/lib/github-access-block";
@@ -57,44 +56,56 @@ export function createJournalSummaryRepository(
     async getUsage(userId, localDate, now): Promise<SummaryUsage> {
       const { start, end } = utcMonthWindow(now);
       const day = utcDayWindow(localDate);
-      const [userRows, globalRows, spendRows, latest] = await Promise.all([
-        database
-          .select({ value: count() })
-          .from(journalSummary)
-          .where(
-            and(
-              eq(journalSummary.userId, userId),
-              eq(journalSummary.localDate, localDate),
+      const activeLease = new Date(now.getTime() - 60 * 1000);
+      const [userRows, globalRows, spendRows, latest, active] =
+        await Promise.all([
+          database
+            .select({ value: count() })
+            .from(journalSummary)
+            .where(
+              and(
+                eq(journalSummary.userId, userId),
+                eq(journalSummary.localDate, localDate),
+              ),
             ),
-          ),
-        database
-          .select({ value: count() })
-          .from(journalSummary)
-          .where(
-            and(
-              gte(journalSummary.createdAt, day.start),
-              lt(journalSummary.createdAt, day.end),
+          database
+            .select({ value: count() })
+            .from(journalSummary)
+            .where(
+              and(
+                gte(journalSummary.createdAt, day.start),
+                lt(journalSummary.createdAt, day.end),
+              ),
             ),
-          ),
-        database
-          .select({ value: sum(journalSummary.estimatedCostMicrousd) })
-          .from(journalSummary)
-          .where(
-            and(
-              gte(journalSummary.createdAt, start),
-              lt(journalSummary.createdAt, end),
+          database
+            .select({ value: sum(journalSummary.estimatedCostMicrousd) })
+            .from(journalSummary)
+            .where(
+              and(
+                gte(journalSummary.createdAt, start),
+                lt(journalSummary.createdAt, end),
+              ),
             ),
-          ),
-        database.query.journalSummary.findFirst({
-          columns: { createdAt: true },
-          where: eq(journalSummary.userId, userId),
-          orderBy: (table, { desc }) => [desc(table.createdAt)],
-        }),
-      ]);
+          database.query.journalSummary.findFirst({
+            columns: { createdAt: true },
+            where: eq(journalSummary.userId, userId),
+            orderBy: (table, { desc }) => [desc(table.createdAt)],
+          }),
+          database
+            .select({ value: count() })
+            .from(journalSummaryGeneration)
+            .where(
+              and(
+                eq(journalSummaryGeneration.status, "active"),
+                gte(journalSummaryGeneration.claimedAt, activeLease),
+              ),
+            ),
+        ]);
       const usage: SummaryUsage = {
         userDaily: userRows[0]?.value ?? 0,
         globalDaily: globalRows[0]?.value ?? 0,
         monthlyCostUsd: Number(spendRows[0]?.value ?? 0) / 1_000_000,
+        activeClaims: active[0]?.value ?? 0,
       };
       if (latest) usage.lastGeneratedAt = latest.createdAt;
       return usage;
@@ -138,7 +149,7 @@ export function createJournalSummaryRepository(
       return existing;
     },
 
-    async claim(input) {
+    async claimSlot(input) {
       const [claimed] = await database
         .insert(journalSummaryGeneration)
         .values({
@@ -156,105 +167,15 @@ export function createJournalSummaryRepository(
           ],
         })
         .returning({ id: journalSummaryGeneration.id });
-      if (!claimed)
-        return {
-          allowed: false,
-          reason: "cooldown" as const,
-          retryAt: new Date(input.now.getTime() + 15 * 60 * 1000),
-        };
-
-      const globalDate = input.now.toISOString().slice(0, 10);
-      const day = utcDayWindow(globalDate);
-      const month = utcMonthWindow(input.now);
-      const cooldown = new Date(input.now.getTime() - 15 * 60 * 1000);
-      const activeLease = new Date(input.now.getTime() - 60 * 1000);
-      const [userWindow, userDay, globalDay, spend, active] = await Promise.all(
-        [
-          database
-            .select({ value: count() })
-            .from(journalSummaryGeneration)
-            .where(
-              and(
-                eq(journalSummaryGeneration.userId, input.userId),
-                gte(journalSummaryGeneration.claimedAt, cooldown),
-                ne(journalSummaryGeneration.status, "rejected"),
-              ),
-            ),
-          database
-            .select({ value: count() })
-            .from(journalSummaryGeneration)
-            .where(
-              and(
-                eq(journalSummaryGeneration.userId, input.userId),
-                eq(journalSummaryGeneration.localDate, input.localDate),
-                ne(journalSummaryGeneration.status, "rejected"),
-              ),
-            ),
-          database
-            .select({ value: count() })
-            .from(journalSummaryGeneration)
-            .where(
-              and(
-                gte(journalSummaryGeneration.claimedAt, day.start),
-                lt(journalSummaryGeneration.claimedAt, day.end),
-                ne(journalSummaryGeneration.status, "rejected"),
-              ),
-            ),
-          database
-            .select({ value: sum(journalSummary.estimatedCostMicrousd) })
-            .from(journalSummary)
-            .where(
-              and(
-                gte(journalSummary.createdAt, month.start),
-                lt(journalSummary.createdAt, month.end),
-              ),
-            ),
-          database
-            .select({ value: count() })
-            .from(journalSummaryGeneration)
-            .where(
-              and(
-                eq(journalSummaryGeneration.status, "active"),
-                gte(journalSummaryGeneration.claimedAt, activeLease),
-              ),
-            ),
-        ],
-      );
-      const reason =
-        (userWindow[0]?.value ?? 0) > 1
-          ? "cooldown"
-          : (userDay[0]?.value ?? 0) > 12
-            ? "daily-exhausted"
-            : (globalDay[0]?.value ?? 0) > input.globalDailyLimit
-              ? "global-paused"
-              : Number(spend[0]?.value ?? 0) / 1_000_000 >=
-                  input.monthlySpendLimitUsd
-                ? "budget-exhausted"
-                : (active[0]?.value ?? 0) > input.queueConcurrency
-                  ? "queue-busy"
-                  : null;
-      if (!reason) return { allowed: true } as const;
-      await database
-        .update(journalSummaryGeneration)
-        .set({ status: "rejected" })
-        .where(eq(journalSummaryGeneration.id, claimed.id));
-      const rejected: SummaryClaimRejected = { allowed: false, reason };
-      if (reason === "cooldown") {
-        rejected.retryAt = new Date(input.now.getTime() + 15 * 60 * 1000);
-      }
-      return rejected;
-    },
-
-    async finishClaim(userId, snapshotHash, succeeded) {
-      await database
-        .update(journalSummaryGeneration)
-        .set({ status: succeeded ? "complete" : "failed" })
-        .where(
-          and(
-            eq(journalSummaryGeneration.userId, userId),
-            eq(journalSummaryGeneration.snapshotHash, snapshotHash),
-          ),
-        );
+      if (!claimed) return null;
+      return {
+        async finish(succeeded) {
+          await database
+            .update(journalSummaryGeneration)
+            .set({ status: succeeded ? "complete" : "failed" })
+            .where(eq(journalSummaryGeneration.id, claimed.id));
+        },
+      };
     },
   };
 }

@@ -1,16 +1,15 @@
 import type { JsonObject } from "@/lib/json-payload";
 import { parseJournalFinalizationMessage } from "@/lib/journal-finalization";
 import {
-  QueueSaturatedError,
   withQueueSlot,
   type QueueLeaseStore,
   type QueueTopic,
 } from "@/lib/queue-lease";
 import {
   assertProviderAvailable,
-  ProviderUnavailableError,
   type CircuitStore,
 } from "@/lib/service-circuit";
+import { retryableGuardError } from "@/lib/request-guard";
 import { logServiceEvent } from "@/lib/telemetry";
 
 const topic: QueueTopic = "journal-finalization";
@@ -85,10 +84,7 @@ export function createFinalizationConsumer({
      * redelivered instead of counting against the finalization attempts.
      */
     retry(cause: unknown) {
-      return cause instanceof QueueSaturatedError ||
-        cause instanceof ProviderUnavailableError
-        ? { afterSeconds: cause.retryAfterSeconds }
-        : undefined;
+      return retryableGuardError(cause);
     },
   };
 }

@@ -1,23 +1,8 @@
 import { readString, type JsonObject } from "@/lib/json-payload";
 import { randomUUID } from "node:crypto";
 
-import {
-  normalizeCollaborationMessage,
-  parseCollaborationDeliveryMessage,
-} from "@/lib/github-collaboration";
+import { deliveryFamilyForMessage } from "@/lib/github-delivery-family";
 import type { GitHubWebhookRepository } from "@/lib/github-webhook-repository";
-import {
-  normalizeOperationsMessage,
-  parseOperationsDeliveryMessage,
-} from "@/lib/github-operations";
-import {
-  normalizePushMessage,
-  parsePushDeliveryMessage,
-} from "@/lib/github-webhook";
-import {
-  normalizeProjectsMessage,
-  parseProjectsDeliveryMessage,
-} from "@/lib/github-projects";
 
 const maxDeliveryAttempts = 5;
 
@@ -37,12 +22,8 @@ export async function processWebhookDeliveryMessage(
   store: WebhookDeliveryStore,
   now: Date = new Date(),
 ): Promise<void> {
-  const message =
-    parsePushDeliveryMessage(rawMessage) ??
-    parseCollaborationDeliveryMessage(rawMessage) ??
-    parseOperationsDeliveryMessage(rawMessage) ??
-    parseProjectsDeliveryMessage(rawMessage);
-  if (!message) {
+  const delivery = deliveryFamilyForMessage(rawMessage);
+  if (!delivery) {
     // A message this deployment cannot read (older or newer producer) will
     // never succeed; acknowledge it without any activity effect.
     const deliveryId = readString(rawMessage, "deliveryId");
@@ -56,6 +37,7 @@ export async function processWebhookDeliveryMessage(
     }
     return;
   }
+  const { family, message } = delivery;
 
   try {
     const users = await store.findActiveInstallationUsers(
@@ -63,14 +45,7 @@ export async function processWebhookDeliveryMessage(
     );
     let recorded = false;
     for (const user of users) {
-      const records =
-        "push" in message
-          ? normalizePushMessage(message, user)
-          : "collaboration" in message
-            ? normalizeCollaborationMessage(message, user)
-            : "operation" in message
-              ? normalizeOperationsMessage(message, user)
-              : normalizeProjectsMessage(message, user);
+      const records = family.normalize(message, user);
       if (records.length === 0) continue;
       await store.recordActivity(user.userId, records);
       recorded = true;

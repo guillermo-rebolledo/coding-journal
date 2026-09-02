@@ -1,23 +1,11 @@
 import { getRequiredEnv } from "@/lib/env";
 import { isJsonObject, type JsonObject } from "@/lib/json-payload";
+import { deliveryFamilyForEvent } from "@/lib/github-delivery-family";
 import {
-  extractCollaborationDelivery,
-  isCollaborationWebhookEvent,
-} from "@/lib/github-collaboration";
-import {
-  extractPushDelivery,
   webhookDeliveryTopic,
   validDeliveryId,
   verifyGitHubSignature,
 } from "@/lib/github-webhook";
-import {
-  extractOperationsDelivery,
-  isOperationsWebhookEvent,
-} from "@/lib/github-operations";
-import {
-  extractProjectsDelivery,
-  isProjectsWebhookEvent,
-} from "@/lib/github-projects";
 import type { GitHubWebhookRepository } from "@/lib/github-webhook-repository";
 import type { QueuePublisher } from "@/lib/queue";
 import {
@@ -94,19 +82,8 @@ export function createGitHubWebhookRoute({
       return acknowledge("restored");
     }
 
-    const collaborationEvent = isCollaborationWebhookEvent(eventType)
-      ? eventType
-      : null;
-    const operationsEvent = isOperationsWebhookEvent(eventType)
-      ? eventType
-      : null;
-    const projectsEvent = isProjectsWebhookEvent(eventType) ? eventType : null;
-    if (
-      eventType !== "push" &&
-      !collaborationEvent &&
-      !operationsEvent &&
-      !projectsEvent
-    ) {
+    const family = deliveryFamilyForEvent(eventType);
+    if (!family) {
       await store.claimDelivery({
         deliveryId,
         eventType,
@@ -117,28 +94,12 @@ export function createGitHubWebhookRoute({
       return acknowledge("ignored");
     }
 
-    const extraction = projectsEvent
-      ? extractProjectsDelivery({
-          eventType: projectsEvent,
-          payload,
-          deliveryId,
-          receivedAt,
-        })
-      : operationsEvent
-        ? extractOperationsDelivery({
-            eventType: operationsEvent,
-            payload,
-            deliveryId,
-            receivedAt,
-          })
-        : collaborationEvent
-          ? extractCollaborationDelivery({
-              eventType: collaborationEvent,
-              payload,
-              deliveryId,
-              receivedAt,
-            })
-          : extractPushDelivery({ payload, deliveryId, receivedAt });
+    const extraction = family.extract({
+      eventType,
+      payload,
+      deliveryId,
+      receivedAt,
+    });
 
     if (!extraction.ok) {
       await store.claimDelivery({

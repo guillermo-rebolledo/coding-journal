@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
-import { journalFinalizationRepository } from "@/lib/journal-finalization-repository";
-import { getJournalSession } from "@/lib/session";
+import { chooseJournalRequestAdapters } from "@/lib/journal-request-adapters";
 
 import { renderJournalHistoryDetailPage } from "./history-detail-page";
 
@@ -15,10 +14,12 @@ export default async function JournalHistoryDetailPage({
 }: {
   params: Promise<{ localDate: string }>;
 }) {
+  const requestHeaders = await headers();
+  const adapters = chooseJournalRequestAdapters(requestHeaders);
   return renderJournalHistoryDetailPage(params, {
-    requestHeaders: await headers(),
-    getSession: getJournalSession,
-    store: journalFinalizationRepository,
+    requestHeaders,
+    getSession: adapters.session,
+    store: adapters.finalization,
     redirect,
     notFound,
   });

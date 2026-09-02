@@ -77,7 +77,9 @@ describe("provider circuits with Postgres", () => {
       store.tryEnter({ service: "github", now: afterCooldown, configuration }),
     ).resolves.toEqual({ allowed: true });
 
-    const [circuit] = await store.readAll();
+    const circuit = await database.query.serviceCircuit.findFirst({
+      where: (table, { eq }) => eq(table.service, "github"),
+    });
     expect(circuit).toMatchObject({ state: "closed", failureCount: 0 });
   });
 

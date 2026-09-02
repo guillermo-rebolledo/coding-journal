@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { JsonValue } from "@/lib/json-payload";
 import { getUserGitHubInstallation } from "@/lib/github-app";
+import { createGitHubHttpReadClient } from "@/lib/github-read-client";
 
 function githubResponse(body: JsonValue, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -25,7 +26,11 @@ describe("GitHub installation API boundary", () => {
       .mockResolvedValueOnce(githubResponse({ total_count: 3 }));
 
     await expect(
-      getUserGitHubInstallation("server-token", "42", fetchImplementation),
+      getUserGitHubInstallation(
+        "server-token",
+        "42",
+        createGitHubHttpReadClient("server-token", fetchImplementation),
+      ),
     ).resolves.toEqual({
       installationId: "42",
       accountId: "84",
@@ -62,7 +67,7 @@ describe("GitHub installation API boundary", () => {
     const result = await getUserGitHubInstallation(
       "server-token",
       "7",
-      fetchImplementation,
+      createGitHubHttpReadClient("server-token", fetchImplementation),
     );
 
     expect(result?.repositorySelection).toBe("all");
@@ -88,10 +93,18 @@ describe("GitHub installation API boundary", () => {
     );
 
     await expect(
-      getUserGitHubInstallation("token", "7", mismatchedIdentity),
+      getUserGitHubInstallation(
+        "token",
+        "7",
+        createGitHubHttpReadClient("token", mismatchedIdentity),
+      ),
     ).resolves.toBeNull();
     await expect(
-      getUserGitHubInstallation("token", "7", elevatedPermissions),
+      getUserGitHubInstallation(
+        "token",
+        "7",
+        createGitHubHttpReadClient("token", elevatedPermissions),
+      ),
     ).resolves.toBeNull();
 
     const securityPermissions = vi.fn<typeof fetch>().mockResolvedValue(
@@ -103,7 +116,11 @@ describe("GitHub installation API boundary", () => {
       }),
     );
     await expect(
-      getUserGitHubInstallation("token", "7", securityPermissions),
+      getUserGitHubInstallation(
+        "token",
+        "7",
+        createGitHubHttpReadClient("token", securityPermissions),
+      ),
     ).resolves.toBeNull();
   });
 
@@ -113,7 +130,11 @@ describe("GitHub installation API boundary", () => {
       .mockResolvedValue(githubResponse({ message: "Not Found" }, 404));
 
     await expect(
-      getUserGitHubInstallation("token", "7", fetchImplementation),
+      getUserGitHubInstallation(
+        "token",
+        "7",
+        createGitHubHttpReadClient("token", fetchImplementation),
+      ),
     ).resolves.toBeNull();
   });
 });

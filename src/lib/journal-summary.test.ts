@@ -42,6 +42,7 @@ function memoryStore(): SummaryStore & { summaries: JournalSummary[] } {
         (summary) => summary.userId === userId && summary.snapshotHash === hash,
       ) ?? null,
     getUsage: async () => ({ userDaily: 0, globalDaily: 0, monthlyCostUsd: 0 }),
+    claimSlot: async () => ({ finish: async () => {} }),
     save: async (summary) => {
       summaries.push(summary);
       return summary;

@@ -9,11 +9,12 @@ import {
 import { HistoryActionForm } from "@/app/journal/history/history-action-form";
 import { AppShell } from "@/components/journal/app-shell";
 import { DestructiveConfirmation } from "@/components/journal/destructive-confirmation";
+import { JournalNarrative } from "@/components/journal/journal-narrative";
 import { MetricOverview } from "@/components/journal/metric-overview";
 import { StateBlock } from "@/components/journal/state-block";
-import { getE2EHistoricalJournal, isE2EJournalUser } from "@/lib/e2e-fixtures";
-import type { JournalFinalizationRepository } from "@/lib/journal-finalization-repository";
+import type { JournalHistoryStore } from "@/lib/journal-history";
 import type { JournalSession } from "@/lib/session";
+import { describeJournalStatus } from "@/lib/today-journal";
 
 function displayDate(localDate: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -25,10 +26,12 @@ function displayDate(localDate: string) {
 }
 
 function completenessLabel(value: string | null) {
-  if (value === "complete") return "Complete coverage";
-  if (value === "partial") return "Partial coverage";
-  if (value === "error") return "Provider unavailable";
-  return "Final coverage pending";
+  return describeJournalStatus({
+    status:
+      value === "complete" || value === "partial" || value === "error"
+        ? value
+        : "loading",
+  }).completeness;
 }
 
 /**
@@ -39,7 +42,7 @@ function completenessLabel(value: string | null) {
 export type HistoryDetailPageDependencies = {
   requestHeaders: Headers;
   getSession: (requestHeaders: Headers) => Promise<JournalSession | null>;
-  store: Pick<JournalFinalizationRepository, "read">;
+  store: Pick<JournalHistoryStore, "read">;
   redirect: (destination: string) => never;
   notFound: () => never;
 };
@@ -67,9 +70,7 @@ export async function renderJournalHistoryDetailPage(
   if (!session) return redirect("/sign-in?next=%2Fjournal%2Fhistory");
   const { localDate } = await params;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(localDate)) return notFound();
-  const journal = isE2EJournalUser(session.user.id)
-    ? getE2EHistoricalJournal(localDate)
-    : await store.read(session.user.id, localDate);
+  const journal = await store.read(session.user.id, localDate);
   if (!journal) return notFound();
 
   const failed = journal.status === "recoverable-error";
@@ -135,50 +136,20 @@ export async function renderJournalHistoryDetailPage(
           />
         ) : null}
 
-        <section
-          aria-labelledby="historical-narrative-heading"
-          className={`mt-8 rounded-m3-xl p-6 sm:p-7 ${
-            journal.narrative
-              ? "bg-m3-tertiary-container text-m3-on-tertiary-container"
-              : "bg-m3-surface-container-low text-m3-on-surface"
-          }`}
-        >
-          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <h2 id="historical-narrative-heading" className="text-m3-title-lg">
-              Written for you
-            </h2>
-            <p className="text-m3-label-md">
-              Immutable{finalizedAt ? ` · generated ${finalizedAt}` : null}
-            </p>
-          </div>
-          {journal.narrative ? (
-            <div className="mt-4 grid gap-4">
-              <p className="max-w-[62ch] text-m3-body-lg">
-                {journal.narrative.overview}
-              </p>
-              {[
-                ...journal.narrative.accomplishments,
-                ...journal.narrative.collaboration,
-                ...journal.narrative.inProgress,
-              ].map((claim, index) => (
-                <p
-                  key={`${claim.summary}-${index}`}
-                  className="max-w-[62ch] text-m3-body-md"
-                >
-                  {claim.summary}
-                </p>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-3 max-w-[62ch] text-m3-body-md text-m3-on-surface-variant">
-              {failed
-                ? "No narrative was frozen because final processing did not complete."
-                : finalizing
-                  ? "The final narrative will appear after processing completes."
-                  : "This day has no narrative, either because it had no eligible evidence or it was privacy-redacted."}
-            </p>
-          )}
-        </section>
+        <JournalNarrative
+          narrative={journal.narrative}
+          evidence={journal.evidence}
+          generatedAt={finalizedAt}
+          immutable
+          headingId="historical-narrative-heading"
+          emptyMessage={
+            failed
+              ? "No narrative was frozen because final processing did not complete."
+              : finalizing
+                ? "The final narrative will appear after processing completes."
+                : "This day has no narrative, either because it had no eligible evidence or it was privacy-redacted."
+          }
+        />
 
         {corrected ? (
           <div className="mt-4 border-l-2 border-m3-primary pl-4">

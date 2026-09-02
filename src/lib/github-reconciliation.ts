@@ -1,12 +1,24 @@
 import {
+  activityIdentity,
   commitDeduplicationKey,
+  createActivityRecord,
   pushDeduplicationKey,
-  pushEvidenceUrl,
   validRepositoryName,
   validSha,
   type ActivityMetrics,
   type ActivityRecord,
 } from "@/lib/github-activity";
+import {
+  GitHubRequestError,
+  type GitHubReadClient,
+} from "@/lib/github-read-client";
+import { readActorStage } from "@/lib/github-reconciliation-actor-stage";
+import {
+  readEventsStage,
+  suppressAppModeRefObservation,
+} from "@/lib/github-reconciliation-events-stage";
+import { readGistsStage } from "@/lib/github-reconciliation-gists-stage";
+import { readInstallationStage } from "@/lib/github-reconciliation-installation-stage";
 import {
   collaborationEventForApiType,
   deriveCollaborationSubject,
@@ -19,7 +31,6 @@ import {
   type SecondarySourceFreshness,
 } from "@/lib/github-secondary";
 import {
-  isJsonObject,
   readBoolean,
   readNonEmptyString,
   readNumber,
@@ -34,30 +45,7 @@ import {
   getLocalDayWindowForDate,
   parseDate,
 } from "@/lib/time-zone";
-
-// These moved to their shared homes; re-exported so existing importers of the
-// reconciliation module keep working.
-export {
-  commitDeduplicationKey,
-  pushDeduplicationKey,
-  pushEvidenceUrl,
-  validRepositoryName,
-  validSha,
-  computeActivityMetrics,
-  type ActivityMetrics,
-  type ActivityRecord,
-} from "@/lib/github-activity";
-export {
-  getLocalDayWindow,
-  parseDate,
-  type LocalDayWindow,
-} from "@/lib/time-zone";
-
-const githubApiVersion = "2026-03-10";
-const githubEventsPageSize = 100;
-// The events feed exposes at most 300 events; page 4 answers 422.
-const githubEventsMaxPages = 3;
-export const reconciliationCooldownMs = 15 * 60 * 1000;
+import { journalReconciliationCooldownMs } from "@/lib/today-journal-policy";
 
 export type TodayJournal = {
   localDate: string;
@@ -143,87 +131,14 @@ export function describeError(cause: unknown): ErrorDescription {
 /** The actor whose activity this pass reconciles. */
 type GitHubActor = { id: number; login: string };
 
-/**
- * A decoded GitHub REST body. Every endpoint this module calls answers with
- * either a single object or a list of them, so the decode happens once in
- * `fetchJson` and callers pick the arm they expect.
- */
-type GitHubJsonBody =
-  | { kind: "object"; value: JsonObject }
-  | { kind: "list"; value: readonly JsonObject[] }
-  | { kind: "other" };
-
-/** Narrows a decoded body to the single object an endpoint promised. */
-function objectBody(body: GitHubJsonBody): JsonObject | null {
-  return body.kind === "object" ? body.value : null;
-}
-
-/** Narrows a decoded body to the list an endpoint promised. */
-function listBody(body: GitHubJsonBody): readonly JsonObject[] | null {
-  return body.kind === "list" ? body.value : null;
-}
-
-function githubHeaders(accessToken: string) {
-  return {
-    Accept: "application/vnd.github+json",
-    Authorization: `Bearer ${accessToken}`,
-    "X-GitHub-Api-Version": githubApiVersion,
-  };
-}
-
-export class GitHubRequestError extends Error {
-  readonly status: number;
-  readonly rateLimitResetAt: Date | null;
-
-  constructor(status: number, rateLimitResetAt: Date | null = null) {
-    super(`GitHub request failed (${status})`);
-    this.name = "GitHubRequestError";
-    this.status = status;
-    this.rateLimitResetAt = rateLimitResetAt;
-  }
-}
-
-async function fetchJson(
-  url: string,
-  accessToken: string,
-  fetchImplementation: typeof fetch,
-): Promise<GitHubJsonBody> {
-  const response = await fetchImplementation(url, {
-    headers: githubHeaders(accessToken),
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    const resetSeconds = Number(response.headers.get("x-ratelimit-reset"));
-    const retryAfterSeconds = Number(response.headers.get("retry-after"));
-    const rateLimited =
-      response.status === 429 ||
-      (response.status === 403 &&
-        (response.headers.get("x-ratelimit-remaining") === "0" ||
-          response.headers.has("retry-after")));
-    const rateLimitResetAt = rateLimited
-      ? Number.isFinite(resetSeconds) && resetSeconds > 0
-        ? new Date(resetSeconds * 1000)
-        : Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
-          ? new Date(Date.now() + retryAfterSeconds * 1000)
-          : new Date(Date.now() + reconciliationCooldownMs)
-      : null;
-    throw new GitHubRequestError(response.status, rateLimitResetAt);
-  }
-  const body: unknown = await response.json();
-  if (isJsonObject(body)) return { kind: "object", value: body };
-  if (!Array.isArray(body)) return { kind: "other" };
-  return { kind: "list", value: body.filter((entry) => isJsonObject(entry)) };
-}
-
 export async function reconcileGitHubActivity({
   userId,
   timeZone,
   accessMode,
   installationIds,
-  accessToken,
+  client,
   now,
   localDate,
-  fetchImplementation = fetch,
   store,
   reportDiagnostic = () => {},
 }: {
@@ -231,10 +146,9 @@ export async function reconcileGitHubActivity({
   timeZone: string;
   accessMode: "best-effort" | "app";
   installationIds: string[];
-  accessToken: string | null;
+  client: GitHubReadClient | null;
   now: Date;
   localDate?: string;
-  fetchImplementation?: typeof fetch;
   store: ReconciliationStore;
   reportDiagnostic?: DiagnosticReporter;
 }): Promise<TodayJournal> {
@@ -245,12 +159,12 @@ export async function reconcileGitHubActivity({
     userId,
     window.localDate,
     now,
-    new Date(now.getTime() - reconciliationCooldownMs),
+    new Date(now.getTime() - journalReconciliationCooldownMs),
     timeZone,
   );
   if (!started) return store.read(userId, window.localDate);
 
-  if (!accessToken) {
+  if (!client) {
     const sourceFreshness = secondarySourceFreshness({
       refreshedAt: now,
       eventsSucceeded: false,
@@ -278,13 +192,7 @@ export async function reconcileGitHubActivity({
   let degraded = false;
 
   try {
-    const rawActor = objectBody(
-      await fetchJson(
-        "https://api.github.com/user",
-        accessToken,
-        fetchImplementation,
-      ),
-    );
+    const rawActor = await readActorStage(client);
     const actorId = readPositiveInteger(rawActor, "id");
     const actorLogin = readString(rawActor, "login");
     if (actorId === null || actorLogin === null) {
@@ -298,31 +206,14 @@ export async function reconcileGitHubActivity({
 
   if (actor) {
     try {
-      const rawEvents: JsonObject[] = [];
-      for (let page = 1; page <= githubEventsMaxPages; page += 1) {
-        let response: GitHubJsonBody;
-        try {
-          response = await fetchJson(
-            `https://api.github.com/users/${encodeURIComponent(actor.login)}/events?per_page=${githubEventsPageSize}&page=${page}`,
-            accessToken,
-            fetchImplementation,
-          );
-        } catch (error) {
-          // Past the feed's pagination limit GitHub answers 422. Keep the
-          // events collected so far rather than losing the whole pass.
-          if (error instanceof GitHubRequestError && error.status === 422) {
-            reportDiagnostic({ stage: "events", ...describeError(error) });
-            degraded = true;
-            break;
-          }
-          throw error;
-        }
-        const events = listBody(response);
-        if (events === null) throw new Error("Invalid GitHub events");
-        rawEvents.push(...events);
-        if (events.length < githubEventsPageSize) break;
-        // A full final page means GitHub is still withholding older events.
-        if (page === githubEventsMaxPages) degraded = true;
+      const eventPages = await readEventsStage(client, actor.login);
+      const rawEvents = eventPages.items;
+      if (eventPages.degraded) degraded = true;
+      if (eventPages.diagnosticError) {
+        reportDiagnostic({
+          stage: "events",
+          ...describeError(eventPages.diagnosticError),
+        });
       }
 
       for (const rawEvent of rawEvents) {
@@ -347,7 +238,6 @@ export async function reconcileGitHubActivity({
           continue;
         }
 
-        const visibility = isPublic ? "public" : "private";
         const eventOccurredAt = parseDate(readString(rawEvent, "created_at"));
 
         const socialRecord = normalizeSocialEvent({
@@ -370,9 +260,11 @@ export async function reconcileGitHubActivity({
           // Keeping the sources disjoint avoids both double-counting and
           // collapsing a create-delete-recreate cycle.
           if (
-            accessMode === "app" &&
-            installationIds.length > 0 &&
-            (collaborationEvent === "create" || collaborationEvent === "delete")
+            suppressAppModeRefObservation({
+              accessMode,
+              hasInstallation: installationIds.length > 0,
+              event: collaborationEvent,
+            })
           ) {
             continue;
           }
@@ -394,25 +286,36 @@ export async function reconcileGitHubActivity({
           ) {
             continue;
           }
-          records.set(subject.deduplicationKey, {
-            deduplicationKey: subject.deduplicationKey,
-            localDate: window.localDate,
-            kind: subject.kind,
-            actorId: String(eventActorId),
-            actorLogin: eventActorLogin,
-            repositoryId: String(repositoryId),
-            repositoryName,
-            evidenceUrl: subject.evidenceUrl,
-            visibility,
-            source: "github-events",
-            subjectId: subject.subjectId,
-            subjectNumber: subject.subjectNumber,
-            subjectTitle: subject.title,
-            occurredAt: subject.occurredAt,
-            observedAt: now,
-            authoredBeforeDay: false,
-            installationId: null,
-          });
+          const keyPrefix = `github:${subject.kind}:${repositoryId}:`;
+          if (!subject.deduplicationKey.startsWith(keyPrefix)) continue;
+          records.set(
+            subject.deduplicationKey,
+            createActivityRecord({
+              kind: subject.kind,
+              identity: activityIdentity.repository(
+                subject.kind,
+                String(repositoryId),
+                subject.deduplicationKey.slice(keyPrefix.length),
+              ),
+              evidence: { shape: "absolute", url: subject.evidenceUrl },
+              actor: { id: String(eventActorId), login: eventActorLogin },
+              repository: {
+                id: String(repositoryId),
+                name: repositoryName,
+                private: !isPublic,
+              },
+              subject: {
+                id: subject.subjectId,
+                number: subject.subjectNumber,
+                title: subject.title,
+              },
+              source: "github-events",
+              occurredAt: subject.occurredAt,
+              observedAt: now,
+              window,
+              installationId: null,
+            }),
+          );
           continue;
         }
 
@@ -437,84 +340,55 @@ export async function reconcileGitHubActivity({
           pushHead,
         );
         if (records.has(pushKey)) continue;
-        records.set(pushKey, {
-          deduplicationKey: pushKey,
-          localDate: window.localDate,
-          kind: "push",
-          actorId: String(eventActorId),
-          actorLogin: eventActorLogin,
-          repositoryId: String(repositoryId),
-          repositoryName,
-          evidenceUrl: pushEvidenceUrl(repositoryName, pushBefore, pushHead),
-          visibility,
-          source: "github-events",
-          subjectId: eventId,
-          subjectNumber: null,
-          subjectTitle: null,
-          occurredAt,
-          observedAt: now,
-          authoredBeforeDay: false,
-          installationId: null,
-        });
+        records.set(
+          pushKey,
+          createActivityRecord({
+            kind: "push",
+            identity: activityIdentity.push(
+              String(repositoryId),
+              pushBefore,
+              pushHead,
+            ),
+            evidence: { shape: "push", before: pushBefore, head: pushHead },
+            actor: { id: String(eventActorId), login: eventActorLogin },
+            repository: {
+              id: String(repositoryId),
+              name: repositoryName,
+              private: !isPublic,
+            },
+            subject: { id: eventId, number: null, title: null },
+            source: "github-events",
+            occurredAt,
+            observedAt: now,
+            window,
+            installationId: null,
+          }),
+        );
 
         try {
           const pushedCommits: JsonObject[] = [];
           const announcedCommits = readObjectArray(payload, "commits") ?? [];
           if (!/^0+$/.test(pushBefore)) {
-            let totalCommits = Number.POSITIVE_INFINITY;
-            for (let page = 1; page <= 10; page += 1) {
-              const comparison = objectBody(
-                await fetchJson(
-                  `https://api.github.com/repos/${repositoryName}/compare/${pushBefore}...${pushHead}?per_page=100&page=${page}`,
-                  accessToken,
-                  fetchImplementation,
-                ),
-              );
-              const commits = readObjectArray(comparison, "commits");
-              const reportedTotal = readNumber(comparison, "total_commits");
-              if (
-                commits === null ||
-                reportedTotal === null ||
-                !Number.isSafeInteger(reportedTotal) ||
-                reportedTotal < 0
-              ) {
-                throw new Error("Invalid GitHub comparison response");
-              }
-              totalCommits = reportedTotal;
-              pushedCommits.push(...commits);
-              if (
-                commits.length < 100 ||
-                pushedCommits.length >= totalCommits
-              ) {
-                break;
-              }
-            }
-            if (pushedCommits.length < totalCommits) degraded = true;
+            const comparison = await client.compareRange(
+              repositoryName,
+              pushBefore,
+              pushHead,
+            );
+            pushedCommits.push(...comparison.items);
+            if (comparison.degraded) degraded = true;
           } else if (announcedCommits.length > 0) {
             for (const candidate of announcedCommits) {
               const candidateSha = readString(candidate, "sha");
               if (!validSha(candidateSha)) continue;
-              const commit = objectBody(
-                await fetchJson(
-                  `https://api.github.com/repos/${repositoryName}/commits/${candidateSha}`,
-                  accessToken,
-                  fetchImplementation,
-                ),
+              pushedCommits.push(
+                await client.commit(repositoryName, candidateSha),
               );
-              if (commit !== null) pushedCommits.push(commit);
             }
             if (readNumber(payload, "size") !== pushedCommits.length) {
               degraded = true;
             }
           } else {
-            const commit = objectBody(
-              await fetchJson(
-                `https://api.github.com/repos/${repositoryName}/commits/${pushHead}`,
-                accessToken,
-                fetchImplementation,
-              ),
-            );
-            if (commit !== null) pushedCommits.push(commit);
+            pushedCommits.push(await client.commit(repositoryName, pushHead));
             degraded = true;
           }
 
@@ -539,25 +413,29 @@ export async function reconcileGitHubActivity({
               commitSha,
             );
             if (records.has(commitKey)) continue;
-            records.set(commitKey, {
-              deduplicationKey: commitKey,
-              localDate: window.localDate,
-              kind: "commit",
-              actorId: String(actor.id),
-              actorLogin: actor.login,
-              repositoryId: String(repositoryId),
-              repositoryName,
-              evidenceUrl: `https://github.com/${repositoryName}/commit/${commitSha}`,
-              visibility,
-              source: "github-events",
-              subjectId: commitSha,
-              subjectNumber: null,
-              subjectTitle: null,
-              occurredAt: authoredAt,
-              observedAt: now,
-              authoredBeforeDay: authoredAt < window.startsAt,
-              installationId: null,
-            });
+            records.set(
+              commitKey,
+              createActivityRecord({
+                kind: "commit",
+                identity: activityIdentity.commit(
+                  String(repositoryId),
+                  commitSha,
+                ),
+                evidence: { shape: "commit", sha: commitSha },
+                actor: { id: String(actor.id), login: actor.login },
+                repository: {
+                  id: String(repositoryId),
+                  name: repositoryName,
+                  private: !isPublic,
+                },
+                subject: { id: commitSha, number: null, title: null },
+                source: "github-events",
+                occurredAt: authoredAt,
+                observedAt: now,
+                window,
+                installationId: null,
+              }),
+            );
           }
         } catch (error) {
           reportDiagnostic({ stage: "push-commits", ...describeError(error) });
@@ -573,26 +451,10 @@ export async function reconcileGitHubActivity({
 
   if (actor) {
     try {
-      const query = new URLSearchParams({
-        since: window.startsAt.toISOString(),
-        per_page: "100",
-      });
-      const [response, starredResponse] = await Promise.all([
-        fetchJson(
-          `https://api.github.com/gists?${query}`,
-          accessToken,
-          fetchImplementation,
-        ),
-        fetchJson(
-          "https://api.github.com/gists/starred?per_page=100",
-          accessToken,
-          fetchImplementation,
-        ),
-      ]);
-      const gists = listBody(response);
-      const starredGists = listBody(starredResponse);
-      if (gists === null || starredGists === null)
-        throw new Error("Invalid GitHub Gists response");
+      const { owned: gists, starred: starredGists } = await readGistsStage(
+        client,
+        window.startsAt,
+      );
 
       for (const gist of gists) {
         const gistIdentifier = readNonEmptyString(gist, "id");
@@ -601,24 +463,8 @@ export async function reconcileGitHubActivity({
           continue;
         }
         try {
-          const gistId = encodeURIComponent(gistIdentifier);
-          const [commits, comments] = await Promise.all([
-            fetchJson(
-              `https://api.github.com/gists/${gistId}/commits?per_page=100`,
-              accessToken,
-              fetchImplementation,
-            ),
-            fetchJson(
-              `https://api.github.com/gists/${gistId}/comments?per_page=100`,
-              accessToken,
-              fetchImplementation,
-            ),
-          ]);
-          const gistCommits = listBody(commits);
-          const gistComments = listBody(comments);
-          if (gistCommits === null || gistComments === null) {
-            throw new Error("Invalid GitHub Gist metadata response");
-          }
+          const { commits: gistCommits, comments: gistComments } =
+            await client.gistMetadata(gistIdentifier);
           for (const record of normalizeGistActivity({
             gist,
             commits: gistCommits,
@@ -657,28 +503,10 @@ export async function reconcileGitHubActivity({
     } else {
       for (const installationId of installationIds) {
         try {
-          const repositories: JsonObject[] = [];
-          let page = 1;
-          let totalCount = Number.POSITIVE_INFINITY;
-
-          while (repositories.length < totalCount) {
-            const response = objectBody(
-              await fetchJson(
-                `https://api.github.com/user/installations/${encodeURIComponent(installationId)}/repositories?per_page=100&page=${page}`,
-                accessToken,
-                fetchImplementation,
-              ),
-            );
-            const repositoriesPage = readObjectArray(response, "repositories");
-            const reportedTotal = readNumber(response, "total_count");
-            if (repositoriesPage === null || reportedTotal === null) {
-              throw new Error("Invalid GitHub repositories response");
-            }
-            totalCount = reportedTotal;
-            repositories.push(...repositoriesPage);
-            if (repositoriesPage.length < 100) break;
-            page += 1;
-          }
+          const repositories = await readInstallationStage(
+            client,
+            installationId,
+          );
 
           for (const repository of repositories) {
             const repositoryId = readPositiveInteger(repository, "id");
@@ -694,28 +522,14 @@ export async function reconcileGitHubActivity({
             }
 
             try {
-              const query = new URLSearchParams({
-                author: actor.login,
-                since: window.startsAt.toISOString(),
-                until: now.toISOString(),
-                per_page: "100",
+              const commitsResult = await client.repositoryCommits({
+                repositoryName,
+                actorLogin: actor.login,
+                startsAt: window.startsAt,
+                endsAt: now,
               });
-              const rawCommits: JsonObject[] = [];
-              for (let page = 1; page <= 10; page += 1) {
-                query.set("page", String(page));
-                const commitsPage = listBody(
-                  await fetchJson(
-                    `https://api.github.com/repos/${repositoryName}/commits?${query}`,
-                    accessToken,
-                    fetchImplementation,
-                  ),
-                );
-                if (commitsPage === null) {
-                  throw new Error("Invalid GitHub commits response");
-                }
-                rawCommits.push(...commitsPage);
-                if (commitsPage.length < 100) break;
-              }
+              const rawCommits = commitsResult.items;
+              if (commitsResult.degraded) degraded = true;
 
               for (const commit of rawCommits) {
                 const commitSha = readString(commit, "sha");
@@ -739,25 +553,29 @@ export async function reconcileGitHubActivity({
                   String(repositoryId),
                   commitSha,
                 );
-                records.set(commitKey, {
-                  deduplicationKey: commitKey,
-                  localDate: window.localDate,
-                  kind: "commit",
-                  actorId: String(actor.id),
-                  actorLogin: actor.login,
-                  repositoryId: String(repositoryId),
-                  repositoryName,
-                  evidenceUrl: `https://github.com/${repositoryName}/commit/${commitSha}`,
-                  visibility: isPrivate ? "private" : "public",
-                  source: "github-repository-commits",
-                  subjectId: commitSha,
-                  subjectNumber: null,
-                  subjectTitle: null,
-                  occurredAt: authoredAt,
-                  observedAt: now,
-                  authoredBeforeDay: false,
-                  installationId,
-                });
+                records.set(
+                  commitKey,
+                  createActivityRecord({
+                    kind: "commit",
+                    identity: activityIdentity.commit(
+                      String(repositoryId),
+                      commitSha,
+                    ),
+                    evidence: { shape: "commit", sha: commitSha },
+                    actor: { id: String(actor.id), login: actor.login },
+                    repository: {
+                      id: String(repositoryId),
+                      name: repositoryName,
+                      private: isPrivate,
+                    },
+                    subject: { id: commitSha, number: null, title: null },
+                    source: "github-repository-commits",
+                    occurredAt: authoredAt,
+                    observedAt: now,
+                    window,
+                    installationId,
+                  }),
+                );
               }
             } catch (error) {
               reportDiagnostic({

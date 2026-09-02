@@ -25,9 +25,6 @@ function dependencies(): OnboardingActionDependencies {
   return {
     requestHeaders: new Headers(),
     getSession: authBoundary.getSession,
-    isFixtureUser: () => false,
-    recordFixtureStage: () =>
-      Promise.reject(new Error("no fixture stage in this test")),
     saveTimeZone: journalBoundary.saveTimeZone,
     chooseBestEffort: journalBoundary.chooseBestEffort,
     redirect: navigation.redirect,

@@ -10,6 +10,8 @@ import { PalettePicker } from "@/components/palette-picker";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeMenu } from "@/components/theme-menu";
 import { buttonVariants } from "@/components/ui/button-variants";
+import { Button } from "@/components/ui/button";
+import { deleteAccount } from "@/app/settings/actions";
 import { refreshGitHubConnections } from "@/lib/github-connection";
 import { getJournalOnboarding } from "@/lib/journal";
 import { getJournalSession } from "@/lib/session";
@@ -98,6 +100,74 @@ export default async function SettingsPage() {
             signed-in server boundary and are excluded from telemetry.
           </p>
         </aside>
+
+        <section aria-labelledby="privacy-heading" className="mt-14">
+          <p className="text-m3-label-lg-emphasized text-primary">PRIVACY</p>
+          <h2 id="privacy-heading" className="mt-3 text-m3-headline-lg">
+            Access and retention
+          </h2>
+          <div className="mt-5 grid gap-4 text-m3-body-md text-muted-foreground">
+            <p>
+              Coding Journal processes only the GitHub account and active App
+              installations shown above. Suspending or removing access stops new
+              processing; inaccessible private details are removed from stored
+              activity and replaced by a neutral marker in history.
+            </p>
+            <p>
+              Normalized GitHub activity is retained for 30 days. Final daily
+              summaries and aggregate counts remain so journal history still
+              works without repository-level details.
+            </p>
+            <p>
+              You can revoke installation access in{" "}
+              <a
+                href="https://github.com/settings/installations"
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary underline underline-offset-4"
+              >
+                GitHub App settings
+              </a>{" "}
+              or revoke the OAuth grant in{" "}
+              <a
+                href="https://github.com/settings/applications"
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary underline underline-offset-4"
+              >
+                GitHub application settings
+              </a>
+              .
+            </p>
+          </div>
+
+          <div className="mt-8 rounded-m3-xl bg-m3-error-container p-5 text-m3-on-error-container sm:p-6">
+            <h3 className="text-m3-title-lg-emphasized">Delete account</h3>
+            <p className="mt-2 max-w-2xl text-m3-body-md">
+              This permanently deletes your journal, summaries, settings, and
+              every session. Coding Journal will also revoke its GitHub OAuth
+              grant when GitHub is reachable. This cannot be undone.
+            </p>
+            <form
+              action={deleteAccount}
+              className="mt-5 flex max-w-xl flex-col gap-3 sm:flex-row sm:items-end"
+            >
+              <label className="text-m3-label-lg-emphasized flex-1">
+                Type DELETE to confirm
+                <input
+                  name="confirmation"
+                  required
+                  pattern="DELETE"
+                  autoComplete="off"
+                  className="mt-2 min-h-12 w-full rounded-m3-md border border-m3-error bg-background px-4 text-m3-body-md text-foreground"
+                />
+              </label>
+              <Button type="submit" variant="destructive" className="sm:mb-0.5">
+                Delete my account
+              </Button>
+            </form>
+          </div>
+        </section>
 
         <section aria-labelledby="appearance-heading" className="mt-14">
           <p className="text-m3-label-lg-emphasized text-primary">APPEARANCE</p>

@@ -192,6 +192,36 @@ describe("journal summary application boundary", () => {
     expect(store.summaries).toHaveLength(0);
   });
 
+  it.each([
+    ["collaboration", { ...validOutput, collaboration: ["oops"] }],
+    ["inProgress", { ...validOutput, inProgress: [7] }],
+    ["accomplishments", { ...validOutput, accomplishments: [null] }],
+  ])(
+    "refuses an output whose %s list holds something that is not a claim",
+    async (_field, output) => {
+      // The list is rejected outright rather than filtered down to the
+      // readable entries: an unreadable claim makes the whole output
+      // untrustworthy, and dropping it would let the rest through unchecked.
+      const store = memoryStore();
+      const provider = vi.fn().mockResolvedValue({ output });
+
+      const result = await generateJournalSummary({
+        userId: "user-1",
+        localDate: "2026-09-01",
+        activities: [activity()],
+        store,
+        provider,
+        now: new Date("2026-09-01T16:00:00Z"),
+      });
+
+      expect(result).toEqual({
+        status: "unavailable",
+        reason: "invalid-output",
+      });
+      expect(store.summaries).toHaveLength(0);
+    },
+  );
+
   it("returns the immutable cached summary for an unchanged snapshot", async () => {
     const store = memoryStore();
     const provider = vi.fn().mockResolvedValue({ output: validOutput });

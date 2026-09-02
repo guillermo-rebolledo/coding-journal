@@ -1,3 +1,4 @@
+import { readIdentifier } from "@/lib/github-activity";
 import {
   isJsonObject,
   readNumber,
@@ -64,7 +65,7 @@ export async function getUserGitHubInstallation(
   const permissions = readStringRecord(installation, "permissions") ?? {};
 
   if (
-    String(readNumber(installation, "id")) !== installationId ||
+    readIdentifier(installation, "id") !== installationId ||
     accountId === null ||
     accountLogin === null ||
     (accountType !== "User" && accountType !== "Organization") ||

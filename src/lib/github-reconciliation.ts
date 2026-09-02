@@ -669,14 +669,14 @@ export async function reconcileGitHubActivity({
                 fetchImplementation,
               ),
             );
-            const page_ = readObjectArray(response, "repositories");
+            const repositoriesPage = readObjectArray(response, "repositories");
             const reportedTotal = readNumber(response, "total_count");
-            if (page_ === null || reportedTotal === null) {
+            if (repositoriesPage === null || reportedTotal === null) {
               throw new Error("Invalid GitHub repositories response");
             }
             totalCount = reportedTotal;
-            repositories.push(...page_);
-            if (page_.length < 100) break;
+            repositories.push(...repositoriesPage);
+            if (repositoriesPage.length < 100) break;
             page += 1;
           }
 

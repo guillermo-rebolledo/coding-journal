@@ -1,13 +1,12 @@
 import {
   collaborationKinds,
+  readAttributionKeys,
   validRepositoryName,
   validSha,
   type ActivityRecord,
   type CollaborationKind,
 } from "@/lib/github-activity";
 import {
-  asString,
-  readArray,
   readBoolean,
   readNonEmptyString,
   readNumber,
@@ -696,7 +695,7 @@ export function parseCollaborationDeliveryMessage(
     return null;
   }
 
-  const attributionKeys = readSubjectAttributionKeys(subject);
+  const attributionKeys = readAttributionKeys(subject, isBoundedAttributionKey);
   if (attributionKeys === "invalid") return null;
 
   if (
@@ -742,23 +741,6 @@ export function parseCollaborationDeliveryMessage(
     message.collaboration.subject.attributionKeys = attributionKeys;
   }
   return message;
-}
-
-/**
- * Reads the optional `attributionKeys` list. Returns `undefined` when the
- * member is absent and the sentinel `"invalid"` when it is present but is not
- * a list of between one and four bounded keys.
- */
-function readSubjectAttributionKeys(
-  subject: JsonObject,
-): string[] | undefined | "invalid" {
-  if (subject["attributionKeys"] === undefined) return undefined;
-  const entries = readArray(subject, "attributionKeys");
-  if (entries === null || entries.length === 0 || entries.length > 4) {
-    return "invalid";
-  }
-  const keys = entries.map((entry) => asString(entry));
-  return keys.every((key) => isBoundedAttributionKey(key)) ? keys : "invalid";
 }
 
 function isBoundedAttributionKey(value: string | null): value is string {

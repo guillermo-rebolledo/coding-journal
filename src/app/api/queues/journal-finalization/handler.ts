@@ -24,7 +24,7 @@ const topic: QueueTopic = "journal-finalization";
 export type FinalizationConsumerDependencies = {
   leases: QueueLeaseStore;
   circuits: CircuitStore;
-  process: (
+  finalize: (
     payload: JsonObject | null,
     deliveryCount: number,
     now: Date,
@@ -41,7 +41,7 @@ export type FinalizationConsumerDependencies = {
 export function createFinalizationConsumer({
   leases,
   circuits,
-  process: runFinalization,
+  finalize,
 }: FinalizationConsumerDependencies) {
   return {
     async handle(
@@ -59,7 +59,7 @@ export function createFinalizationConsumer({
           now,
           jobId,
         });
-        if (globalThis.process.env.OPENAI_API_KEY) {
+        if (process.env.OPENAI_API_KEY) {
           await assertProviderAvailable({
             service: "openai",
             store: circuits,
@@ -68,7 +68,7 @@ export function createFinalizationConsumer({
           });
         }
 
-        await runFinalization(payload, metadata.deliveryCount, now);
+        await finalize(payload, metadata.deliveryCount, now);
 
         logServiceEvent({
           category: "finalization",

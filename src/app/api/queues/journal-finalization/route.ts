@@ -23,7 +23,7 @@ function configuredNumber(value: string | undefined, fallback: number) {
 const consumer = createFinalizationConsumer({
   leases: queueLeaseRepository,
   circuits: serviceCircuitRepository,
-  process: (payload, deliveryCount, now) =>
+  finalize: (payload, deliveryCount, now) =>
     processJournalFinalization(
       payload,
       deliveryCount,

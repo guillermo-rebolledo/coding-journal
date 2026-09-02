@@ -36,14 +36,6 @@ function statusLabel(day: JournalHistoryItem) {
 }
 
 /**
- * History index — frame 1i of the look-and-feel reference
- * (`docs/design/Coding Journal look and feel.html`).
- *
- * A divided list grouped by month, not a gallery of day cards. Each row states
- * the date, the time zone it was recorded in, and its lifecycle state in
- * words, so nothing about finalization depends on colour.
- */
-/**
  * The boundaries this page reaches. They are parameters rather than module
  * imports so a test can supply real stand-ins and still render the page it is
  * describing.
@@ -55,6 +47,14 @@ export type HistoryPageDependencies = {
   redirect: (destination: string) => never;
 };
 
+/**
+ * History index — frame 1i of the look-and-feel reference
+ * (`docs/design/Coding Journal look and feel.html`).
+ *
+ * A divided list grouped by month, not a gallery of day cards. Each row states
+ * the date, the time zone it was recorded in, and its lifecycle state in
+ * words, so nothing about finalization depends on colour.
+ */
 export async function renderJournalHistoryPage({
   requestHeaders,
   getSession,

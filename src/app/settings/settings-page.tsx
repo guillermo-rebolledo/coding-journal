@@ -18,14 +18,6 @@ import type { JournalOnboarding } from "@/lib/journal";
 import type { JournalSession } from "@/lib/session";
 
 /**
- * Settings — frame 1k of the look-and-feel reference
- * (`docs/design/Coding Journal look and feel.html`).
- *
- * Grouped rows with section labels replace the card-per-installation gallery
- * and the explainer cards. Every palette keeps working in light and dark,
- * because everything here is a semantic role rather than a hue.
- */
-/**
  * The boundaries this page reaches. They are parameters rather than module
  * imports so a test can supply real stand-ins and still render the page it is
  * describing.
@@ -44,6 +36,14 @@ export type SettingsPageDependencies = {
   redirect: (destination: string) => never;
 };
 
+/**
+ * Settings — frame 1k of the look-and-feel reference
+ * (`docs/design/Coding Journal look and feel.html`).
+ *
+ * Grouped rows with section labels replace the card-per-installation gallery
+ * and the explainer cards. Every palette keeps working in light and dark,
+ * because everything here is a semantic role rather than a hue.
+ */
 export async function renderSettingsPage(
   searchParams:
     | Promise<Record<string, string | string[] | undefined>>

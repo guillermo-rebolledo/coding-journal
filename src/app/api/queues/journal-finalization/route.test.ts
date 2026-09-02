@@ -40,7 +40,7 @@ const consumer = createFinalizationConsumer({
     recordFailure: boundaries.recordFailure,
     readAll: boundaries.readAll,
   },
-  process: boundaries.process,
+  finalize: boundaries.process,
 });
 
 const message = {

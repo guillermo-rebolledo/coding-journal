@@ -82,7 +82,7 @@ export async function renderSettingsPage(
               label="Time zone"
               supporting={
                 onboarding.timeZone
-                  ? `Your journal follows calendar days in ${onboarding.timeZone}, including daylight-saving changes.`
+                  ? `Your journal follows calendar days in ${onboarding.timeZone}, including daylight-saving changes. This choice is fixed after onboarding because changing it would move activity between dated journal days.`
                   : "Not confirmed yet. Open Today to finish onboarding."
               }
             />
@@ -110,7 +110,7 @@ export async function renderSettingsPage(
           <ListSurface>
             <SettingsRow
               label="Preview source"
-              supporting="When available, organization Projects coverage depends on GitHub preview interfaces and is always labeled best-effort."
+              supporting="When available, organization Projects coverage depends on GitHub preview interfaces and is always labelled best-effort."
             />
             <SettingsRow
               label="Reconciliation only"

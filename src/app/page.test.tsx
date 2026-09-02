@@ -30,10 +30,9 @@ describe("landing page", () => {
       ["Terms", "/terms"],
       ["Data access", "/data-access"],
     ] as const) {
-      expect(within(footer).getByRole("link", { name })).toHaveAttribute(
-        "href",
-        href,
-      );
+      const link = within(footer).getByRole("link", { name });
+      expect(link).toHaveAttribute("href", href);
+      expect(link).toHaveClass("underline");
     }
   });
 

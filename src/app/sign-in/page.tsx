@@ -13,11 +13,11 @@ export const metadata: Metadata = {
 /** The sign-in failures GitHub reports, and what each one means here. */
 const errors = {
   access_denied:
-    "GitHub sign-in was cancelled. You can try again when you’re ready.",
+    "GitHub sign-in was cancelled. You can try again when you're ready.",
   email_not_found:
-    "GitHub did not provide a usable profile. Check the app’s email permission, then try again.",
+    "GitHub did not provide a usable profile. Check the app's email permission, then try again.",
   email_is_missing:
-    "GitHub did not provide a usable profile. Check the app’s email permission, then try again.",
+    "GitHub did not provide a usable profile. Check the app's email permission, then try again.",
 };
 
 type SignInErrorCode = keyof typeof errors;

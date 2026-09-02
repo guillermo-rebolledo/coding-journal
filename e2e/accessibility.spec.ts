@@ -75,6 +75,38 @@ test("the category table clears the contrast floor in every palette and theme", 
   }
 });
 
+test("compact form controls keep iOS-safe text sizing", async ({
+  context,
+  isMobile,
+  page,
+}) => {
+  test.skip(Boolean(isMobile), "This check sets its own compact viewport.");
+  await signIn(context, "all");
+  await page.setViewportSize({ width: 375, height: 812 });
+
+  for (const path of ["/journal", "/settings"]) {
+    await page.goto(path);
+    const undersized = await page
+      .locator("input:not([type=hidden]):not([type=radio]), select, textarea")
+      .filter({ visible: true })
+      .evaluateAll((controls) =>
+        controls
+          .filter(
+            (control) =>
+              Number.parseFloat(getComputedStyle(control).fontSize) < 16,
+          )
+          .map((control) => ({
+            name:
+              control.getAttribute("aria-label") ??
+              control.getAttribute("name") ??
+              control.tagName,
+            fontSize: getComputedStyle(control).fontSize,
+          })),
+      );
+    expect(undersized, path).toEqual([]);
+  }
+});
+
 const publicRoutes = [
   { name: "landing", path: "/" },
   { name: "sign-in", path: "/sign-in" },

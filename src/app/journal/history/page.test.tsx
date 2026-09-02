@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -178,6 +178,30 @@ describe("journal history browsing", () => {
     expect(
       screen.getByText(/Recorded facts, aggregate metrics, evidence/),
     ).toBeInTheDocument();
+
+    const finalLayout = screen.getByRole("group", {
+      name: "Final evidence layout",
+    });
+    expect(
+      screen.getByRole("group", { name: "Late corrections layout" }),
+    ).toBeInTheDocument();
+    for (const name of [
+      "Final evidence repository",
+      "Final evidence activity type",
+      "Late corrections repository",
+      "Late corrections activity type",
+    ]) {
+      expect(screen.getByRole("combobox", { name })).toBeInTheDocument();
+    }
+
+    fireEvent.click(
+      within(finalLayout).getByRole("button", {
+        name: "Group by repository",
+      }),
+    );
+    expect(
+      screen.queryByRole("region", { name: "acme/journal" }),
+    ).not.toBeInTheDocument();
   });
 
   it.each(["not-a-date", "2026-08-01"])(

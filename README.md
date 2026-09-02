@@ -115,6 +115,20 @@ Coding Journal adds Vercel’s exact deployment, branch, and production URLs to 
 
 Never expose GitHub credentials or provider tokens through `NEXT_PUBLIC_*` variables. Better Auth encrypts OAuth tokens before database storage, and browser-facing token endpoints are disabled.
 
+## Operating the service
+
+[Operating Coding Journal](docs/operations.md) is the guide for a public
+deployment: the Vercel WAF configuration (checked in at
+`docs/operations/firewall-rules.json`), the per-user and product-wide request
+budgets, queue concurrency, the provider circuit breakers, what the structured
+logs may contain, and the `/api/ops/health` view that answers "what is failing?"
+without an error-tracking vendor.
+
+Vercel Analytics and Speed Insights are enabled in the app, with every
+measurement reduced to a route before it leaves the browser — a journal date
+never becomes a URL Vercel receives. Enable both products in the Vercel
+dashboard; until then the components are inert.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

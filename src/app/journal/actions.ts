@@ -22,13 +22,36 @@ import {
 } from "@/lib/journal-summary";
 import { journalSummaryRepository } from "@/lib/journal-summary-repository";
 import { openAiSummaryProvider } from "@/lib/openai-summary";
+import { rateLimitMessage, type RateLimitDecision } from "@/lib/rate-limit";
+import { spendRequestBudget } from "@/lib/request-budget";
 
 export type TimeZoneActionState = { error: string | null };
 export type RefreshActionResult = {
-  outcome: "reconciled" | "cooldown" | "rate-limited" | "unavailable";
+  outcome:
+    | "reconciled"
+    | "cooldown"
+    | "rate-limited"
+    | "limited"
+    | "unavailable";
   message: string;
   nextSyncAt: string | null;
 };
+
+/**
+ * A refused request states what happened, what still works, and when it
+ * returns — the same sentence shape every limit in the product uses, so the
+ * recorded journal below it never has to look degraded.
+ */
+function limitedResult(
+  decision: RateLimitDecision,
+  now: Date,
+): RefreshActionResult {
+  return {
+    outcome: "limited",
+    message: rateLimitMessage(decision, now),
+    nextSyncAt: decision.resetAt.toISOString(),
+  };
+}
 
 async function requireUser() {
   const session = await getJournalSession(await headers());
@@ -69,6 +92,14 @@ export async function refreshTodayJournal(): Promise<RefreshActionResult> {
   }
 
   const now = new Date();
+  const userBudget = await spendRequestBudget({
+    policy: "journal-refresh",
+    userId: session.user.id,
+    now,
+    event: "journal-refresh-limited",
+  });
+  if (userBudget && !userBudget.allowed) return limitedResult(userBudget, now);
+
   const localDate = getLocalDayWindow(now, onboarding.timeZone).localDate;
   let storedJournal: Awaited<
     ReturnType<typeof githubActivityRepository.read>
@@ -97,6 +128,19 @@ export async function refreshTodayJournal(): Promise<RefreshActionResult> {
       nextSyncAt: nextCooldownAt.toISOString(),
     };
   }
+
+  // The product-wide GitHub budget is the backstop behind the per-user rules:
+  // it is spent only when a reconciliation is actually about to run.
+  const globalBudget = isE2EJournalUser(session.user.id)
+    ? null
+    : await spendRequestBudget({
+        policy: "github-sync-daily",
+        now,
+        event: "github-sync-budget-exhausted",
+        service: "github",
+      });
+  if (globalBudget && !globalBudget.allowed)
+    return limitedResult(globalBudget, now);
 
   const installations = await getGitHubInstallations(session.user.id);
   const journal = await getTodayJournal({

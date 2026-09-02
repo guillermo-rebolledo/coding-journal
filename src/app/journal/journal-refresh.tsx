@@ -8,6 +8,7 @@ import {
   refreshTodayJournal,
   type RefreshActionResult,
 } from "@/app/journal/actions";
+import { LimitNotice } from "@/components/journal/limit-notice";
 import { Button } from "@/components/ui/button";
 
 const storedReloadIntervalMs = 30 * 60 * 1000;
@@ -78,6 +79,14 @@ export function JournalRefresh({
             }).format(new Date(availableAt))}
           </time>
         </p>
+      ) : null}
+      {/*
+       * A refused refresh is shown, not only announced: the same limit band
+       * every other boundary uses, in the slot directly under the action.
+       * Everything already recorded stays exactly as it was above it.
+       */}
+      {result && result.outcome === "limited" ? (
+        <LimitNotice message={result.message} className="mt-3 max-w-[42ch]" />
       ) : null}
       <p role="status" aria-live="polite" className="sr-only">
         {result?.message ?? ""}

@@ -454,6 +454,76 @@ export const githubAccessBlock = pgTable(
   ],
 );
 
+/**
+ * Fixed-window request and product budgets. One row per policy and subject, so
+ * the table stays bounded: the atomic upsert in the repository resets the
+ * window in place instead of accumulating one row per window. Subjects are
+ * opaque digests, never a user id, so a counter cannot re-identify anyone
+ * after their account is deleted.
+ */
+export const rateLimitCounter = pgTable(
+  "rate_limit_counter",
+  {
+    id: text("id").primaryKey(),
+    scope: text("scope").notNull(),
+    subject: text("subject").notNull(),
+    count: integer("count").default(0).notNull(),
+    windowStartedAt: timestamp("window_started_at", {
+      withTimezone: true,
+    }).notNull(),
+    windowEndsAt: timestamp("window_ends_at", {
+      withTimezone: true,
+    }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("rate_limit_counter_scope_subject_uidx").on(
+      table.scope,
+      table.subject,
+    ),
+    index("rate_limit_counter_window_idx").on(table.windowEndsAt),
+  ],
+);
+
+/**
+ * Circuit-breaker state for an outbound provider. One row per service, so the
+ * breaker is shared by every function instance instead of living in a single
+ * process that Fluid Compute can recycle at any time.
+ */
+export const serviceCircuit = pgTable("service_circuit", {
+  service: text("service").primaryKey(),
+  state: text("state").$type<"closed" | "open">().notNull(),
+  failureCount: integer("failure_count").default(0).notNull(),
+  windowStartedAt: timestamp("window_started_at", {
+    withTimezone: true,
+  }).notNull(),
+  openedAt: timestamp("opened_at", { withTimezone: true }),
+  retryAt: timestamp("retry_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+/**
+ * Bounded concurrency for queue consumers. Slots are numbered, so a consumer
+ * either takes a free slot or is told the topic is saturated; it never guesses
+ * from a count that another instance is already changing.
+ */
+export const serviceLease = pgTable(
+  "service_lease",
+  {
+    id: text("id").primaryKey(),
+    topic: text("topic").notNull(),
+    slot: integer("slot").notNull(),
+    holder: text("holder").notNull(),
+    acquiredAt: timestamp("acquired_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("service_lease_topic_idx").on(table.topic, table.slot)],
+);
+
 export const userRelations = relations(user, ({ many, one }) => ({
   sessions: many(session),
   accounts: many(account),

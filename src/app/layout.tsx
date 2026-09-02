@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
+import { ProductAnalytics } from "@/components/product-analytics";
 import { ThemeProvider } from "@/components/theme-provider";
 
 import "@fontsource-variable/roboto-flex";
@@ -21,6 +22,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body>
         <ThemeProvider defaultTheme="system">{children}</ThemeProvider>
+        <ProductAnalytics />
       </body>
     </html>
   );

@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { deleteAccount } from "@/app/settings/actions";
+import { LimitNotice } from "@/components/journal/limit-notice";
 import { GitHubAccessOverview } from "@/components/github-access-overview";
 import { AppShell } from "@/components/journal/app-shell";
 import {
@@ -14,6 +15,7 @@ import { PalettePicker } from "@/components/palette-picker";
 import { ThemeModePicker } from "@/components/theme-mode-picker";
 import { Button } from "@/components/ui/button";
 import { refreshGitHubConnections } from "@/lib/github-connection";
+import { rateLimitPolicyMessage } from "@/lib/rate-limit";
 import { getJournalOnboarding } from "@/lib/journal";
 import { getJournalSession } from "@/lib/session";
 
@@ -28,7 +30,12 @@ export const dynamic = "force-dynamic";
  * and the explainer cards. Every palette keeps working in light and dark,
  * because everything here is a semantic role rather than a hue.
  */
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+} = {}) {
+  const limited = (await searchParams)?.limited === "deletion";
   const requestHeaders = await headers();
   const session = await getJournalSession(requestHeaders);
   if (!session) redirect("/sign-in?next=%2Fsettings");
@@ -187,6 +194,12 @@ export default async function SettingsPage() {
               every session. Coding Journal will also revoke its GitHub OAuth
               grant when GitHub is reachable. This cannot be undone.
             </p>
+            {limited ? (
+              <LimitNotice
+                message={rateLimitPolicyMessage("account-deletion")}
+                className="mt-5"
+              />
+            ) : null}
             <form
               action={deleteAccount}
               className="mt-5 flex max-w-xl flex-col gap-3 sm:flex-row sm:items-end"

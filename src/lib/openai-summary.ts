@@ -1,4 +1,7 @@
 import type { SummaryProvider } from "@/lib/journal-summary";
+import { serviceCircuitRepository } from "@/lib/service-circuit-repository";
+import { withProviderCircuit } from "@/lib/service-circuit";
+import { logServiceEvent } from "@/lib/telemetry";
 
 type ResponsesEnvelope = {
   output_text?: string;
@@ -21,20 +24,38 @@ function positiveNumber(value: string | undefined, fallback: number) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+/**
+ * Every call is gated by the shared summary circuit, so a provider outage
+ * costs one failing request per cooldown instead of one per queued journal.
+ */
 export const openAiSummaryProvider: SummaryProvider = async (request) => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("Summary provider is not configured");
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const startedAt = Date.now();
+  const response = await withProviderCircuit(
+    { service: "openai", store: serviceCircuitRepository },
+    async () => {
+      const result = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!result.ok)
+        throw new Error(`Summary provider returned ${result.status}`);
+      return result;
     },
-    body: JSON.stringify(request),
-    signal: AbortSignal.timeout(30_000),
+  );
+  logServiceEvent({
+    category: "provider",
+    event: "summary-generated",
+    outcome: "ok",
+    service: "openai",
+    durationMs: Date.now() - startedAt,
   });
-  if (!response.ok)
-    throw new Error(`Summary provider returned ${response.status}`);
   const envelope = (await response.json()) as ResponsesEnvelope;
   const text = outputText(envelope);
   if (!text) throw new Error("Summary provider returned no structured output");

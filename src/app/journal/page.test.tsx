@@ -52,6 +52,19 @@ const navigation = vi.hoisted(() => ({
   refresh: vi.fn(),
 }));
 
+// Request budgets and provider circuits are storage boundaries like any other
+// repository here; the policies themselves are covered by their own tests.
+const budgetBoundary = vi.hoisted(() => ({
+  increment: vi.fn(),
+}));
+
+const circuitBoundary = vi.hoisted(() => ({
+  tryEnter: vi.fn(),
+  recordSuccess: vi.fn(),
+  recordFailure: vi.fn(),
+  readAll: vi.fn(),
+}));
+
 vi.mock("@/lib/session", () => ({
   getJournalSession: authBoundary.getSession,
 }));
@@ -66,6 +79,14 @@ vi.mock("@/lib/github-activity-repository", () => ({
 
 vi.mock("@/lib/journal-summary-repository", () => ({
   journalSummaryRepository: summaryBoundary,
+}));
+
+vi.mock("@/lib/rate-limit-repository", () => ({
+  rateLimitRepository: budgetBoundary,
+}));
+
+vi.mock("@/lib/service-circuit-repository", () => ({
+  serviceCircuitRepository: circuitBoundary,
 }));
 
 vi.mock("@/lib/github-user-token", () => ({
@@ -142,6 +163,19 @@ describe("protected journal boundary", () => {
       monthlyCostUsd: 0,
     });
     navigation.refresh.mockReset();
+    budgetBoundary.increment.mockReset();
+    budgetBoundary.increment.mockImplementation(
+      async ({ now, windowMs }: { now: Date; windowMs: number }) => ({
+        count: 1,
+        windowEndsAt: new Date(now.getTime() + windowMs),
+      }),
+    );
+    circuitBoundary.tryEnter.mockReset();
+    circuitBoundary.tryEnter.mockResolvedValue({ allowed: true });
+    circuitBoundary.recordSuccess.mockReset();
+    circuitBoundary.recordFailure.mockReset();
+    circuitBoundary.readAll.mockReset();
+    circuitBoundary.readAll.mockResolvedValue([]);
     journalBoundary.getOnboarding.mockReset();
     installationBoundary.getInstallations.mockReset();
     installationBoundary.getInstallations.mockResolvedValue([]);
@@ -1185,6 +1219,72 @@ describe("protected journal boundary", () => {
     navigation.refresh.mockClear();
     vi.advanceTimersByTime(30 * 60 * 1000);
     expect(navigation.refresh).toHaveBeenCalledOnce();
+    expect(githubBoundary.fetch).not.toHaveBeenCalled();
+  });
+
+  it("states a request limit in words and leaves the recorded day untouched", async () => {
+    vi.setSystemTime(new Date("2026-08-31T12:10:00Z"));
+    authBoundary.getSession.mockResolvedValue({
+      session: { id: "session-1", token: "server-only-token" },
+      user: { id: "user-1", name: "Ada Lovelace", email: "ada@example.com" },
+    });
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "best-effort",
+    });
+    storedJournal = {
+      localDate: "2026-08-31",
+      timeZone: "America/Mexico_City",
+      status: "complete",
+      refreshedAt: new Date("2026-08-31T12:00:00Z"),
+      lastAttemptAt: new Date("2026-08-31T11:00:00Z"),
+    };
+    storedActivities.set("github:issue-opened:43:51", {
+      deduplicationKey: "github:issue-opened:43:51",
+      localDate: "2026-08-31",
+      kind: "issue-opened",
+      actorId: "7",
+      actorLogin: "ada",
+      repositoryId: "43",
+      repositoryName: "acme/web",
+      evidenceUrl: "https://github.com/acme/web/issues/51",
+      visibility: "public",
+      source: "github-events",
+      subjectId: "51",
+      subjectNumber: 51,
+      subjectTitle: "Polish Today filters",
+      occurredAt: new Date("2026-08-31T11:30:00Z"),
+      observedAt: new Date("2026-08-31T11:31:00Z"),
+      authoredBeforeDay: false,
+      installationId: null,
+    });
+    budgetBoundary.increment.mockResolvedValue({
+      count: 999,
+      windowEndsAt: new Date("2026-08-31T12:17:00Z"),
+    });
+
+    render(
+      <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Today" }));
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole("status")
+          .map((element) => element.textContent ?? ""),
+      ).toContain(
+        "Request limit reached. Everything already recorded stays on screen. Try again in about 7 minutes.",
+      ),
+    );
+    // The refusal is a status, not an alert, and it is visible rather than
+    // only announced. The recorded journal beside it is untouched.
+    expect(
+      screen.getByText("Request limit reached.", {
+        selector: "p:not(.sr-only)",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Opened issue #51")).toBeInTheDocument();
     expect(githubBoundary.fetch).not.toHaveBeenCalled();
   });
 

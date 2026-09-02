@@ -18,6 +18,14 @@ const errors: Record<string, string> = {
     "GitHub did not provide a usable profile. Check the app’s email permission, then try again.",
 };
 
+/**
+ * Sign-in — frame 1l of the look-and-feel reference
+ * (`docs/design/Coding Journal look and feel.html`).
+ *
+ * The one card that earns elevation: a single focused decision on an otherwise
+ * empty page. Errors sit above the action and never replace it, so the
+ * recovery path is always the same button.
+ */
 export default async function SignInPage({
   searchParams,
 }: {
@@ -32,7 +40,7 @@ export default async function SignInPage({
     <main className="grid min-h-screen place-items-center bg-m3-surface-container-low px-4 py-10">
       <section
         aria-labelledby="sign-in-title"
-        className="w-full max-w-md rounded-m3-2xl bg-card p-7 shadow-m3-3 sm:p-9"
+        className="w-full max-w-md rounded-m3-xl bg-m3-surface p-7 shadow-m3-3 sm:p-9"
       >
         <div className="flex items-center justify-between">
           <Link
@@ -44,33 +52,30 @@ export default async function SignInPage({
           </Link>
           <ThemeMenu />
         </div>
-        <p className="text-m3-label-lg-emphasized mt-10 text-primary">
-          CODING JOURNAL
-        </p>
         <h1
           id="sign-in-title"
-          className="mt-3 text-m3-headline-md text-balance"
+          className="mt-10 text-m3-headline-sm text-balance"
         >
           Pick up the thread of your day.
         </h1>
-        <p className="mt-4 text-m3-body-md text-muted-foreground">
+        <p className="mt-3 text-m3-body-md text-m3-on-surface-variant">
           Sign in with GitHub to open your private journal. No password is
           needed.
         </p>
         {message ? (
-          <div
+          <p
             role="alert"
-            className="mt-6 rounded-m3-md bg-destructive/10 p-4 text-m3-body-sm text-destructive"
+            className="mt-6 rounded-m3-md bg-m3-error-container px-4 py-3 text-m3-body-md text-m3-on-error-container"
           >
             {message}
-          </div>
+          </p>
         ) : null}
-        <div className="mt-8">
+        <div className="mt-7">
           <GitHubSignInButton />
         </div>
-        <p className="mt-8 text-m3-body-sm text-muted-foreground">
-          We request basic profile and email access only. Provider tokens stay
-          on the server and are encrypted before storage.
+        <p className="mt-6 text-m3-body-sm text-m3-on-surface-variant">
+          Basic profile and email only. Provider tokens stay on the server and
+          are encrypted before storage.
         </p>
       </section>
     </main>

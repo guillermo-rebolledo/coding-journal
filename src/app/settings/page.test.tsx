@@ -78,7 +78,9 @@ describe("settings page", () => {
     expect(
       screen.getByRole("heading", { name: "GitHub access" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Theme" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Appearance" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /Lavender/ })).toBeChecked();
     expect(screen.getByRole("radio", { name: /Warm ink/ })).not.toBeChecked();
     expect(screen.getByRole("radio", { name: /Tide/ })).toBeInTheDocument();

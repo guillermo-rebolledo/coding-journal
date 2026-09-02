@@ -1,23 +1,31 @@
-import { ArrowLeft, GitBranch } from "lucide-react";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { BrandMark } from "@/components/brand-mark";
 import { GitHubAccessOverview } from "@/components/github-access-overview";
+import { AppShell } from "@/components/journal/app-shell";
+import {
+  ListSurface,
+  SectionGroup,
+  SettingsRow,
+} from "@/components/journal/section-list";
 import { PalettePicker } from "@/components/palette-picker";
-import { SignOutButton } from "@/components/sign-out-button";
-import { ThemeMenu } from "@/components/theme-menu";
-import { buttonVariants } from "@/components/ui/button-variants";
+import { ThemeModePicker } from "@/components/theme-mode-picker";
 import { refreshGitHubConnections } from "@/lib/github-connection";
 import { getJournalOnboarding } from "@/lib/journal";
 import { getJournalSession } from "@/lib/session";
-import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 
+/**
+ * Settings — frame 1k of the look-and-feel reference
+ * (`docs/design/Coding Journal look and feel.html`).
+ *
+ * Grouped rows with section labels replace the card-per-installation gallery
+ * and the explainer cards. Every palette keeps working in light and dark,
+ * because everything here is a semantic role rather than a hue.
+ */
 export default async function SettingsPage() {
   const requestHeaders = await headers();
   const session = await getJournalSession(requestHeaders);
@@ -27,92 +35,91 @@ export default async function SettingsPage() {
     getJournalOnboarding(session.user.id),
     refreshGitHubConnections(requestHeaders, session.user.id),
   ]);
-  const hasInstallation = installations.some(
-    (installation) => installation.status === "active",
-  );
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-background">
-        <nav
-          aria-label="Settings navigation"
-          className="mx-auto flex min-h-20 max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-3 sm:px-6"
+    <AppShell current="settings">
+      <div className="max-w-[72ch]">
+        <h1 className="text-m3-headline-lg text-balance m3-expanded:text-m3-display-sm">
+          Settings
+        </h1>
+
+        <SectionGroup
+          id="journal-settings-heading"
+          title="Journal"
+          className="mt-10"
         >
-          <Link href="/journal" className="flex min-h-11 items-center gap-3">
-            <BrandMark />
-            <div>
-              <p className="text-m3-title-md-emphasized">Coding Journal</p>
-              <p className="text-m3-body-sm text-muted-foreground">Settings</p>
-            </div>
-          </Link>
-          <div className="flex items-start gap-2">
-            <ThemeMenu />
-            <SignOutButton />
-          </div>
-        </nav>
-      </header>
+          <ListSurface>
+            <SettingsRow
+              label="Time zone"
+              supporting={
+                onboarding.timeZone
+                  ? `Your journal follows calendar days in ${onboarding.timeZone}, including daylight-saving changes.`
+                  : "Not confirmed yet. Open Today to finish onboarding."
+              }
+            />
+          </ListSurface>
+        </SectionGroup>
 
-      <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6 sm:py-16">
-        <Link
-          href="/journal"
-          className={cn(buttonVariants({ variant: "ghost" }), "-ml-4")}
+        <SectionGroup
+          id="github-access-heading"
+          title="GitHub access"
+          description="Review exactly what GitHub has granted. Coding Journal never claims coverage outside these installations."
+          className="mt-10"
         >
-          <ArrowLeft aria-hidden />
-          Back to Today
-        </Link>
-
-        <div className="mt-7 grid gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <div>
-            <p className="text-m3-label-lg-emphasized text-primary">
-              CONNECTIONS
-            </p>
-            <h1 className="mt-3 text-m3-headline-lg">GitHub access</h1>
-            <p className="mt-4 max-w-2xl text-m3-body-lg text-muted-foreground">
-              Review exactly what GitHub has granted. Coding Journal never
-              claims coverage outside these installations.
-            </p>
-          </div>
-          <Link
-            href="/api/github/install?from=settings"
-            className={cn(buttonVariants({ size: "lg" }), "w-full lg:w-auto")}
-          >
-            <GitBranch aria-hidden />
-            {hasInstallation
-              ? "Add another installation"
-              : "Install GitHub App"}
-          </Link>
-        </div>
-
-        <section aria-label="GitHub connection status" className="mt-9">
           <GitHubAccessOverview
             accessMode={onboarding.githubAccessMode}
             installations={installations}
           />
-        </section>
+        </SectionGroup>
 
-        <aside className="bg-secondary-container mt-8 rounded-m3-xl p-5 text-secondary-foreground sm:p-6">
-          <h2 className="text-m3-title-md-emphasized">Private by design</h2>
-          <p className="mt-2 text-m3-body-md">
-            OAuth and installation credentials stay encrypted on the server.
-            Repository names and private visibility are handled only on the
-            signed-in server boundary and are excluded from telemetry.
-          </p>
-        </aside>
+        <SectionGroup
+          id="coverage-limits-heading"
+          title="Coverage and privacy"
+          description="What Coding Journal can and cannot see, and how it handles what it stores."
+          className="mt-10"
+        >
+          <ListSurface>
+            <SettingsRow
+              label="Preview source"
+              supporting="When available, organization Projects coverage depends on GitHub preview interfaces and is always labeled best-effort."
+            />
+            <SettingsRow
+              label="Reconciliation only"
+              supporting="User-authorized Gists and lightweight activity can arrive later because GitHub does not provide matching repository webhooks."
+            />
+            <SettingsRow
+              label="Private by design"
+              supporting="OAuth and installation credentials stay encrypted on the server. Repository names and private visibility are handled only on the signed-in server boundary and are excluded from telemetry."
+            />
+          </ListSurface>
+        </SectionGroup>
 
-        <section aria-labelledby="appearance-heading" className="mt-14">
-          <p className="text-m3-label-lg-emphasized text-primary">APPEARANCE</p>
-          <h2 id="appearance-heading" className="mt-3 text-m3-headline-lg">
-            Theme
-          </h2>
-          <p className="mt-4 max-w-2xl text-m3-body-lg text-muted-foreground">
-            Pick the palette every screen uses, in both light and dark mode. The
-            choice applies to this browser right away.
-          </p>
-          <div className="mt-7">
-            <PalettePicker />
-          </div>
-        </section>
-      </main>
-    </div>
+        <SectionGroup
+          id="appearance-heading"
+          title="Appearance"
+          description="Mode and palette apply to every screen, in this browser, right away."
+          className="mt-10"
+        >
+          <ListSurface>
+            <SettingsRow
+              label="Mode"
+              supporting="System follows your device setting."
+            >
+              <div className="mt-4">
+                <ThemeModePicker />
+              </div>
+            </SettingsRow>
+            <SettingsRow
+              label="Palette"
+              supporting="Swatches preview primary, secondary container and tertiary container in the current mode."
+            >
+              <div className="mt-4">
+                <PalettePicker />
+              </div>
+            </SettingsRow>
+          </ListSurface>
+        </SectionGroup>
+      </div>
+    </AppShell>
   );
 }

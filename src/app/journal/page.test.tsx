@@ -113,6 +113,17 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+/**
+ * Metric values live in the "All 16 categories" breakdown as a definition
+ * list, per the look-and-feel reference's compact metric overview
+ * (`docs/design/Coding Journal look and feel.html`, frame 1e).
+ */
+function metricValue(label: string) {
+  return within(
+    screen.getByRole("group", { name: "All 16 categories" }),
+  ).getByText(label, { selector: "dt" }).nextElementSibling?.textContent;
+}
+
 describe("protected journal boundary", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -264,7 +275,7 @@ describe("protected journal boundary", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "Today, Monday, August 31" }),
+      screen.getByRole("heading", { name: "Monday, August 31" }),
     ).toBeInTheDocument();
     expect(screen.getByText("America/Mexico_City")).toBeInTheDocument();
     expect(screen.getByText("Best-effort journal")).toBeInTheDocument();
@@ -576,12 +587,12 @@ describe("protected journal boundary", () => {
       <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
     );
 
-    expect(screen.getByText("1 push")).toBeInTheDocument();
-    expect(screen.getByText("1 commit")).toBeInTheDocument();
+    expect(metricValue("Pushes")).toBe("1");
+    expect(metricValue("Commits")).toBe("1");
     expect(screen.getByText("Partial GitHub response")).toBeInTheDocument();
     expect(screen.getByText("Authored before today")).toBeInTheDocument();
     expect(
-      screen.getAllByText("acme/private-engine", { selector: "p" }),
+      screen.getAllByText("acme/private-engine", { selector: "span" }),
     ).toHaveLength(2);
     expect(
       screen.getByRole("link", { name: "View commit evidence" }),
@@ -704,24 +715,16 @@ describe("protected journal boundary", () => {
       <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
     );
 
-    expect(screen.getByText("1 issue update")).toBeInTheDocument();
-    expect(screen.getByText("0 pull request updates")).toBeInTheDocument();
-    expect(screen.getByText("1 review")).toBeInTheDocument();
-    expect(screen.getByText("1 merge")).toBeInTheDocument();
-    expect(screen.getByText("1 comment")).toBeInTheDocument();
+    expect(metricValue("Issue updates")).toBe("1");
+    expect(metricValue("Pull requests")).toBe("0");
+    expect(metricValue("Reviews")).toBe("1");
+    expect(metricValue("Merges")).toBe("1");
+    expect(metricValue("Comments")).toBe("1");
 
-    expect(
-      screen.getByRole("heading", { name: "Opened issue #41" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Commented on issue #41" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Reviewed pull request #52" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Merged pull request #52" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Opened issue #41")).toBeInTheDocument();
+    expect(screen.getByText("Commented on issue #41")).toBeInTheDocument();
+    expect(screen.getByText("Reviewed pull request #52")).toBeInTheDocument();
+    expect(screen.getByText("Merged pull request #52")).toBeInTheDocument();
     expect(
       screen.getAllByText("Reconciliation misses reopened issues"),
     ).toHaveLength(2);
@@ -816,9 +819,9 @@ describe("protected journal boundary", () => {
       <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
     );
 
-    expect(screen.getByText("1 ref change")).toBeInTheDocument();
-    expect(screen.getByText("1 release update")).toBeInTheDocument();
-    expect(screen.getByText("1 discussion update")).toBeInTheDocument();
+    expect(metricValue("Ref changes")).toBe("1");
+    expect(metricValue("Releases")).toBe("1");
+    expect(metricValue("Discussions")).toBe("1");
     expect(screen.getByText("Created branch")).toBeInTheDocument();
     expect(screen.getByText("Published release")).toBeInTheDocument();
     expect(screen.getByText("Commented on discussion #73")).toBeInTheDocument();
@@ -920,9 +923,9 @@ describe("protected journal boundary", () => {
       <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
     );
 
-    expect(screen.getByText("1 workflow run")).toBeInTheDocument();
-    expect(screen.getByText("1 deployment")).toBeInTheDocument();
-    expect(screen.getByText("1 package update")).toBeInTheDocument();
+    expect(metricValue("Workflow runs")).toBe("1");
+    expect(metricValue("Deployments")).toBe("1");
+    expect(metricValue("Package updates")).toBe("1");
     expect(screen.getAllByText("Succeeded")).toHaveLength(2);
     expect(screen.getByText("Failed")).toBeInTheDocument();
     expect(screen.getByText("Excluded from narrative")).toBeInTheDocument();
@@ -1036,9 +1039,9 @@ describe("protected journal boundary", () => {
       <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>,
     );
 
-    expect(screen.getByText("1 project update")).toBeInTheDocument();
-    expect(screen.getByText("2 Gist updates")).toBeInTheDocument();
-    expect(screen.getByText("1 social action")).toBeInTheDocument();
+    expect(metricValue("Project updates")).toBe("1");
+    expect(metricValue("Gist updates")).toBe("2");
+    expect(metricValue("Social actions")).toBe("1");
     expect(screen.getByText("Updated project #12")).toBeInTheDocument();
     expect(screen.getByText("Created Gist")).toBeInTheDocument();
     expect(screen.getByText("Observed starred Gist")).toBeInTheDocument();

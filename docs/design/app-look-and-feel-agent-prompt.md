@@ -1,5 +1,10 @@
 # Prompt: Design Coding Journal's look and feel
 
+> **The answer to this brief is `docs/design/Coding Journal look and feel.html`.**
+> That file is the approved look-and-feel reference and the source of truth for
+> every UI change. See `docs/design/README.md` for its frame index and the rules
+> it establishes. Where this brief and the reference disagree, the reference wins.
+
 You are the principal product designer and design engineer for **Coding Journal**, a private daily record that turns a developer's GitHub activity into a calm, trustworthy journal. The product promise is **“Your GitHub day, distilled.”**
 
 Your task is to create an implementation-ready visual and interaction direction for the whole product—not just a landing-page concept. Work from the repository and its GitHub Issues as primary sources. Treat existing behavior and copy as product evidence, but do not treat the current composition as visually final.

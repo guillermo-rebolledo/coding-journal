@@ -1,38 +1,39 @@
-import { LoaderCircle } from "lucide-react";
+import Link from "next/link";
 
 import { BrandMark } from "@/components/brand-mark";
+import { ProgressSteps } from "@/components/journal/progress-steps";
 
+/**
+ * Journal loading — the reusable progress pattern from frame 1l of the
+ * look-and-feel reference (`docs/design/Coding Journal look and feel.html`).
+ *
+ * A determinate bar plus a named step list rather than a full-page spinner
+ * takeover. The step labels alone carry the state, so the global
+ * reduced-motion block can stop the animation without losing information.
+ */
 export default function JournalLoading() {
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border">
-        <div className="mx-auto flex min-h-20 max-w-6xl items-center gap-3 px-4 py-3 sm:px-6">
+      <header className="flex min-h-18 items-center border-b border-m3-outline-variant px-4 sm:px-6">
+        <Link href="/journal" className="flex min-h-11 items-center gap-3">
           <BrandMark />
-          <div>
-            <p className="text-m3-title-md-emphasized">Coding Journal</p>
-            <p className="text-m3-body-sm text-muted-foreground">
-              Your private journal
-            </p>
-          </div>
-        </div>
-      </header>
-      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-16">
-        <div
-          role="status"
-          aria-live="polite"
-          className="rounded-m3-2xl bg-m3-surface-container-low px-6 py-16 text-center sm:px-10"
-        >
-          <span className="bg-primary-container mx-auto grid size-16 place-items-center rounded-m3-xl text-primary">
-            <LoaderCircle aria-hidden className="size-8 animate-spin" />
+          <span className="text-m3-title-md text-m3-on-surface">
+            Coding Journal
           </span>
-          <h1 className="mt-6 text-m3-headline-sm">
-            Reconciling today&apos;s activity
-          </h1>
-          <p className="mx-auto mt-3 max-w-lg text-m3-body-md text-muted-foreground">
-            Checking the GitHub access you granted and building a deduplicated
-            local-day journal.
-          </p>
-        </div>
+        </Link>
+      </header>
+      <main className="mx-auto max-w-[72ch] px-4 py-8 sm:px-6 sm:py-12">
+        <ProgressSteps
+          headingId="journal-loading-heading"
+          title="Building your journal"
+          description="Checking the access you granted and reconciling today's activity."
+          steps={[
+            { label: "Access checked", state: "done" },
+            { label: "Stored activity loaded", state: "done" },
+            { label: "Reconciling with GitHub", state: "working" },
+            { label: "Preparing today's page", state: "waiting" },
+          ]}
+        />
       </main>
     </div>
   );

@@ -44,7 +44,9 @@ for (const theme of ["Light", "Dark"] as const) {
     ]);
 
     await page.goto("/journal");
-    await expect(page.getByRole("heading", { name: /^Today, / })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: /day, / }),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "Choose color theme" }).click();
     await page.getByRole("menuitem", { name: theme }).click();
@@ -120,8 +122,15 @@ test("Today filters, groups, refreshes, and opens source evidence", async ({
   });
 
   await page.goto("/journal");
-  await expect(page.getByText("1 push")).toBeVisible();
-  await expect(page.getByText("1 issue update")).toBeVisible();
+  await expect(
+    page.getByText(/recorded events · .* categories with activity/),
+  ).toBeVisible();
+  await page.locator("summary", { hasText: "All 16 categories" }).click();
+  const categories = page.getByRole("group", { name: "All 16 categories" });
+  await expect(categories.getByText("Pushes", { exact: true })).toBeVisible();
+  await expect(
+    categories.getByText("Issue updates", { exact: true }),
+  ).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(

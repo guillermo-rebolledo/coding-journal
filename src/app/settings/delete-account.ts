@@ -1,4 +1,4 @@
-import type { RateLimitDecision } from "@/lib/rate-limit";
+import type { GuardDecision } from "@/lib/request-guard";
 import type { JournalSession } from "@/lib/session";
 import { logServiceEvent } from "@/lib/telemetry";
 
@@ -10,11 +10,8 @@ import { logServiceEvent } from "@/lib/telemetry";
 export type DeleteAccountDependencies = {
   requestHeaders: Headers;
   getSession: (requestHeaders: Headers) => Promise<JournalSession | null>;
-  spendBudget: (userId: string) => Promise<RateLimitDecision | null>;
-  deleteAccount: (
-    requestHeaders: Headers,
-    userId: string,
-  ) => Promise<void>;
+  guard: (userId: string) => Promise<GuardDecision>;
+  deleteAccount: (requestHeaders: Headers, userId: string) => Promise<void>;
   redirect: (destination: string) => never;
 };
 
@@ -28,7 +25,7 @@ export async function runDeleteAccount(
   {
     requestHeaders,
     getSession,
-    spendBudget,
+    guard,
     deleteAccount,
     redirect,
   }: DeleteAccountDependencies,
@@ -37,8 +34,8 @@ export async function runDeleteAccount(
   const session = await getSession(requestHeaders);
   if (!session) return redirect("/sign-in?next=%2Fsettings");
 
-  const budget = await spendBudget(session.user.id);
-  if (budget && !budget.allowed) return redirect("/settings?limited=deletion");
+  const guarded = await guard(session.user.id);
+  if (!guarded.proceed) return redirect("/settings?limited=deletion");
 
   await deleteAccount(requestHeaders, session.user.id);
   logServiceEvent({

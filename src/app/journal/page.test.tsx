@@ -132,14 +132,12 @@ function refreshTodayJournal() {
     requestHeaders: new Headers(),
     getSession: authBoundary.getSession,
     getOnboarding: journalBoundary.getOnboarding,
-    guard: (policy, userId, now, provider) =>
+    guard: (policy, userId, now) =>
       guardAction({
         policy,
         userId,
         now,
         rateStore: budgetBoundary,
-        provider,
-        circuitStore: provider ? circuitBoundary : undefined,
       }),
     readStoredJournal: (userId, localDate) =>
       activityRepositoryBoundary.read(userId, localDate),

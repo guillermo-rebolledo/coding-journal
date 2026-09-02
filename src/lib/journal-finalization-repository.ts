@@ -15,9 +15,7 @@ import {
   isActivityBlocked,
   neutralizeBlockedActivity,
 } from "@/lib/github-access-block";
-import {
-  activityRecordFromRow,
-} from "@/lib/github-activity";
+import { activityRecordFromRow } from "@/lib/github-activity";
 import type {
   FinalizationCandidate,
   FinalizationFailure,

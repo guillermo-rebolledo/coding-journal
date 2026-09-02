@@ -1,6 +1,7 @@
 import {
   activityIdentity,
   createActivityRecord,
+  githubRepositoryEvidenceUrl,
   operationsKinds,
   readAttributionKeys,
   validRepositoryName,
@@ -9,8 +10,12 @@ import {
   type ActivityStatus,
   type OperationsKind,
 } from "@/lib/github-activity";
-import { validDeliveryId } from "@/lib/github-webhook";
-import { isStaleGitHubDelivery } from "@/lib/github-delivery-rules";
+import {
+  boundedGitHubTitle,
+  githubSubjectTitleMaxLength,
+  isStaleGitHubDelivery,
+  validGitHubDeliveryId,
+} from "@/lib/github-delivery-rules";
 import {
   readBoolean,
   readNonEmptyString,
@@ -22,7 +27,7 @@ import {
 } from "@/lib/json-payload";
 import { getLocalDayWindow, parseDate } from "@/lib/time-zone";
 
-const subjectTitleMaxLength = 120;
+const subjectTitleMaxLength = githubSubjectTitleMaxLength;
 
 export const operationsWebhookEvents = [
   "workflow_run",
@@ -88,12 +93,7 @@ const packageActionKinds = {
 } as const satisfies Record<PackageAction, OperationsKind>;
 
 function boundedTitle(value: string | null) {
-  if (value === null) return null;
-  const title = value.trim();
-  if (!title) return null;
-  return title.length > subjectTitleMaxLength
-    ? `${title.slice(0, subjectTitleMaxLength - 1)}…`
-    : title;
+  return boundedGitHubTitle(value);
 }
 
 function workflowStatus(
@@ -117,7 +117,7 @@ export function extractOperationsDelivery({
   deliveryId: string;
   receivedAt: Date;
 }): OperationsExtraction {
-  if (!validDeliveryId(deliveryId) || payload === null) {
+  if (!validGitHubDeliveryId(deliveryId) || payload === null) {
     return { ok: false, reason: "malformed" };
   }
 
@@ -187,7 +187,11 @@ export function extractOperationsDelivery({
 
   const repositoryId = String(repositoryNumericId);
   const subjectId = String(runId);
-  const key = `github:workflow-run:${repositoryId}:${subjectId}:${runAttempt}`;
+  const key = activityIdentity.repository(
+    "workflow-run",
+    repositoryId,
+    `${subjectId}:${runAttempt}`,
+  ).deduplicationKey;
   return {
     ok: true,
     message: {
@@ -212,7 +216,10 @@ export function extractOperationsDelivery({
         status: approval
           ? "approved"
           : workflowStatus(action, readString(run, "conclusion")),
-        evidenceUrl: `https://github.com/${repositoryName}/actions/runs/${subjectId}/attempts/${runAttempt}`,
+        evidenceUrl: githubRepositoryEvidenceUrl(
+          repositoryName,
+          `actions/runs/${subjectId}/attempts/${runAttempt}`,
+        ),
         narrativeEligible: true,
       },
     },
@@ -313,7 +320,11 @@ function extractDeploymentDelivery(
       receivedAt: receivedAt.toISOString(),
       operation: {
         kind: "deployment",
-        deduplicationKey: `github:deployment:${repositoryId}:${deploymentId}`,
+        deduplicationKey: activityIdentity.repository(
+          "deployment",
+          repositoryId,
+          String(deploymentId),
+        ).deduplicationKey,
         attributionKey: attributionKeys[0]!,
         attributionKeys,
         attribution: directWorkflow ? "direct" : "linked",
@@ -327,7 +338,7 @@ function extractDeploymentDelivery(
         occurredAt: occurredAt.toISOString(),
         statusOccurredAt: outcomeAt.toISOString(),
         status,
-        evidenceUrl: `https://github.com/${repositoryName}/deployments`,
+        evidenceUrl: githubRepositoryEvidenceUrl(repositoryName, "deployments"),
         narrativeEligible: true,
       },
     },
@@ -428,7 +439,11 @@ function extractPackageDelivery(
       receivedAt: receivedAt.toISOString(),
       operation: {
         kind,
-        deduplicationKey: `github:${kind}:${repositoryId}:${lifecycleIdentity}`,
+        deduplicationKey: activityIdentity.repository(
+          kind,
+          repositoryId,
+          lifecycleIdentity,
+        ).deduplicationKey,
         attributionKey: attributionKeys[0]!,
         attributionKeys,
         attribution: direct ? "direct" : "linked",
@@ -442,7 +457,7 @@ function extractPackageDelivery(
         occurredAt: occurredAt.toISOString(),
         statusOccurredAt: occurredAt.toISOString(),
         status: action === "deleted" ? "cancelled" : "success",
-        evidenceUrl: `https://github.com/${repositoryName}/packages`,
+        evidenceUrl: githubRepositoryEvidenceUrl(repositoryName, "packages"),
         narrativeEligible: action === "published" || action === "updated",
       },
     },
@@ -487,7 +502,7 @@ export function parseOperationsDeliveryMessage(
   const receivedAt = readString(value, "receivedAt");
   const operation = readObject(value, "operation");
   if (
-    !validDeliveryId(deliveryId) ||
+    !validGitHubDeliveryId(deliveryId) ||
     installationId === null ||
     !/^\d+$/.test(installationId) ||
     receivedAt === null ||

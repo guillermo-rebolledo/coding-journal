@@ -5,7 +5,6 @@ import {
   type ActivityRecord,
   type ProjectKind,
 } from "@/lib/github-activity";
-import { subjectTitleMaxLength } from "@/lib/github-collaboration";
 import {
   readNonEmptyString,
   readNumber,
@@ -16,6 +15,8 @@ import {
 } from "@/lib/json-payload";
 import { getLocalDayWindow, parseDate } from "@/lib/time-zone";
 import {
+  boundedGitHubTitle,
+  githubSubjectTitleMaxLength,
   isStaleGitHubDelivery,
   validGitHubDeliveryId,
 } from "@/lib/github-delivery-rules";
@@ -81,12 +82,7 @@ function projectKindFor(
 }
 
 function boundedTitle(value: string | null) {
-  if (value === null) return null;
-  const title = value.trim();
-  if (!title) return null;
-  return title.length > subjectTitleMaxLength
-    ? `${title.slice(0, subjectTitleMaxLength - 1)}…`
-    : title;
+  return boundedGitHubTitle(value);
 }
 
 /** Narrows a decoded string to an absolute github.com URL. */
@@ -223,7 +219,12 @@ export function extractProjectsDelivery({
       receivedAt: receivedAt.toISOString(),
       project: {
         kind,
-        deduplicationKey: `github:${kind}:${projectId}:${subjectId}:${deliveryId}`,
+        deduplicationKey: activityIdentity.project(
+          kind,
+          projectId,
+          subjectId,
+          deliveryId,
+        ).deduplicationKey,
         organizationId: String(organizationId),
         organizationLogin,
         senderId: String(senderId),
@@ -288,7 +289,7 @@ export function parseProjectsDeliveryMessage(
   const title = readNonEmptyString(project, "title");
   if (
     titleMember !== null &&
-    (title === null || title.length > subjectTitleMaxLength)
+    (title === null || title.length > githubSubjectTitleMaxLength)
   ) {
     return null;
   }

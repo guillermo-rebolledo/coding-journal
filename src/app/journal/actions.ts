@@ -37,13 +37,7 @@ async function refreshDependencies(): Promise<RefreshDependencies> {
     requestHeaders,
     getSession: adapters.session,
     getOnboarding: adapters.onboarding.read,
-    guard: (policy, userId, now, provider) =>
-      adapters.guard(
-        policy,
-        userId,
-        now,
-        provider,
-      ),
+    guard: (policy, userId, now) => adapters.guard(policy, userId, now),
     readStoredJournal: adapters.reconciliation.readStored,
     getInstallations: adapters.installations,
     reconcile: adapters.reconciliation.reconcile,

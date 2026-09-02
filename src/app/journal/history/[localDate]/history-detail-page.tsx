@@ -12,7 +12,10 @@ import { DestructiveConfirmation } from "@/components/journal/destructive-confir
 import { JournalNarrative } from "@/components/journal/journal-narrative";
 import { MetricOverview } from "@/components/journal/metric-overview";
 import { StateBlock } from "@/components/journal/state-block";
-import type { JournalHistoryStore } from "@/lib/journal-history";
+import {
+  validHistoricalLocalDate,
+  type JournalHistoryStore,
+} from "@/lib/journal-history";
 import type { JournalSession } from "@/lib/session";
 import { describeJournalStatus } from "@/lib/today-journal";
 
@@ -69,7 +72,7 @@ export async function renderJournalHistoryDetailPage(
   const session = await getSession(requestHeaders);
   if (!session) return redirect("/sign-in?next=%2Fjournal%2Fhistory");
   const { localDate } = await params;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(localDate)) return notFound();
+  if (!validHistoricalLocalDate(localDate)) return notFound();
   const journal = await store.read(session.user.id, localDate);
   if (!journal) return notFound();
 

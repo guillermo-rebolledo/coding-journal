@@ -21,8 +21,7 @@ async function historyDependencies(): Promise<HistoryActionDependencies> {
   return {
     requestHeaders,
     getSession: adapters.session,
-    spendBudget: (policy, userId, now) =>
-      adapters.budget(policy, userId, now),
+    guard: (policy, userId, now) => adapters.guard(policy, userId, now),
     store: adapters.finalization,
     queue: queuePublisher,
     revalidatePath,

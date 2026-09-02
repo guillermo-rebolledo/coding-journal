@@ -22,6 +22,20 @@ export type PrivacyOperationCounts = Partial<{
   redactedJournals: number;
 }>;
 
+function operationCounts(value: PrivacyOperationCounts) {
+  return {
+    ...(value.affectedUsers === undefined
+      ? {}
+      : { affectedUsers: value.affectedUsers }),
+    ...(value.deletedActivities === undefined
+      ? {}
+      : { deletedActivities: value.deletedActivities }),
+    ...(value.redactedJournals === undefined
+      ? {}
+      : { redactedJournals: value.redactedJournals }),
+  };
+}
+
 export type PrivacyLedger = {
   claim(input: {
     key: string;
@@ -35,6 +49,67 @@ export type PrivacyLedger = {
   ): Promise<void>;
   fail(claim: PrivacyClaim, errorId: string, now: Date): Promise<void>;
 };
+
+export function createInMemoryPrivacyLedger() {
+  type MemoryOperation = PrivacyClaim & {
+    kind: PrivacyOperationKind;
+    status: "running" | "complete" | "failed";
+    updatedAt: Date;
+    errorId?: string;
+    counts?: PrivacyOperationCounts;
+  };
+  const operations = new Map<string, MemoryOperation>();
+  const ledger: PrivacyLedger & {
+    find(key: string): MemoryOperation | null;
+  } = {
+    find: (key) => operations.get(privacyOperationHash(key)) ?? null,
+    async claim({ key, kind, now }) {
+      const operationHash = privacyOperationHash(key);
+      const current = operations.get(operationHash);
+      if (
+        current?.status === "complete" ||
+        (current?.status === "running" &&
+          current.updatedAt.getTime() + privacyOperationStaleAfterMs >=
+            now.getTime())
+      ) {
+        return null;
+      }
+      const claim = {
+        id: current?.id ?? randomUUID(),
+        operationHash,
+        claimToken: randomUUID(),
+      };
+      operations.set(operationHash, {
+        ...claim,
+        kind,
+        status: "running",
+        updatedAt: now,
+      });
+      return claim;
+    },
+    async complete(claim, counts, now) {
+      const current = operations.get(claim.operationHash);
+      if (current?.claimToken !== claim.claimToken) return;
+      operations.set(claim.operationHash, {
+        ...current,
+        status: "complete",
+        counts,
+        updatedAt: now,
+      });
+    },
+    async fail(claim, errorId, now) {
+      const current = operations.get(claim.operationHash);
+      if (current?.claimToken !== claim.claimToken) return;
+      operations.set(claim.operationHash, {
+        ...current,
+        status: "failed",
+        errorId,
+        updatedAt: now,
+      });
+    },
+  };
+  return ledger;
+}
 
 export function privacyOperationHash(key: string) {
   return createHash("sha256").update(key).digest("hex");
@@ -135,7 +210,7 @@ export async function runPrivacyOperation<T extends PrivacyOperationCounts>(
   if (!claim) return { status: "skipped" };
   try {
     const value = await work();
-    await ledger.complete(claim, value, input.now);
+    await ledger.complete(claim, operationCounts(value), input.now);
     return { status: "completed", value };
   } catch (error) {
     await ledger.fail(claim, randomUUID(), input.now);

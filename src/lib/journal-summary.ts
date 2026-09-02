@@ -134,6 +134,45 @@ export type SummaryClaimSlotRequest = {
   now: Date;
 };
 
+/** Reusable state adapter for module tests and fixture composition. */
+export function createInMemorySummaryStore({
+  usage = {},
+}: {
+  usage?: Partial<SummaryUsage>;
+} = {}): SummaryStore & { summaries: JournalSummary[] } {
+  const summaries: JournalSummary[] = [];
+  const active = new Set<string>();
+  return {
+    summaries,
+    findBySnapshotHash: async (userId, snapshotHash) =>
+      summaries.find(
+        (summary) =>
+          summary.userId === userId && summary.snapshotHash === snapshotHash,
+      ) ?? null,
+    getUsage: async () => ({
+      userDaily: 0,
+      globalDaily: 0,
+      monthlyCostUsd: 0,
+      activeClaims: active.size,
+      ...usage,
+    }),
+    claimSlot: async ({ userId, snapshotHash }) => {
+      const key = `${userId}:${snapshotHash}`;
+      if (active.has(key)) return null;
+      active.add(key);
+      return {
+        finish: async () => {
+          active.delete(key);
+        },
+      };
+    },
+    save: async (summary) => {
+      summaries.push(summary);
+      return summary;
+    },
+  };
+}
+
 type ProviderResult = {
   /** The model's structured output, decoded but not yet validated. */
   output: JsonObject | null;

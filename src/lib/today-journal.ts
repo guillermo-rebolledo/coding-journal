@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { StoredGitHubInstallation } from "@/lib/github-installation";
-import {
-  computeActivityMetrics,
-} from "@/lib/github-activity";
+import { computeActivityMetrics } from "@/lib/github-activity";
 import { githubActivityRepository } from "@/lib/github-activity-repository";
 import {
   describeError,
@@ -20,9 +18,7 @@ import {
   type JournalSummary,
 } from "@/lib/journal-summary";
 import { journalSummaryRepository } from "@/lib/journal-summary-repository";
-import {
-  withProviderCircuitOutcome,
-} from "@/lib/service-circuit";
+import { withProviderCircuitOutcome } from "@/lib/service-circuit";
 import { serviceCircuitRepository } from "@/lib/service-circuit-repository";
 import { logServiceEvent } from "@/lib/telemetry";
 import { getLocalDayWindow } from "@/lib/time-zone";
@@ -32,6 +28,11 @@ export {
   journalReconciliationCooldownMs,
   nextJournalSyncAt,
 } from "@/lib/today-journal-policy";
+export {
+  refreshTodayJournal,
+  type RefreshActionResult,
+  type RefreshDependencies,
+} from "@/lib/today-journal-refresh";
 
 /**
  * The stores a reconciliation pass writes through. They are a parameter with

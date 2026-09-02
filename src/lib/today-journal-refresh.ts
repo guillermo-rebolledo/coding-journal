@@ -7,7 +7,11 @@ import {
   summaryUnavailableMessage,
   type SummaryResult,
 } from "@/lib/journal-summary";
-import type { GuardDecision } from "@/lib/request-guard";
+import {
+  providerUnavailableRefusal,
+  type GuardDecision,
+} from "@/lib/request-guard";
+import { ProviderUnavailableError } from "@/lib/service-circuit";
 import type { JournalSession } from "@/lib/session";
 import { getLocalDayWindow } from "@/lib/time-zone";
 import { nextJournalSyncAt } from "@/lib/today-journal-policy";
@@ -35,7 +39,6 @@ export type RefreshDependencies = {
     policy: "journal-refresh" | "github-sync-daily",
     userId: string | null,
     now: Date,
-    provider?: "github",
   ) => Promise<GuardDecision>;
   readStoredJournal: (
     userId: string,
@@ -111,7 +114,7 @@ export async function refreshTodayJournal({
     };
   }
 
-  const globalGuard = await guard("github-sync-daily", null, now, "github");
+  const globalGuard = await guard("github-sync-daily", null, now);
   if (!globalGuard.proceed) {
     return {
       outcome: globalGuard.refusal.outcome,
@@ -121,14 +124,29 @@ export async function refreshTodayJournal({
   }
 
   const installations = await getInstallations(session.user.id);
-  const journal = await reconcile({
-    requestHeaders,
-    userId: session.user.id,
-    timeZone: onboarding.timeZone,
-    accessMode: onboarding.githubAccessMode,
-    installations,
-    now,
-  });
+  let journal: TodayJournal & { rateLimitedUntil?: Date };
+  try {
+    journal = await reconcile({
+      requestHeaders,
+      userId: session.user.id,
+      timeZone: onboarding.timeZone,
+      accessMode: onboarding.githubAccessMode,
+      installations,
+      now,
+    });
+  } catch (error) {
+    if (!(error instanceof ProviderUnavailableError)) throw error;
+    const refusal = providerUnavailableRefusal(
+      error.service,
+      error.retryAfterSeconds,
+      now,
+    );
+    return {
+      outcome: refusal.outcome,
+      message: refusal.message,
+      nextSyncAt: refusal.resumeAt.toISOString(),
+    };
+  }
   const summaryResult =
     journal.status === "error"
       ? null
@@ -146,10 +164,9 @@ export async function refreshTodayJournal({
     return {
       outcome: "rate-limited",
       message: "Stored activity reloaded. GitHub rate limit reached.",
-      nextSyncAt: (
-        journal.rateLimitedUntil > cooldownEndsAt
-          ? journal.rateLimitedUntil
-          : cooldownEndsAt
+      nextSyncAt: (journal.rateLimitedUntil > cooldownEndsAt
+        ? journal.rateLimitedUntil
+        : cooldownEndsAt
       ).toISOString(),
     };
   }

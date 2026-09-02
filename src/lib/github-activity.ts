@@ -203,6 +203,13 @@ function evidenceUrlFor(
   }
 }
 
+export function githubRepositoryEvidenceUrl(repositoryName: string, path = "") {
+  if (!validRepositoryName(repositoryName)) {
+    throw new Error("Invalid GitHub repository name");
+  }
+  return `https://github.com/${repositoryName}${path ? `/${path.replace(/^\//, "")}` : ""}`;
+}
+
 /**
  * The one constructor for persisted journal activity. Producers describe what
  * happened; this boundary derives storage identity, evidence, day placement,

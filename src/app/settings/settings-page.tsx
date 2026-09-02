@@ -11,7 +11,7 @@ import {
 } from "@/components/journal/section-list";
 import { PalettePicker } from "@/components/palette-picker";
 import { ThemeModePicker } from "@/components/theme-mode-picker";
-import { Button } from "@/components/ui/button";
+import { DestructiveConfirmation } from "@/components/journal/destructive-confirmation";
 import type { GitHubConnection } from "@/lib/github-connection";
 import { rateLimitPolicyMessage } from "@/lib/rate-limit";
 import type { JournalOnboarding } from "@/lib/journal";
@@ -239,35 +239,22 @@ export async function renderSettingsPage(
             >
               Delete account
             </h2>
-            <p className="mt-2 max-w-[62ch] text-m3-body-md text-m3-on-surface-variant">
-              This permanently deletes your journal, summaries, settings, and
-              every session. Coding Journal will also revoke its GitHub OAuth
-              grant when GitHub is reachable. This cannot be undone.
-            </p>
             {limited ? (
               <LimitNotice
                 message={rateLimitPolicyMessage("account-deletion")}
                 className="mt-5"
               />
             ) : null}
-            <form
-              action={deleteAccount}
-              className="mt-5 flex max-w-xl flex-col gap-3 sm:flex-row sm:items-end"
-            >
-              <label className="flex-1 text-m3-label-lg text-m3-on-surface">
-                Type DELETE to confirm
-                <input
-                  name="confirmation"
-                  required
-                  pattern="DELETE"
-                  autoComplete="off"
-                  className="mt-2 min-h-12 w-full rounded-m3-xs border border-m3-error bg-transparent px-4 text-m3-body-md text-m3-on-surface"
-                />
-              </label>
-              <Button type="submit" variant="destructive" className="sm:mb-0.5">
-                Delete my account
-              </Button>
-            </form>
+            <div className="mt-5">
+              <DestructiveConfirmation
+                action={deleteAccount}
+                literal="DELETE"
+                fieldLabel="Type DELETE to confirm"
+                submitLabel="Delete my account"
+                description="This permanently deletes your journal, summaries, settings, and every session. Coding Journal will also revoke its GitHub OAuth grant when GitHub is reachable. This cannot be undone."
+                initiallyOpen
+              />
+            </div>
           </div>
         </section>
       </div>

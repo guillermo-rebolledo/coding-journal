@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -171,8 +171,12 @@ describe("journal history browsing", () => {
       screen.getByRole("heading", { name: "Late corrections" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Late review note")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Redact narrative" }));
     expect(
-      screen.getByRole("button", { name: "Redact narrative" }),
+      screen.getByRole("textbox", { name: "Type REDACT to confirm" }),
+    ).toHaveFocus();
+    expect(
+      screen.getByText(/Recorded facts, aggregate metrics, evidence/),
     ).toBeInTheDocument();
   });
 });

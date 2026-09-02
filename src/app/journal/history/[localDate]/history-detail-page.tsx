@@ -8,6 +8,7 @@ import {
 } from "@/app/journal/history/actions";
 import { HistoryActionForm } from "@/app/journal/history/history-action-form";
 import { AppShell } from "@/components/journal/app-shell";
+import { DestructiveConfirmation } from "@/components/journal/destructive-confirmation";
 import { MetricOverview } from "@/components/journal/metric-overview";
 import { StateBlock } from "@/components/journal/state-block";
 import { getE2EHistoricalJournal, isE2EJournalUser } from "@/lib/e2e-fixtures";
@@ -211,11 +212,17 @@ export async function renderJournalHistoryDetailPage(
         ) : journal.narrative ? (
           <StateBlock
             title="Privacy redaction"
+            tone="error"
             className="mt-6"
             action={
-              <HistoryActionForm
+              <DestructiveConfirmation
                 action={redactAction}
-                label="Redact narrative"
+                literal="REDACT"
+                fieldLabel="Type REDACT to confirm"
+                submitLabel="Redact narrative"
+                triggerLabel="Redact narrative"
+                cancelLabel="Keep narrative"
+                description="Permanently remove the frozen narrative. Recorded facts, aggregate metrics, evidence, and corrections remain unchanged."
               />
             }
           >

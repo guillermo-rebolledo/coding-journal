@@ -3,8 +3,8 @@ import { createHash, randomUUID } from "node:crypto";
 import type { ActivityKind, ActivityRecord } from "@/lib/github-activity";
 import {
   asString,
+  isJsonObject,
   readArray,
-  readObjectArray,
   readString,
   type JsonObject,
 } from "@/lib/json-payload";
@@ -352,6 +352,19 @@ function requestFor(snapshot: SummarySnapshot, model: string, retry = false) {
 }
 
 /**
+ * Reads one of the model's claim lists. A list holding anything that is not an
+ * object is rejected outright rather than filtered down: an output with an
+ * unreadable claim in it is not a partially valid output, and dropping the
+ * unreadable entry would let the rest through unchallenged.
+ */
+function readClaimList(source: JsonObject, key: string): JsonObject[] | null {
+  const entries = readArray(source, key);
+  if (entries === null) return null;
+  const claims = entries.filter((entry) => isJsonObject(entry));
+  return claims.length === entries.length ? claims : null;
+}
+
+/**
  * Decodes one claim from the model's output, rejecting a claim that cites
  * evidence this snapshot never supplied.
  */
@@ -404,9 +417,9 @@ function validateOutput(
     return null;
   }
 
-  const rawAccomplishments = readObjectArray(value, "accomplishments");
-  const rawCollaboration = readObjectArray(value, "collaboration");
-  const rawInProgress = readObjectArray(value, "inProgress");
+  const rawAccomplishments = readClaimList(value, "accomplishments");
+  const rawCollaboration = readClaimList(value, "collaboration");
+  const rawInProgress = readClaimList(value, "inProgress");
   if (
     rawAccomplishments === null ||
     rawCollaboration === null ||

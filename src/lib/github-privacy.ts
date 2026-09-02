@@ -1,5 +1,5 @@
+import { readIdentifier } from "@/lib/github-activity";
 import {
-  readNumber,
   readObject,
   readObjectArray,
   readString,
@@ -24,18 +24,6 @@ export type GitHubAccessRestoration = {
   installationId: string;
   repositoryIds: string[];
 };
-
-/**
- * GitHub numbers its entities, but a few payloads quote the same id as a
- * string. Both denote the same installation, account, or repository, so the
- * identifier is read either way and always stored as text.
- */
-function readIdentifier(source: JsonObject | null, key: string): string | null {
-  const text = readString(source, key);
-  if (text !== null) return text;
-  const numeric = readNumber(source, key);
-  return numeric === null ? null : String(numeric);
-}
 
 /** Collects the ids of a listed set of repositories, skipping unusable entries. */
 function readRepositoryIds(payload: JsonObject, key: string): string[] {

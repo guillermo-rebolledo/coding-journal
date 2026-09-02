@@ -1,5 +1,6 @@
 import {
   operationsKinds,
+  readAttributionKeys,
   validRepositoryName,
   validSha,
   type ActivityRecord,
@@ -8,8 +9,6 @@ import {
 } from "@/lib/github-activity";
 import { validDeliveryId } from "@/lib/github-webhook";
 import {
-  asString,
-  readArray,
   readBoolean,
   readNonEmptyString,
   readNumber,
@@ -531,7 +530,7 @@ export function parseOperationsDeliveryMessage(
     return null;
   }
 
-  const attributionKeys = readBoundedKeys(operation);
+  const attributionKeys = readAttributionKeys(operation, isBoundedKey);
   if (attributionKeys === "invalid") return null;
 
   if (
@@ -590,23 +589,6 @@ export function parseOperationsDeliveryMessage(
     message.operation.statusOccurredAt = statusOccurredAt;
   }
   return message;
-}
-
-/**
- * Reads the optional `attributionKeys` list. Returns `undefined` when the
- * member is absent and the sentinel `"invalid"` when it is present but is not
- * a list of between one and four bounded keys.
- */
-function readBoundedKeys(
-  operation: JsonObject,
-): string[] | undefined | "invalid" {
-  if (operation["attributionKeys"] === undefined) return undefined;
-  const entries = readArray(operation, "attributionKeys");
-  if (entries === null || entries.length === 0 || entries.length > 4) {
-    return "invalid";
-  }
-  const keys = entries.map((entry) => asString(entry));
-  return keys.every((key) => isBoundedKey(key)) ? keys : "invalid";
 }
 
 export function normalizeOperationsMessage(

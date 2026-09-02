@@ -1,3 +1,11 @@
+import {
+  asString,
+  readArray,
+  readNonEmptyString,
+  readNumber,
+  type JsonObject,
+} from "@/lib/json-payload";
+
 // Shared GitHub activity primitives. Both ingestion paths (Events API
 // reconciliation and durable webhooks) build the same canonical records from
 // these, so overlapping observations collapse on identical deduplication keys.
@@ -191,6 +199,49 @@ export function computeActivityMetrics(
       activities.filter((activity) => kinds.includes(activity.kind)).length,
     ]),
   ) as ActivityMetrics;
+}
+
+/**
+ * GitHub numbers its entities, but a few payloads quote the same id as a
+ * string. Both denote the same entity, so the identifier is read either way
+ * and always returned as text. An empty or blank id is not an identifier.
+ */
+export function readIdentifier(
+  source: JsonObject | null,
+  key: string,
+): string | null {
+  const text = readNonEmptyString(source, key);
+  if (text !== null) return text;
+  const numeric = readNumber(source, key);
+  return numeric === null ? null : String(numeric);
+}
+
+/** The most attribution keys one activity may carry. */
+const maximumAttributionKeys = 4;
+
+/**
+ * Reads the optional `attributionKeys` list shared by the queue messages.
+ * Returns `undefined` when the member is absent and the sentinel `"invalid"`
+ * when it is present but is not a list of between one and four bounded keys.
+ *
+ * `isBounded` is a parameter because the two producers disagree about the
+ * empty key: operations rejects it, collaboration has always allowed it.
+ */
+export function readAttributionKeys(
+  source: JsonObject,
+  isBounded: (key: string | null) => key is string,
+): string[] | undefined | "invalid" {
+  if (source["attributionKeys"] === undefined) return undefined;
+  const entries = readArray(source, "attributionKeys");
+  if (
+    entries === null ||
+    entries.length === 0 ||
+    entries.length > maximumAttributionKeys
+  ) {
+    return "invalid";
+  }
+  const keys = entries.map((entry) => asString(entry));
+  return keys.every((key) => isBounded(key)) ? keys : "invalid";
 }
 
 /** Narrows a decoded string to GitHub's `owner/name` repository form. */

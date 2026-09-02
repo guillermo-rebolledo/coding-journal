@@ -31,15 +31,6 @@ function completenessLabel(value: string | null) {
 }
 
 /**
- * A finalized day — frame 1i of the look-and-feel reference
- * (`docs/design/Coding Journal look and feel.html`).
- *
- * The day detail is Today's composition minus the actions: masthead,
- * completeness line, metric overview, immutable narrative, evidence list. A
- * correction is an appended, dated block *below* the narrative, never an edit
- * to it.
- */
-/**
  * The boundaries this page reaches. They are parameters rather than module
  * imports so a test can supply real stand-ins and still render the page it is
  * describing.
@@ -52,6 +43,15 @@ export type HistoryDetailPageDependencies = {
   notFound: () => never;
 };
 
+/**
+ * A finalized day — frame 1i of the look-and-feel reference
+ * (`docs/design/Coding Journal look and feel.html`).
+ *
+ * The day detail is Today's composition minus the actions: masthead,
+ * completeness line, metric overview, immutable narrative, evidence list. A
+ * correction is an appended, dated block *below* the narrative, never an edit
+ * to it.
+ */
 export async function renderJournalHistoryDetailPage(
   params: Promise<{ localDate: string }>,
   {

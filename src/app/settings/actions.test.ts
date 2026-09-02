@@ -20,8 +20,8 @@ const boundaries = {
   }),
 };
 
-function deleteAccount(formData: FormData) {
-  return runDeleteAccount(formData, {
+function dependencies(): DeleteAccountDependencies {
+  return {
     requestHeaders: new Headers(),
     getSession: boundaries.getSession,
     spendBudget: boundaries.spendBudget,
@@ -29,12 +29,16 @@ function deleteAccount(formData: FormData) {
     endFixtureSession: boundaries.endFixtureSession,
     getAccessToken: boundaries.getToken,
     deleteAccount: boundaries.deleteAccount,
-    credentials: {
+    credentials: () => ({
       clientId: "github-client",
       clientSecret: "github-secret",
-    },
+    }),
     redirect: boundaries.redirect,
-  });
+  };
+}
+
+function deleteAccount(formData: FormData) {
+  return runDeleteAccount(formData, dependencies());
 }
 
 describe("account deletion action", () => {
@@ -59,6 +63,23 @@ describe("account deletion action", () => {
 
     await expect(deleteAccount(formData)).resolves.toBeUndefined();
     expect(boundaries.getSession).not.toHaveBeenCalled();
+    expect(boundaries.deleteAccount).not.toHaveBeenCalled();
+  });
+
+  it("does not need GitHub credentials configured to refuse an unconfirmed submit", async () => {
+    // The credentials are read at the point of use, so the confirmation,
+    // session and budget gates all run before anything needs them.
+    const formData = new FormData();
+    formData.set("confirmation", "delete");
+
+    await expect(
+      runDeleteAccount(formData, {
+        ...dependencies(),
+        credentials: () => {
+          throw new Error("GITHUB_CLIENT_ID is required. See .env.example.");
+        },
+      }),
+    ).resolves.toBeUndefined();
     expect(boundaries.deleteAccount).not.toHaveBeenCalled();
   });
 

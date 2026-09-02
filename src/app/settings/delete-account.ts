@@ -22,7 +22,11 @@ export type DeleteAccountDependencies = {
     userId: string,
   ) => Promise<string | null>;
   deleteAccount: (input: DeleteAccountInput) => Promise<DeleteAccountResult>;
-  credentials: { clientId: string; clientSecret: string };
+  /**
+   * Read lazily: an unconfirmed, signed-out or refused request must not
+   * depend on the GitHub credentials being configured.
+   */
+  credentials: () => { clientId: string; clientSecret: string };
   redirect: (destination: string) => never;
 };
 
@@ -64,11 +68,12 @@ export async function runDeleteAccount(
     requestHeaders,
     session.user.id,
   ).catch(() => null);
+  const { clientId, clientSecret } = credentials();
   await deleteAccount({
     userId: session.user.id,
     accessToken,
-    clientId: credentials.clientId,
-    clientSecret: credentials.clientSecret,
+    clientId,
+    clientSecret,
   });
   logServiceEvent({
     category: "privacy",

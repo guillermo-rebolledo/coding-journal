@@ -122,6 +122,26 @@ describe("GitHub access restoration extraction", () => {
     },
   );
 
+  it.each([
+    [
+      "an empty installation id",
+      { action: "unsuspend", installation: { id: "" } },
+    ],
+    [
+      "a blank installation id",
+      { action: "unsuspend", installation: { id: "  " } },
+    ],
+  ])("ignores a restoration carrying %s", (_label, payload) => {
+    // An empty id is not an identifier; restoring access keyed on "" would
+    // write against no installation at all.
+    expect(
+      extractGitHubAccessRestoration({
+        eventType: "installation",
+        payload,
+      }),
+    ).toBeNull();
+  });
+
   it("rejects an empty repositories-added event", () => {
     expect(
       extractGitHubAccessRestoration({

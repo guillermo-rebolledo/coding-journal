@@ -34,10 +34,10 @@ export async function deleteAccount(formData: FormData) {
     },
     getAccessToken: getGitHubUserAccessToken,
     deleteAccount: deleteJournalAccount,
-    credentials: {
+    credentials: () => ({
       clientId: getRequiredEnv("GITHUB_CLIENT_ID"),
       clientSecret: getRequiredEnv("GITHUB_CLIENT_SECRET"),
-    },
+    }),
     redirect,
   });
 }

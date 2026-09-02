@@ -93,12 +93,13 @@ against every primary route in both themes and fails on any violation.
 
 ## 5. Responsive behaviour holds at every size class
 
-`e2e/responsive.spec.ts` walks landing, Data access, Today, History and
-Settings at 320, 375, 840 and 1280 pixels in both themes, and asserts no
-horizontal page scroll, nothing clipped outside the viewport, and one display
-heading per route. It also checks the navigation composition (bottom bar below
-600, rail from 600), the reference's focus order for the refresh action, and
-the 200 %-zoom collapse to the medium composition.
+`e2e/responsive.spec.ts` walks landing, Data access, Today, History, a missing
+journal day, a journal-day render failure, and Settings at 320, 375, 840 and
+1280 pixels in both themes. It asserts no horizontal page scroll, nothing
+clipped outside the viewport, and one display heading per route. It also checks
+the navigation composition (bottom bar below 600, rail from 600), the
+reference's focus order for the refresh action, and the 200 %-zoom collapse to
+the medium composition.
 
 Pixel baselines are deliberately not committed. A screenshot baseline is bound
 to the renderer that produced it, so a macOS baseline fails on CI's Linux and

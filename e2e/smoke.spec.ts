@@ -156,12 +156,16 @@ test("Today filters, groups, refreshes, and opens source evidence", async ({
     fullPage: true,
   });
 
-  await page.getByLabel("Activity type").selectOption("issues");
+  await page
+    .getByLabel("Activity filters: Activity type")
+    .selectOption("issues");
   await expect(page.getByText("Opened issue #51")).toBeVisible();
   await expect(page.getByText("Push", { exact: true })).toHaveCount(0);
-  await page.getByLabel("Activity type").selectOption("all");
+  await page.getByLabel("Activity filters: Activity type").selectOption("all");
 
-  await page.getByLabel("Repository").selectOption("acme/api");
+  await page
+    .getByLabel("Activity filters: Repository")
+    .selectOption("acme/api");
   await page.getByRole("button", { name: "Group by repository" }).click();
   await expect(
     page.getByRole("heading", { name: "acme/api", level: 3 }),

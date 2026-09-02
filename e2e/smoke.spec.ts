@@ -163,7 +163,9 @@ test("Today filters, groups, refreshes, and opens source evidence", async ({
 
   await page.getByLabel("Repository").selectOption("acme/api");
   await page.getByRole("button", { name: "Group by repository" }).click();
-  await expect(page.getByRole("region", { name: "acme/api" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "acme/api", level: 3 }),
+  ).toBeVisible();
   await expect(page.getByText("Opened issue #51")).toHaveCount(0);
 
   const popupPromise = page.waitForEvent("popup");

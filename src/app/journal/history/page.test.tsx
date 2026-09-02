@@ -186,10 +186,10 @@ describe("journal history browsing", () => {
       screen.getByRole("group", { name: "Late corrections layout" }),
     ).toBeInTheDocument();
     for (const name of [
-      "Final evidence repository",
-      "Final evidence activity type",
-      "Late corrections repository",
-      "Late corrections activity type",
+      "Final evidence filters: Repository",
+      "Final evidence filters: Activity type",
+      "Late corrections filters: Repository",
+      "Late corrections filters: Activity type",
     ]) {
       expect(screen.getByRole("combobox", { name })).toBeInTheDocument();
     }

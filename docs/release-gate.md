@@ -139,6 +139,14 @@ and OS version in the release PR:
   and that no page scrolls sideways with the address bar collapsed.
 - **Android Chrome** — the same flow, plus the bottom navigation bar against
   the system gesture area, and dark theme following the system setting.
+- **Forced colours** — in Windows High Contrast mode, walk the primary routes
+  and both journal-day boundaries. Confirm that focus, selected state, status,
+  links, form fields, and destructive actions remain distinguishable without
+  their authored palette.
+- **Screen reader** — with VoiceOver on Safari or NVDA on Firefox, run Refresh
+  Today, a refused refresh, finalization retry, and narrative redaction. Confirm
+  each busy state and outcome is announced once, in order, without moving focus
+  back to the start of the page.
 
 ## 7. Every available MaterialCN primitive is used, and the gaps are named
 
@@ -197,6 +205,8 @@ fill it in; an empty row is a blocked release.
 | Real account deletion, verified in the database |      |     |              |        |
 | iOS Safari device pass                          |      |     |              |        |
 | Android Chrome device pass                      |      |     |              |        |
+| Windows forced-colours pass                     |      |     |              |        |
+| Screen-reader announcement-order pass           |      |     |              |        |
 | Keyboard review (docs/accessibility.md)         |      |     |              |        |
 
 Record the result in [Accessibility](accessibility.md) when the keyboard review

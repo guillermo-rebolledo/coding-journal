@@ -1198,11 +1198,11 @@ describe("protected journal boundary", () => {
     expect(screen.getAllByRole("listitem")[0]).toHaveTextContent(
       "Opened issue #51",
     );
-    fireEvent.change(screen.getByLabelText("Activity type"), {
+    fireEvent.change(screen.getByLabelText("Activity filters: Activity type"), {
       target: { value: "pushes" },
     });
     expect(screen.queryByText("Opened issue #51")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Repository"), {
+    fireEvent.change(screen.getByLabelText("Activity filters: Repository"), {
       target: { value: "acme/api" },
     });
     fireEvent.click(
@@ -1216,7 +1216,9 @@ describe("protected journal boundary", () => {
     expect(
       within(group).getByRole("link", { name: "View push evidence" }),
     ).toHaveAttribute("href", "https://github.com/acme/api/compare/1...2");
-    expect(screen.getByLabelText("Repository")).toHaveValue("acme/api");
+    expect(screen.getByLabelText("Activity filters: Repository")).toHaveValue(
+      "acme/api",
+    );
   });
 
   it("reloads stored data on polling and announces a manual cooldown", async () => {

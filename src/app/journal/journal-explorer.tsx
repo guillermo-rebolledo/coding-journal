@@ -328,10 +328,8 @@ export function JournalExplorer({
     [filtered, repositories],
   );
   const filtersApplied = repository !== "all" || category !== "all";
-  const repositoryLabel =
-    title === "Activity" ? "Repository" : `${title} repository`;
-  const activityTypeLabel =
-    title === "Activity" ? "Activity type" : `${title} activity type`;
+  const repositoryLabel = `${title} filters: Repository`;
+  const activityTypeLabel = `${title} filters: Activity type`;
 
   return (
     <section aria-labelledby={headingId} className="mt-10">

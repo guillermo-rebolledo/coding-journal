@@ -19,6 +19,7 @@ export function StateBlock({
   action,
   tone = "neutral",
   size = "band",
+  headingLevel,
   role,
   className,
 }: {
@@ -28,11 +29,14 @@ export function StateBlock({
   action?: ReactNode;
   tone?: "neutral" | "warning" | "error";
   size?: "band" | "expressive";
+  /** Route-level expressive states spend the page's single h1 here. */
+  headingLevel?: 1 | 2;
   role?: "status" | "alert";
   className?: string;
 }) {
   const expressive = size === "expressive";
-  const Heading = expressive ? "h2" : "p";
+  const Heading =
+    headingLevel === 1 ? "h1" : expressive || headingLevel === 2 ? "h2" : "p";
 
   return (
     <section

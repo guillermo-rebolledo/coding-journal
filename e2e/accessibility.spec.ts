@@ -110,6 +110,16 @@ const journalRoutes = [
     session: "all",
     path: "/journal/history/2026-08-30",
   },
+  {
+    name: "a missing journal day",
+    session: "all",
+    path: "/journal/history/not-a-date",
+  },
+  {
+    name: "a journal day render error",
+    session: "all",
+    path: "/journal/history/2026-08-29",
+  },
   { name: "Settings", session: "all", path: "/settings" },
 ] as const;
 

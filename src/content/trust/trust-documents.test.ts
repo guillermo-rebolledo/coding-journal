@@ -37,6 +37,8 @@ describe("trust documents", () => {
 
     for (const permission of [
       "Contents",
+      "Issues",
+      "Pull requests",
       "Discussions",
       "Actions",
       "Deployments",
@@ -98,9 +100,27 @@ describe("trust documents", () => {
 
     expect(text).toMatch(/redacts the subjects/);
     expect(text).toMatch(/retaining the counts/);
-    expect(text).toMatch(/typing the word delete/);
-    expect(text).toMatch(/revokes Coding Journal's GitHub authorization grant/);
+    expect(text).toMatch(/typing the word DELETE/);
     expect(text).toMatch(/cannot uninstall the GitHub App for you/);
+  });
+
+  /**
+   * `deleteJournalAccount` runs inline in the server action, deletes through a
+   * single cascading statement, and calls `revokeGitHubGrant` best-effort —
+   * it swallows a failure and is never retried. The page has to say that, not
+   * a more comforting version of it.
+   */
+  it("describes deletion the way it actually runs", () => {
+    for (const document of [dataAccessDocument, termsDocument]) {
+      const text = textOf(document);
+      expect(text).toMatch(/best-effort/);
+      expect(text).not.toMatch(/retries on its own|in the background/);
+    }
+
+    const text = textOf(dataAccessDocument);
+    expect(text).toMatch(/single database statement/);
+    expect(text).toMatch(/it is not retried/);
+    expect(text).toMatch(/github\.com\/settings\/applications/);
   });
 
   it("names every processor in Privacy", () => {

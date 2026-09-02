@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { chooseTheme } from "./support/theme";
+
 test("visitor can understand the product and reach GitHub sign-in", async ({
   page,
 }) => {
@@ -19,8 +21,7 @@ test("visitor can understand the product and reach GitHub sign-in", async ({
 
 test("visitor can persistently override the system theme", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Choose color theme" }).click();
-  await page.getByRole("menuitem", { name: "Dark" }).click();
+  await chooseTheme(page, "Dark");
 
   await expect(page.locator("html")).toHaveClass(/dark/);
   await page.reload();
@@ -48,8 +49,7 @@ for (const theme of ["Light", "Dark"] as const) {
       page.getByRole("heading", { level: 1, name: /day, / }),
     ).toBeVisible();
 
-    await page.getByRole("button", { name: "Choose color theme" }).click();
-    await page.getByRole("menuitem", { name: theme }).click();
+    await chooseTheme(page, theme);
 
     await page.route("**/api/auth/sign-out", async (route) => {
       await route.fulfill({
@@ -143,10 +143,7 @@ test("Today filters, groups, refreshes, and opens source evidence", async ({
     fullPage: true,
   });
 
-  await page.getByRole("button", { name: "Choose color theme" }).click();
-  await page.getByRole("menuitem", { name: "Dark" }).click();
-  await page.keyboard.press("Escape");
-  await expect(page.locator("html")).toHaveClass(/dark/);
+  await chooseTheme(page, "Dark");
   await expect
     .poll(() =>
       page.evaluate(

@@ -109,7 +109,7 @@ export const privacyDocument: TrustDocument = {
             "Grant no repository access at all, and use the journal in best-effort mode.",
             "Narrow or withdraw repository access on GitHub at any time; it takes effect immediately.",
             "Redact a frozen narrative on a finalized day.",
-            "Delete your account from Settings. It removes every day, narrative, correction and activity record, ends every session, and revokes the GitHub authorization grant.",
+            "Delete your account from Settings. It removes every day, narrative, correction and activity record and ends every session, immediately and irreversibly. It also asks GitHub to revoke the authorization grant, best-effort.",
           ],
         },
         {

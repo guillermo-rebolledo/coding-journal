@@ -69,7 +69,8 @@ export const POST = handleCallback(
           journalFinalizationRepository,
           async (candidate) => {
             const [onboarding, installations, accessToken] = await Promise.all([
-              getJournalOnboarding(candidate.userId),
+              // A queue message never carries a fixture session.
+              getJournalOnboarding(candidate.userId, null),
               getGitHubInstallations(candidate.userId),
               getGitHubUserAccessTokenForJob(candidate.userId),
             ]);

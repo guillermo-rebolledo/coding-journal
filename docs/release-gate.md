@@ -62,8 +62,20 @@ out on the landing page with the deletion confirmation.
 pnpm test:e2e release-smoke
 ```
 
-Against a real deployment, run the same flow with a real GitHub account rather
-than the fixture session:
+Two steps of the flow cannot be automated in CI and are proved only by the
+production run below: **real GitHub sign-in**, because it needs a real GitHub
+account and consent screen, and **real deletion**, because it needs a database
+to delete from and a grant to revoke. Treat the CI run as proof that everything
+around them holds, not as proof of them.
+
+The fixture session does not write to the database: onboarding answers go to a
+cookie, and deletion ends the session without calling `deleteJournalAccount`
+or revoking a GitHub grant, because a smoke deployment has neither a database
+nor a GitHub app. Everything else below the cookie — routing, guards,
+redirects, validation, rendering — is the production path.
+
+Those three effects are proved against a real deployment. Run the same flow
+with a real GitHub account rather than the fixture session:
 
 ```sh
 E2E_EXTERNAL_SERVER=1 PLAYWRIGHT_TEST_BASE_URL=https://<your-domain> pnpm test:e2e
@@ -171,6 +183,24 @@ product. Explicitly out of scope, and absent by design:
 - Editable summaries. The narrative is read-only, and a correction is appended
   rather than a rewrite.
 - Sharing, teams, profiles, export of anyone else's activity.
+
+## Release run record
+
+The gate is only passed when the manual halves have actually been run, not when
+they have been described. Copy this table into the release pull request and
+fill it in; an empty row is a blocked release.
+
+| Check                                           | Date | By  | Version / OS | Result |
+| ----------------------------------------------- | ---- | --- | ------------ | ------ |
+| Production smoke flow, real GitHub account      |      |     |              |        |
+| Real account deletion, verified in the database |      |     |              |        |
+| iOS Safari device pass                          |      |     |              |        |
+| Android Chrome device pass                      |      |     |              |        |
+| Keyboard review (docs/accessibility.md)         |      |     |              |        |
+
+Record the result in [Accessibility](accessibility.md) when the keyboard review
+finds anything, so the next reviewer starts from the last one rather than from
+scratch.
 
 ## Running the whole gate
 

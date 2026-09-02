@@ -55,6 +55,10 @@ Configure the shared GitHub App with:
 - Redirect on update: enabled
 - Account permission → Email addresses: Read-only
 - Repository permission → Contents: Read-only
+- Repository permission → Issues: Read-only (required to receive Issues and
+  Issue comment events)
+- Repository permission → Pull requests: Read-only (required to receive Pull
+  request and Pull request review events)
 - Repository permission → Discussions: Read-only
 - Repository permission → Actions: Read-only
 - Repository permission → Deployments: Read-only
@@ -117,11 +121,14 @@ collaborators are never mocked.
 | Browser           | Playwright (`pnpm test:e2e`) | The smoke journey, accessibility, and responsive behaviour.                 |
 
 Browser tests carry a fixture session cookie recognised only when
-`E2E_AUTH_MODE=true` and `NODE_ENV` is not `production`; every route, guard,
-action and redirect below it is the production path. See
-[The public release gate](docs/release-gate.md) for how to run the same flow
-against a real deployment, and [Accessibility](docs/accessibility.md) for what
-is checked automatically and what is reviewed by hand.
+`E2E_AUTH_MODE=true` and `NODE_ENV` is not `production`. Routing, guards,
+redirects, rendering and validation below it are the production path, but three
+effects are deliberately not: a fixture user's onboarding answers go to a
+cookie rather than the database, and deletion ends the session without touching
+the database or GitHub, because a smoke deployment has neither. Those three are
+proved by running the same flow against a real deployment — see
+[The public release gate](docs/release-gate.md). [Accessibility](docs/accessibility.md)
+records what is checked automatically and what is reviewed by hand.
 
 ## Known limitations
 

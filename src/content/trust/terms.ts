@@ -76,7 +76,7 @@ export const termsDocument: TrustDocument = {
       blocks: [
         {
           kind: "paragraph",
-          text: "You can withdraw repository access on GitHub at any time, and delete your account from Settings at any time. Deletion is immediate, irreversible and complete.",
+          text: "You can withdraw repository access on GitHub at any time, and delete your account from Settings at any time. Deletion of everything Coding Journal holds is immediate, irreversible and complete. Revoking the GitHub authorization grant is attempted in the same request but is best-effort — revoke it yourself on GitHub to be certain.",
         },
         {
           kind: "paragraph",

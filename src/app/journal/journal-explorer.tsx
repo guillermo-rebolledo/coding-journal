@@ -281,15 +281,17 @@ function ActivityItem({
             </time>
             {` · @${activity.actorLogin}`}
           </p>
-          <a
-            href={activity.evidenceUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-m3-label-lg-emphasized mt-3 inline-flex min-h-11 items-center gap-2 text-primary underline-offset-4 hover:underline"
-          >
-            View {evidenceNoun} evidence{" "}
-            <ArrowUpRight aria-hidden className="size-4" />
-          </a>
+          {activity.evidenceUrl ? (
+            <a
+              href={activity.evidenceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-m3-label-lg-emphasized mt-3 inline-flex min-h-11 items-center gap-2 text-primary underline-offset-4 hover:underline"
+            >
+              View {evidenceNoun} evidence{" "}
+              <ArrowUpRight aria-hidden className="size-4" />
+            </a>
+          ) : null}
         </div>
       </div>
     </li>

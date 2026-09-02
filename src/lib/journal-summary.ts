@@ -108,7 +108,10 @@ export type SummaryStore = {
     snapshotHash: string,
   ): Promise<JournalSummary | null>;
   getUsage(userId: string, localDate: string, now: Date): Promise<SummaryUsage>;
-  save(summary: JournalSummary): Promise<JournalSummary>;
+  save(
+    summary: JournalSummary,
+    evidence: ActivityRecord[],
+  ): Promise<JournalSummary>;
   claim?(input: SummaryClaimRequest): Promise<SummaryClaimResult>;
   finishClaim?(
     userId: string,
@@ -513,7 +516,7 @@ export async function generateJournalSummary({
         estimatedCostUsd: result.estimatedCostUsd ?? 0,
         createdAt: now,
       };
-      const saved = await store.save(summary);
+      const saved = await store.save(summary, activities);
       await store.finishClaim?.(userId, snapshot.hash, true);
       return {
         status: "available",

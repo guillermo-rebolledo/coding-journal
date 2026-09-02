@@ -149,11 +149,15 @@ describe("GitHub activity repository with the Neon HTTP driver contract", () => 
       throw new Error("No transactions support in neon-http driver");
     });
     const batch = vi.fn().mockResolvedValue(undefined);
+    const findAccessBlocks = vi.fn().mockResolvedValue([]);
     const repository = createGitHubActivityRepository(
       {
         insert,
         update,
         transaction,
+        query: {
+          githubAccessBlock: { findMany: findAccessBlocks },
+        },
       } as never,
       batch,
     );
@@ -194,6 +198,7 @@ describe("GitHub activity repository with the Neon HTTP driver contract", () => 
     ).resolves.toBeUndefined();
     expect(transaction).not.toHaveBeenCalled();
     expect(batch).toHaveBeenCalledOnce();
+    expect(findAccessBlocks).toHaveBeenCalledOnce();
     expect(insert).toHaveBeenCalledOnce();
     expect(update).toHaveBeenCalledOnce();
   });

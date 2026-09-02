@@ -92,6 +92,27 @@
       "when": 1788304303914,
       "tag": "0012_dapper_forge",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1788306117744,
+      "tag": "0013_curly_the_liberteens",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788307232262,
+      "tag": "0014_wooden_felicia_hardy",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1788307701661,
+      "tag": "0015_fixed_white_queen",
+      "breakpoints": true
     }
   ]
 }

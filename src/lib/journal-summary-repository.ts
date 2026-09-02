@@ -9,6 +9,7 @@ import type {
   SummaryStore,
   SummaryUsage,
 } from "@/lib/journal-summary";
+import { deleteSummaryWhenEvidenceIsBlocked } from "@/lib/github-access-block";
 
 function hydrate(row: typeof journalSummary.$inferSelect): JournalSummary {
   return {
@@ -97,7 +98,7 @@ export function createJournalSummaryRepository(
       };
     },
 
-    async save(summary) {
+    async save(summary, evidence) {
       const [inserted] = await database
         .insert(journalSummary)
         .values({
@@ -118,7 +119,15 @@ export function createJournalSummaryRepository(
           target: [journalSummary.userId, journalSummary.snapshotHash],
         })
         .returning();
-      if (inserted) return hydrate(inserted);
+      if (inserted) {
+        await deleteSummaryWhenEvidenceIsBlocked(
+          database,
+          summary.userId,
+          summary.snapshotHash,
+          evidence,
+        );
+        return hydrate(inserted);
+      }
       const existing = await this.findBySnapshotHash(
         summary.userId,
         summary.snapshotHash,

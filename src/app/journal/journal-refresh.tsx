@@ -43,7 +43,7 @@ export function JournalRefresh({
     <div>
       <Button
         type="button"
-        disabled={pending}
+        loading={pending}
         onClick={() =>
           startTransition(async () => {
             try {
@@ -62,11 +62,8 @@ export function JournalRefresh({
           })
         }
       >
-        <RotateCcw
-          aria-hidden
-          className={pending ? "animate-spin motion-reduce:animate-none" : ""}
-        />
-        {pending ? "Refreshing…" : "Refresh Today"}
+        <RotateCcw aria-hidden />
+        Refresh Today
       </Button>
       {availableAt ? (
         <p className="mt-2 text-m3-body-sm text-m3-on-surface-variant">
@@ -89,7 +86,7 @@ export function JournalRefresh({
         <LimitNotice message={result.message} className="mt-3 max-w-[42ch]" />
       ) : null}
       <p role="status" aria-live="polite" className="sr-only">
-        {result?.message ?? ""}
+        {result?.outcome === "limited" ? "" : (result?.message ?? "")}
       </p>
     </div>
   );

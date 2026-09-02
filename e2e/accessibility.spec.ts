@@ -107,6 +107,27 @@ test("compact form controls keep iOS-safe text sizing", async ({
   }
 });
 
+test("Today refresh keeps keyboard focus while it is in flight", async ({
+  context,
+  page,
+}) => {
+  await signIn(context, "all");
+  await page.goto("/journal");
+  const refresh = page.getByRole("button", { name: "Refresh Today" });
+  await expect(refresh).toBeVisible();
+  await refresh.evaluate((button) => {
+    button.id = "focus-retention-refresh";
+  });
+
+  const stableRefresh = page.locator("#focus-retention-refresh");
+  await stableRefresh.focus();
+  await stableRefresh.click();
+
+  await expect(stableRefresh).toBeFocused();
+  await expect(stableRefresh).toHaveAttribute("aria-busy", "true");
+  await expect(stableRefresh).toHaveText("Refresh Today");
+});
+
 const publicRoutes = [
   { name: "landing", path: "/" },
   { name: "sign-in", path: "/sign-in" },

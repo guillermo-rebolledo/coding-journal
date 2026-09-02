@@ -28,7 +28,7 @@ export function HistoryActionForm({
 
   return (
     <form action={submit}>
-      <Button type="submit" variant="outline" disabled={pending}>
+      <Button type="submit" variant="outline" loading={pending}>
         {label}
       </Button>
       {result.status === "idle" ? (

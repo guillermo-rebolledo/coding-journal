@@ -6,7 +6,8 @@ import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import * as schema from "@/db/auth-schema";
-import { user } from "@/db/auth-schema";
+import { githubAccessBlock, user } from "@/db/auth-schema";
+import { githubAccessBlockScopeKey } from "@/lib/github-access-block";
 import type { ActivityRecord } from "@/lib/github-activity";
 import { generateJournalSummary } from "@/lib/journal-summary";
 import { createJournalSummaryRepository } from "@/lib/journal-summary-repository";
@@ -91,5 +92,74 @@ describe("journal summary application boundary with Postgres", () => {
     expect(results.filter((result) => result.status === "unavailable")).toEqual(
       [expect.objectContaining({ reason: "cooldown" })],
     );
+  });
+
+  it("removes only summaries whose evidence matches a private-access fence", async () => {
+    await database.insert(githubAccessBlock).values({
+      id: "summary-access-block",
+      userId: "summary-user",
+      scopeKey: githubAccessBlockScopeKey("repository", "42"),
+      repositoryId: "42",
+    });
+    await repository.save(
+      {
+        id: "stale-summary",
+        userId: "summary-user",
+        localDate: "2026-09-02",
+        snapshotHash: "stale-snapshot",
+        model: "fixture",
+        output: {
+          overview: "Stale private content",
+          overviewEvidenceIds: ["evidence-1"],
+          accomplishments: [],
+          collaboration: [],
+          inProgress: [],
+        },
+        inputTokens: 1,
+        outputTokens: 1,
+        estimatedCostUsd: 0,
+        createdAt: now,
+      },
+      [record],
+    );
+    await expect(
+      database.query.journalSummary.findFirst({
+        where: (table, { eq }) => eq(table.id, "stale-summary"),
+      }),
+    ).resolves.toBeUndefined();
+
+    await repository.save(
+      {
+        id: "accessible-summary",
+        userId: "summary-user",
+        localDate: "2026-09-03",
+        snapshotHash: "accessible-snapshot",
+        model: "fixture",
+        output: {
+          overview: "Accessible public content",
+          overviewEvidenceIds: ["evidence-1"],
+          accomplishments: [],
+          collaboration: [],
+          inProgress: [],
+        },
+        inputTokens: 1,
+        outputTokens: 1,
+        estimatedCostUsd: 0,
+        createdAt: now,
+      },
+      [
+        {
+          ...record,
+          localDate: "2026-09-03",
+          repositoryId: "43",
+          visibility: "public",
+        },
+      ],
+    );
+    await expect(
+      database.query.journalSummary.findFirst({
+        where: (table, { eq }) => eq(table.id, "accessible-summary"),
+      }),
+    ).resolves.toEqual(expect.objectContaining({ id: "accessible-summary" }));
   });
 });

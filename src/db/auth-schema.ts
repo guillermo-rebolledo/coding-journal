@@ -6,7 +6,7 @@ import type {
 } from "../lib/github-activity";
 import type { StoredSecondarySourceFreshness } from "../lib/github-secondary";
 import type { SummaryOutput } from "../lib/journal-summary";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -391,6 +391,69 @@ export const journalFinalization = pgTable(
   ],
 );
 
+export const privacyOperation = pgTable(
+  "privacy_operation",
+  {
+    id: text("id").primaryKey(),
+    operationHash: text("operation_hash").notNull().unique(),
+    kind: text("kind")
+      .$type<
+        | "installation-suspended"
+        | "installation-removed"
+        | "repositories-removed"
+        | "authorization-revoked"
+        | "retention"
+        | "account-deletion"
+      >()
+      .notNull(),
+    status: text("status").$type<"running" | "complete" | "failed">().notNull(),
+    attemptCount: integer("attempt_count").default(1).notNull(),
+    affectedUsers: integer("affected_users").default(0).notNull(),
+    deletedActivities: integer("deleted_activities").default(0).notNull(),
+    redactedJournals: integer("redacted_journals").default(0).notNull(),
+    errorId: text("error_id"),
+    claimToken: text("claim_token")
+      .default(sql`md5(random()::text || clock_timestamp()::text)`)
+      .notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("privacy_operation_status_idx").on(table.status, table.updatedAt),
+  ],
+);
+
+export const githubAccessBlock = pgTable(
+  "github_access_block",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    scopeKey: text("scope_key").notNull(),
+    installationId: text("installation_id"),
+    repositoryId: text("repository_id"),
+    allPrivate: boolean("all_private").default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("github_access_block_user_scope_uidx").on(
+      table.userId,
+      table.scopeKey,
+    ),
+    index("github_access_block_user_idx").on(table.userId),
+  ],
+);
+
 export const userRelations = relations(user, ({ many, one }) => ({
   sessions: many(session),
   accounts: many(account),
@@ -402,6 +465,7 @@ export const userRelations = relations(user, ({ many, one }) => ({
   journalSummaries: many(journalSummary),
   journalSummaryGenerations: many(journalSummaryGeneration),
   journalFinalizations: many(journalFinalization),
+  githubAccessBlocks: many(githubAccessBlock),
 }));
 
 export const githubActivityRelations = relations(githubActivity, ({ one }) => ({
@@ -443,6 +507,16 @@ export const journalFinalizationRelations = relations(
   ({ one }) => ({
     user: one(user, {
       fields: [journalFinalization.userId],
+      references: [user.id],
+    }),
+  }),
+);
+
+export const githubAccessBlockRelations = relations(
+  githubAccessBlock,
+  ({ one }) => ({
+    user: one(user, {
+      fields: [githubAccessBlock.userId],
       references: [user.id],
     }),
   }),

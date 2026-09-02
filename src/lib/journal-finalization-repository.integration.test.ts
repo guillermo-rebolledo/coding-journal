@@ -6,7 +6,14 @@ import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import * as schema from "@/db/auth-schema";
-import { githubActivity, journalOnboarding, user } from "@/db/auth-schema";
+import {
+  githubAccessBlock,
+  githubActivity,
+  journalOnboarding,
+  journalSummary,
+  user,
+} from "@/db/auth-schema";
+import { githubAccessBlockScopeKey } from "@/lib/github-access-block";
 import {
   computeActivityMetrics,
   type ActivityRecord,
@@ -179,5 +186,71 @@ describe("journal finalization repository with Postgres", () => {
     await expect(
       repository.claim(candidate.userId, candidate.localDate, now),
     ).resolves.toBe(true);
+  });
+
+  it("redacts a finalization that commits after a private-access fence", async () => {
+    const candidate = {
+      userId: "history-user",
+      localDate: "2026-08-29",
+      timeZone: "America/Mexico_City",
+    };
+    const now = new Date("2026-09-01T14:00:00Z");
+    await repository.schedule(candidate, now);
+    await repository.claim(candidate.userId, candidate.localDate, now);
+    await database.insert(githubAccessBlock).values({
+      id: "history-access-block",
+      userId: candidate.userId,
+      scopeKey: githubAccessBlockScopeKey("repository", "42"),
+      repositoryId: "42",
+    });
+    await database.insert(journalSummary).values({
+      id: "racing-summary",
+      userId: candidate.userId,
+      localDate: candidate.localDate,
+      snapshotHash: "racing-summary",
+      model: "fixture",
+      output: {
+        overview: "Stale private summary",
+        overviewEvidenceIds: ["evidence-1"],
+        accomplishments: [],
+        collaboration: [],
+        inProgress: [],
+      },
+    });
+
+    await repository.finalize({
+      ...candidate,
+      completeness: "complete",
+      metrics: computeActivityMetrics([initialActivity]),
+      narrative: {
+        overview: "Stale private narrative",
+        overviewEvidenceIds: ["evidence-1"],
+        accomplishments: [],
+        collaboration: [],
+        inProgress: [],
+      },
+      snapshotHash: "racing-finalization",
+      evidenceKeys: [initialActivity.deduplicationKey],
+      evidence: [{ ...initialActivity, localDate: candidate.localDate }],
+      finalizedAt: now,
+    });
+
+    await expect(
+      repository.read(candidate.userId, candidate.localDate),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        narrative: expect.objectContaining({
+          overview: "Details unavailable because GitHub access changed.",
+        }),
+        evidence: [
+          expect.objectContaining({ repositoryName: "Unavailable repository" }),
+        ],
+      }),
+    );
+    await expect(
+      database.query.journalSummary.findFirst({
+        where: (table, { eq }) => eq(table.id, "racing-summary"),
+      }),
+    ).resolves.toBeUndefined();
   });
 });

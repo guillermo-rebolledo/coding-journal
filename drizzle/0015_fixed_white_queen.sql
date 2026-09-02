@@ -1,0 +1,1 @@
+ALTER TABLE "privacy_operation" ADD COLUMN "claim_token" text DEFAULT md5(random()::text || clock_timestamp()::text) NOT NULL;

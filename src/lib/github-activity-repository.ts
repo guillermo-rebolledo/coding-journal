@@ -8,6 +8,7 @@ import { db } from "@/db";
 import { githubActivity, journalReconciliation } from "@/db/auth-schema";
 import { computeActivityMetrics } from "@/lib/github-activity";
 import { JournalNotFoundError } from "@/lib/journal-errors";
+import { deleteBlockedGitHubActivities } from "@/lib/github-access-block";
 import type { StoredSecondarySourceFreshness } from "@/lib/github-secondary";
 import type {
   ActivityRecord,
@@ -124,6 +125,7 @@ export function createGitHubActivityRepository<
           });
 
         await runAtomicBatch([activityQuery, reconciliationQuery]);
+        await deleteBlockedGitHubActivities(database, userId, uniqueRecords);
       } else {
         await runAtomicBatch([reconciliationQuery]);
       }
@@ -158,6 +160,7 @@ export function createGitHubActivityRepository<
           ),
         );
     });
+    await deleteBlockedGitHubActivities(database, userId, uniqueRecords);
   }
 
   async function read(

@@ -19,6 +19,10 @@ import {
 } from "@/lib/github-projects";
 import { githubWebhookRepository } from "@/lib/github-webhook-repository";
 import { queuePublisher } from "@/lib/queue";
+import {
+  extractGitHubAccessChange,
+  extractGitHubAccessRestoration,
+} from "@/lib/github-privacy";
 
 function acknowledge(status: string, httpStatus = 200) {
   return Response.json({ status }, { status: httpStatus });
@@ -38,6 +42,31 @@ export async function POST(request: Request) {
     return acknowledge("malformed", 400);
   }
   const receivedAt = new Date();
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    payload = null;
+  }
+  const accessChange = extractGitHubAccessChange({
+    eventType,
+    payload,
+    deliveryId,
+    occurredAt: receivedAt,
+  });
+  if (accessChange) {
+    await githubWebhookRepository.applyAccessChange(accessChange);
+    return acknowledge("redacted");
+  }
+  const accessRestoration = extractGitHubAccessRestoration({
+    eventType,
+    payload,
+  });
+  if (accessRestoration) {
+    await githubWebhookRepository.restoreAccess(accessRestoration);
+    return acknowledge("restored");
+  }
 
   const collaborationEvent = isCollaborationWebhookEvent(eventType)
     ? eventType
@@ -62,12 +91,6 @@ export async function POST(request: Request) {
     return acknowledge("ignored");
   }
 
-  let payload: unknown;
-  try {
-    payload = JSON.parse(rawBody);
-  } catch {
-    payload = null;
-  }
   const extraction = projectsEvent
     ? extractProjectsDelivery({
         eventType: projectsEvent,

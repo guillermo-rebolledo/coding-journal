@@ -11,7 +11,8 @@ import { cn } from "@/lib/utils";
  * The 16-card wall becomes one divided strip of the day's high-signal,
  * non-zero categories, with every category one disclosure away in a grouped
  * table. Zeroes are kept — the record must stay complete — but they drop to
- * `outline` and never take the same area as the day's real work.
+ * to the quieter count treatment and never take the same area as the day's
+ * real work. `on-surface-variant` remains the lightest text role in the table.
  */
 
 type MetricKey = keyof ActivityMetrics;
@@ -168,15 +169,19 @@ export function MetricOverview({
                 {group.keys.map((key) => (
                   <div
                     key={key}
-                    className={cn(
-                      "flex items-baseline justify-between gap-4 py-1 text-m3-body-md",
-                      metrics[key] > 0
-                        ? "text-m3-on-surface"
-                        : "text-m3-outline",
-                    )}
+                    className="flex items-baseline justify-between gap-4 py-1 text-m3-body-md text-m3-on-surface-variant"
                   >
                     <dt className="wrap-anywhere">{metricHeading(key)}</dt>
-                    <dd className="tabular-nums">{metrics[key]}</dd>
+                    <dd
+                      className={cn(
+                        "tabular-nums",
+                        metrics[key] > 0
+                          ? "text-m3-title-sm text-m3-on-surface"
+                          : "text-m3-body-md",
+                      )}
+                    >
+                      {metrics[key]}
+                    </dd>
                   </div>
                 ))}
               </dl>

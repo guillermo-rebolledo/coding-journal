@@ -17,6 +17,12 @@ import { chooseTheme } from "./support/theme";
 const standard = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
 async function violations(page: Page) {
+  await page.locator("details:not([open])").evaluateAll((disclosures) => {
+    for (const disclosure of disclosures) {
+      disclosure.setAttribute("open", "");
+    }
+  });
+
   const { violations } = await new AxeBuilder({ page })
     .withTags(standard)
     .analyze();
@@ -28,6 +34,46 @@ async function violations(page: Page) {
     nodes: violation.nodes.map((node) => node.target.join(" ")),
   }));
 }
+
+const palettes = [
+  { name: "Lavender", value: null },
+  { name: "Warm ink", value: "warm-ink" },
+  { name: "Tide", value: "tide" },
+  { name: "Moss & clay", value: "moss" },
+] as const;
+
+test("the category table clears the contrast floor in every palette and theme", async ({
+  context,
+  isMobile,
+  page,
+}) => {
+  test.skip(Boolean(isMobile), "The palette matrix is viewport-independent.");
+  await signIn(context, "all");
+  await page.goto("/journal");
+  await expect(
+    page.getByRole("button", { name: "Refresh Today" }),
+  ).toBeVisible();
+  await page.locator("summary", { hasText: "All 16 categories" }).click();
+
+  for (const palette of palettes) {
+    await page.locator("html").evaluate((root, value) => {
+      if (value) root.dataset.palette = value;
+      else delete root.dataset.palette;
+    }, palette.value);
+
+    for (const theme of ["Light", "Dark"] as const) {
+      await chooseTheme(page, theme);
+      const { violations: contrastViolations } = await new AxeBuilder({ page })
+        .include('[role="group"][aria-label="All 16 categories"]')
+        .withRules(["color-contrast"])
+        .analyze();
+      expect(
+        contrastViolations,
+        `${palette.name} in the ${theme.toLowerCase()} theme`,
+      ).toEqual([]);
+    }
+  }
+});
 
 const publicRoutes = [
   { name: "landing", path: "/" },

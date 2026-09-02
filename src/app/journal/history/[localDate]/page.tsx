@@ -9,10 +9,10 @@ import {
   redactHistoricalNarrative,
   retryHistoricalJournal,
 } from "@/app/journal/history/actions";
+import { HistoryActionForm } from "@/app/journal/history/history-action-form";
 import { AppShell } from "@/components/journal/app-shell";
 import { MetricOverview } from "@/components/journal/metric-overview";
 import { StateBlock } from "@/components/journal/state-block";
-import { Button } from "@/components/ui/button";
 import { getE2EHistoricalJournal, isE2EJournalUser } from "@/lib/e2e-fixtures";
 import { journalFinalizationRepository } from "@/lib/journal-finalization-repository";
 import { getJournalSession } from "@/lib/session";
@@ -187,11 +187,10 @@ export default async function JournalHistoryDetailPage({
             tone="error"
             className="mt-6"
             action={
-              <form action={retryAction}>
-                <Button type="submit" variant="outline">
-                  Retry finalization
-                </Button>
-              </form>
+              <HistoryActionForm
+                action={retryAction}
+                label="Retry finalization"
+              />
             }
           >
             Retry after GitHub or narrative generation has recovered. The job
@@ -202,11 +201,10 @@ export default async function JournalHistoryDetailPage({
             title="Privacy redaction"
             className="mt-6"
             action={
-              <form action={redactAction}>
-                <Button type="submit" variant="outline">
-                  Redact narrative
-                </Button>
-              </form>
+              <HistoryActionForm
+                action={redactAction}
+                label="Redact narrative"
+              />
             }
           >
             Permanently remove the frozen narrative. Aggregate metrics and the

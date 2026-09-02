@@ -22,7 +22,7 @@ missing. Configure all eight values for a complete deployment.
 | `GITHUB_CLIENT_SECRET`  | Client secret paired with the local client ID                      | Client secret paired with the production client ID                                                | Yes                      | Exchanges GitHub OAuth authorization codes for user tokens                   |
 | `GITHUB_APP_SLUG`       | Slug from `https://github.com/apps/<slug>`                         | Production app's slug                                                                             | No                       | Builds the GitHub App installation URL                                       |
 | `GITHUB_WEBHOOK_SECRET` | Random value configured on the local GitHub App                    | Random value configured on the production GitHub App                                              | Yes                      | Verifies the HMAC signature on GitHub webhook deliveries                     |
-| `CRON_SECRET`           | A local random value                                               | A long random value configured for Vercel Cron                                                    | Yes                      | Authenticates scheduled journal-finalization dispatches                      |
+| `CRON_SECRET`           | A local random value                                               | A long random value configured for Vercel Cron                                                    | Yes                      | Authenticates scheduled dispatches and the `/api/ops/health` operations view |
 
 Use separate local and production Neon databases and separate
 `BETTER_AUTH_SECRET` values. A shared GitHub App can support local and
@@ -45,6 +45,36 @@ Do not manually add these values to Vercel or GitHub Actions.
 | `VERCEL_DEPLOYMENT_ID`          | Vercel                      | Used automatically to associate queue delivery with a deployment.                                                                                                             |
 | `NODE_ENV`                      | Next.js and package scripts | Do not set it in `.env.local`. Next.js and the repository scripts select `development`, `test`, or `production`.                                                              |
 | `CI`                            | GitHub Actions              | Changes Playwright retries, reporter, browser selection, and `forbidOnly`.                                                                                                    |
+
+## Optional service-protection tuning
+
+Every value below has a working default, and the application behaves correctly
+with none of them set. Configure one only to tighten or relax a deployment —
+[Operating Coding Journal](operations.md) explains what each one bounds.
+
+| Variable                         | Default | Bounds                                                                  |
+| -------------------------------- | ------- | ----------------------------------------------------------------------- |
+| `RATE_LIMIT_JOURNAL_REFRESH`     | `12`    | Today refreshes per user per 15 minutes                                 |
+| `RATE_LIMIT_FINALIZATION_RETRY`  | `5`     | Finalization retries per user per hour                                  |
+| `RATE_LIMIT_NARRATIVE_REDACTION` | `20`    | Narrative redactions per user per hour                                  |
+| `RATE_LIMIT_ACCOUNT_DELETION`    | `5`     | Account-deletion attempts per user per hour                             |
+| `RATE_LIMIT_GITHUB_SYNC_DAILY`   | `20000` | Reconciliations product-wide per day                                    |
+| `CIRCUIT_FAILURE_THRESHOLD`      | `5`     | Provider failures that open a circuit                                   |
+| `CIRCUIT_FAILURE_WINDOW_SECONDS` | `300`   | Window those failures are counted in                                    |
+| `CIRCUIT_COOLDOWN_SECONDS`       | `120`   | How long an open circuit refuses calls                                  |
+| `WEBHOOK_QUEUE_CONCURRENCY`      | `10`    | Webhook deliveries processed at once                                    |
+| `FINALIZATION_QUEUE_CONCURRENCY` | `5`     | Journal finalizations processed at once                                 |
+| `TELEMETRY_SALT`                 | —       | Keys the opaque identifiers in logs; falls back to `BETTER_AUTH_SECRET` |
+
+`TELEMETRY_SALT` is the one worth setting deliberately. Without it the log
+digests are keyed with `BETTER_AUTH_SECRET`, which cannot be rotated casually;
+a separate salt can be rotated at any time, at the cost of breaking correlation
+with older log lines.
+
+The lease and retry intervals — `WEBHOOK_QUEUE_LEASE_SECONDS`,
+`FINALIZATION_QUEUE_LEASE_SECONDS`, `WEBHOOK_QUEUE_RETRY_SECONDS` and
+`FINALIZATION_QUEUE_RETRY_SECONDS` — exist for the same reason and rarely need
+changing. Raise a lease only if a consumer legitimately runs longer than it.
 
 The following are test controls, not deployment configuration:
 

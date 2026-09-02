@@ -110,6 +110,26 @@ describe("settings page", () => {
     ).toBeInTheDocument();
   });
 
+  it("states a refused deletion in the destructive zone without hiding the action", async () => {
+    render(
+      <ThemeProvider storageKey={null} paletteStorageKey={null}>
+        {await SettingsPage({
+          searchParams: Promise.resolve({ limited: "deletion" }),
+        })}
+      </ThemeProvider>,
+    );
+
+    expect(
+      screen.getByText("Request limit reached.", { selector: "p" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Settings and the journal stay available/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Delete my account" }),
+    ).toBeInTheDocument();
+  });
+
   it("applies a chosen theme to the document", async () => {
     render(
       <ThemeProvider storageKey={null} paletteStorageKey={null}>

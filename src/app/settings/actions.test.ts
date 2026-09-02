@@ -6,6 +6,7 @@ const boundaries = vi.hoisted(() => ({
   deleteAccount: vi.fn(),
   getSession: vi.fn(),
   getToken: vi.fn(),
+  increment: vi.fn(),
   redirect: vi.fn((url: string) => {
     throw new Error(`NEXT_REDIRECT:${url}`);
   }),
@@ -18,6 +19,11 @@ vi.mock("@/lib/github-user-token", () => ({
   getGitHubUserAccessToken: boundaries.getToken,
 }));
 vi.mock("@/lib/session", () => ({ getJournalSession: boundaries.getSession }));
+vi.mock("@/lib/rate-limit-repository", () => ({
+  rateLimitRepository: {
+    increment: boundaries.increment,
+  },
+}));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("next/navigation", () => ({ redirect: boundaries.redirect }));
 
@@ -33,6 +39,14 @@ describe("account deletion action", () => {
       session: { id: "session-1" },
     });
     boundaries.getToken.mockReset().mockResolvedValue("provider-token");
+    boundaries.increment
+      .mockReset()
+      .mockImplementation(
+        async ({ now, windowMs }: { now: Date; windowMs: number }) => ({
+          count: 1,
+          windowEndsAt: new Date(now.getTime() + windowMs),
+        }),
+      );
     boundaries.redirect.mockClear();
   });
 
@@ -54,6 +68,20 @@ describe("account deletion action", () => {
 
     await expect(deleteAccount(formData)).rejects.toThrow(
       "NEXT_REDIRECT:/sign-in?next=%2Fsettings",
+    );
+    expect(boundaries.deleteAccount).not.toHaveBeenCalled();
+  });
+
+  it("refuses a repeated deletion request without touching the account", async () => {
+    boundaries.increment.mockResolvedValue({
+      count: 99,
+      windowEndsAt: new Date("2026-09-01T13:00:00Z"),
+    });
+    const formData = new FormData();
+    formData.set("confirmation", "DELETE");
+
+    await expect(deleteAccount(formData)).rejects.toThrow(
+      "NEXT_REDIRECT:/settings?limited=deletion",
     );
     expect(boundaries.deleteAccount).not.toHaveBeenCalled();
   });

@@ -1,0 +1,148 @@
+{
+  "description": "The production Vercel WAF configuration for Coding Journal. Rules are listed in the order they should be published; the first match wins. Stage them with `node scripts/print-firewall-commands.mjs`, review with `vercel firewall diff`, then publish.",
+  "rules": [
+    {
+      "name": "Block exploit probes",
+      "why": "Scanners cost invocations on paths the product does not serve. Nothing legitimate requests them.",
+      "conditions": [
+        {
+          "type": "path",
+          "op": "inc",
+          "value": [
+            "/wp-admin",
+            "/wp-login.php",
+            "/.env",
+            "/.git/config",
+            "/phpmyadmin",
+            "/xmlrpc.php"
+          ]
+        }
+      ],
+      "action": "deny",
+      "stage": "log"
+    },
+    {
+      "name": "Rate limit authentication",
+      "why": "Sign-in and the OAuth callback are the only unauthenticated write surface. A per-client ceiling blunts credential stuffing without touching a real sign-in.",
+      "conditions": [
+        {
+          "type": "path",
+          "op": "pre",
+          "value": "/api/auth"
+        }
+      ],
+      "action": "rate_limit",
+      "rateLimit": {
+        "window": 60,
+        "requests": 30,
+        "keys": ["ip"],
+        "action": "rate_limit"
+      },
+      "stage": "log"
+    },
+    {
+      "name": "Rate limit journal actions",
+      "why": "Server actions post to the page path. The application budgets these per user as well; this bounds a client that is not signed in at all.",
+      "conditions": [
+        {
+          "type": "path",
+          "op": "pre",
+          "value": "/journal"
+        },
+        {
+          "type": "method",
+          "op": "eq",
+          "value": "POST"
+        }
+      ],
+      "action": "rate_limit",
+      "rateLimit": {
+        "window": 60,
+        "requests": 60,
+        "keys": ["ip", "ja4"],
+        "action": "rate_limit"
+      },
+      "stage": "log"
+    },
+    {
+      "name": "Rate limit GitHub installation callbacks",
+      "why": "The install and setup callbacks write installation state. GitHub itself never needs more than a handful per minute.",
+      "conditions": [
+        {
+          "type": "path",
+          "op": "inc",
+          "value": ["/api/github/install", "/api/github/callback"]
+        }
+      ],
+      "action": "rate_limit",
+      "rateLimit": {
+        "window": 60,
+        "requests": 30,
+        "keys": ["ip"],
+        "action": "rate_limit"
+      },
+      "stage": "log"
+    },
+    {
+      "name": "Rate limit GitHub webhooks",
+      "why": "Deliveries are signature-verified before any database work, so this is a volume ceiling only. It is deliberately generous: GitHub delivers from shared egress addresses, and a dropped delivery is a lost event.",
+      "conditions": [
+        {
+          "type": "path",
+          "op": "eq",
+          "value": "/api/github/webhook"
+        }
+      ],
+      "action": "rate_limit",
+      "rateLimit": {
+        "window": 60,
+        "requests": 1200,
+        "keys": ["ip"],
+        "action": "rate_limit"
+      },
+      "stage": "log"
+    },
+    {
+      "name": "Rate limit operations endpoints",
+      "why": "The cron dispatches and the health view are bearer-authorized. This bounds guessing at the secret.",
+      "conditions": [
+        {
+          "type": "path",
+          "op": "inc",
+          "value": [
+            "/api/cron/journal-finalization",
+            "/api/cron/privacy-maintenance",
+            "/api/ops/health"
+          ]
+        }
+      ],
+      "action": "rate_limit",
+      "rateLimit": {
+        "window": 60,
+        "requests": 20,
+        "keys": ["ip"],
+        "action": "rate_limit"
+      },
+      "stage": "log"
+    },
+    {
+      "name": "Per-client request ceiling",
+      "why": "The backstop under every rule above: no single client should be able to drive the whole product's invocation bill. Sits last so a more specific rule matches first.",
+      "conditions": [
+        {
+          "type": "path",
+          "op": "pre",
+          "value": "/"
+        }
+      ],
+      "action": "rate_limit",
+      "rateLimit": {
+        "window": 60,
+        "requests": 600,
+        "keys": ["ip", "ja4"],
+        "action": "rate_limit"
+      },
+      "stage": "log"
+    }
+  ]
+}

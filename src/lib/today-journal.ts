@@ -14,6 +14,12 @@ import {
 } from "@/lib/github-reconciliation";
 import { getGitHubUserAccessToken } from "@/lib/github-user-token";
 import { JournalNotFoundError } from "@/lib/journal-errors";
+import {
+  recordProviderFailure,
+  recordProviderSuccess,
+} from "@/lib/service-circuit";
+import { serviceCircuitRepository } from "@/lib/service-circuit-repository";
+import { logServiceEvent } from "@/lib/telemetry";
 
 function e2eJournal(userId: string, timeZone: string, now: Date): TodayJournal {
   const localDate = getLocalDayWindow(now, timeZone).localDate;
@@ -92,12 +98,41 @@ function emptyStoredJournal(timeZone: string, now: Date): TodayJournal {
 function createDiagnosticReporter(userId: string) {
   const attemptId = randomUUID();
   return (diagnostic: ReconciliationDiagnostic) => {
-    console.error(
-      "[journal-reconciliation]",
-      JSON.stringify({ attemptId, userId, ...diagnostic }),
-    );
+    logServiceEvent({
+      category: "sync",
+      event: "reconciliation-stage-failed",
+      outcome: "degraded",
+      service: "github",
+      userId,
+      jobId: attemptId,
+      stage: diagnostic.stage,
+      errorName: diagnostic.errorName,
+      errorMessage: diagnostic.errorMessage,
+      ...(diagnostic.rateLimitResetAt
+        ? {
+            retryAfterSeconds: Math.max(
+              1,
+              Math.ceil(
+                (diagnostic.rateLimitResetAt.getTime() - Date.now()) / 1000,
+              ),
+            ),
+          }
+        : {}),
+    });
   };
 }
+
+// A stage that failed because GitHub itself was unavailable feeds the shared
+// circuit; a missing user token is a per-user condition and must not open it.
+const providerStages = new Set<ReconciliationDiagnostic["stage"]>([
+  "actor",
+  "events",
+  "gists",
+  "gist-metadata",
+  "push-commits",
+  "installation-repositories",
+  "repository-commits",
+]);
 
 export async function getTodayJournal({
   requestHeaders,
@@ -123,9 +158,11 @@ export async function getTodayJournal({
   }
 
   let rateLimitedUntil: Date | undefined;
+  let providerFailures = 0;
   const logDiagnostic = createDiagnosticReporter(userId);
   const reportDiagnostic = (diagnostic: ReconciliationDiagnostic) => {
     logDiagnostic(diagnostic);
+    if (providerStages.has(diagnostic.stage)) providerFailures += 1;
     if (
       diagnostic.rateLimitResetAt &&
       (!rateLimitedUntil || diagnostic.rateLimitResetAt > rateLimitedUntil)
@@ -152,6 +189,7 @@ export async function getTodayJournal({
     });
   }
 
+  const startedAt = Date.now();
   const journal = await reconcileGitHubActivity({
     userId,
     timeZone,
@@ -166,6 +204,32 @@ export async function getTodayJournal({
     localDate,
     store: githubActivityRepository,
     reportDiagnostic,
+  });
+  if (providerFailures > 0) {
+    await recordProviderFailure({
+      service: "github",
+      store: serviceCircuitRepository,
+    });
+  } else if (journal.status === "complete") {
+    await recordProviderSuccess({
+      service: "github",
+      store: serviceCircuitRepository,
+    });
+  }
+  logServiceEvent({
+    category: "sync",
+    event: "reconciliation-finished",
+    outcome:
+      journal.status === "error"
+        ? "failed"
+        : journal.status === "partial"
+          ? "degraded"
+          : "ok",
+    service: "github",
+    userId,
+    stage: journal.status,
+    count: journal.activities.length,
+    durationMs: Date.now() - startedAt,
   });
   return rateLimitedUntil ? { ...journal, rateLimitedUntil } : journal;
 }

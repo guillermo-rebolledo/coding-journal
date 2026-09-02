@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 
-import type { HistoryActionResult } from "@/app/journal/history/actions";
+import type { HistoryActionResult } from "@/app/journal/history/history-actions";
 import { LimitNotice } from "@/components/journal/limit-notice";
 import { Button } from "@/components/ui/button";
 

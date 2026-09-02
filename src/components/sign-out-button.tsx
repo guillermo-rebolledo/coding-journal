@@ -1,14 +1,13 @@
 "use client";
 
 import { LogOut } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { useAppServices } from "@/components/app-services";
 import { Button } from "@/components/ui/button";
-import { authClient } from "@/lib/auth-client";
 
 export function SignOutButton() {
-  const router = useRouter();
+  const { navigation, session } = useAppServices();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -16,15 +15,15 @@ export function SignOutButton() {
     setLoading(true);
     setError(null);
 
-    const result = await authClient.signOut();
+    const result = await session.signOut();
     if (result.error) {
       setError("Could not sign out. Please try again.");
       setLoading(false);
       return;
     }
 
-    router.replace("/");
-    router.refresh();
+    navigation.replace("/");
+    navigation.refresh();
   }
 
   return (

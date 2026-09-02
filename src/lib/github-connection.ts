@@ -16,6 +16,11 @@ function displayAsUnavailable(
     : installation;
 }
 
+/** A stored installation, after the freshness pass this module runs. */
+export type GitHubConnection = Awaited<
+  ReturnType<typeof refreshGitHubConnections>
+>[number];
+
 export async function refreshGitHubConnections(
   requestHeaders: Headers,
   userId: string,

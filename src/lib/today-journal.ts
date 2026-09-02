@@ -21,6 +21,26 @@ import {
 import { serviceCircuitRepository } from "@/lib/service-circuit-repository";
 import { logServiceEvent } from "@/lib/telemetry";
 
+/**
+ * The stores a reconciliation pass writes through. They are a parameter with
+ * the production default so a caller can supply real stand-ins and still
+ * exercise the reconciliation, circuit accounting and telemetry below.
+ */
+export type TodayJournalStores = {
+  activities: typeof githubActivityRepository;
+  circuits: typeof serviceCircuitRepository;
+  getAccessToken: (
+    requestHeaders: Headers,
+    userId: string,
+  ) => Promise<string | null>;
+};
+
+const productionStores: TodayJournalStores = {
+  activities: githubActivityRepository,
+  circuits: serviceCircuitRepository,
+  getAccessToken: getGitHubUserAccessToken,
+};
+
 function e2eJournal(userId: string, timeZone: string, now: Date): TodayJournal {
   const localDate = getLocalDayWindow(now, timeZone).localDate;
   const awaitingReconciliation = userId === "e2e-user";
@@ -138,6 +158,7 @@ export async function getTodayJournal({
   now = new Date(),
   localDate,
   accessToken: suppliedAccessToken,
+  stores = productionStores,
 }: {
   requestHeaders: Headers;
   userId: string;
@@ -147,6 +168,7 @@ export async function getTodayJournal({
   now?: Date;
   localDate?: string;
   accessToken?: string | null;
+  stores?: TodayJournalStores;
 }) {
   if (isE2EJournalUser(userId)) {
     return e2eJournal(userId, timeZone, now);
@@ -169,7 +191,7 @@ export async function getTodayJournal({
   let accessToken = suppliedAccessToken;
   if (accessToken === undefined) {
     try {
-      accessToken = await getGitHubUserAccessToken(requestHeaders, userId);
+      accessToken = await stores.getAccessToken(requestHeaders, userId);
     } catch (error) {
       // The reconciliation result deliberately carries the provider error state.
       reportDiagnostic({ stage: "user-access-token", ...describeError(error) });
@@ -197,19 +219,13 @@ export async function getTodayJournal({
     accessToken,
     now,
     localDate,
-    store: githubActivityRepository,
+    store: stores.activities,
     reportDiagnostic,
   });
   if (providerFailures > 0) {
-    await recordProviderFailure({
-      service: "github",
-      store: serviceCircuitRepository,
-    });
+    await recordProviderFailure({ service: "github", store: stores.circuits });
   } else if (journal.status === "complete") {
-    await recordProviderSuccess({
-      service: "github",
-      store: serviceCircuitRepository,
-    });
+    await recordProviderSuccess({ service: "github", store: stores.circuits });
   }
   logServiceEvent({
     category: "sync",
@@ -240,7 +256,10 @@ export async function getStoredTodayJournal(
     options.timeZone,
   ).localDate;
   try {
-    return await githubActivityRepository.read(options.userId, localDate);
+    return await (options.stores ?? productionStores).activities.read(
+      options.userId,
+      localDate,
+    );
   } catch (error) {
     if (error instanceof JournalNotFoundError)
       return emptyStoredJournal(options.timeZone, options.now ?? new Date());

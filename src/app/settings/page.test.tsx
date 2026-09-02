@@ -82,6 +82,11 @@ describe("settings page", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/retained for 30 days/i)).toBeInTheDocument();
     expect(
+      screen.getByText(
+        /choice is fixed after onboarding because changing it would move activity/,
+      ),
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole("link", { name: "GitHub App settings" }),
     ).toHaveAttribute("href", "https://github.com/settings/installations");
     expect(

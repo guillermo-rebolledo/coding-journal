@@ -328,6 +328,10 @@ export function JournalExplorer({
     [filtered, repositories],
   );
   const filtersApplied = repository !== "all" || category !== "all";
+  const repositoryLabel =
+    title === "Activity" ? "Repository" : `${title} repository`;
+  const activityTypeLabel =
+    title === "Activity" ? "Activity type" : `${title} activity type`;
 
   return (
     <section aria-labelledby={headingId} className="mt-10">
@@ -347,8 +351,9 @@ export function JournalExplorer({
 
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
         <div
+          role="group"
           className="flex rounded-m3-full bg-m3-surface-container p-1"
-          aria-label="Activity layout"
+          aria-label={`${title} layout`}
         >
           {(
             [
@@ -374,10 +379,10 @@ export function JournalExplorer({
           ))}
         </div>
         <select
-          aria-label="Repository"
+          aria-label={repositoryLabel}
           value={repository}
           onChange={(event) => setRepository(event.target.value)}
-          className="min-h-11 max-w-full rounded-m3-xs border border-m3-outline-variant bg-transparent px-3 text-m3-body-md text-m3-on-surface"
+          className="min-h-11 max-w-full rounded-m3-xs border border-m3-outline-variant bg-transparent px-3 text-m3-body-lg text-m3-on-surface m3-medium:text-m3-body-md"
         >
           <option value="all">All repositories</option>
           {repositories.map((name) => (
@@ -387,14 +392,14 @@ export function JournalExplorer({
           ))}
         </select>
         <select
-          aria-label="Activity type"
+          aria-label={activityTypeLabel}
           value={category}
           onChange={(event) => {
             // SAFETY: every option below is rendered from `categoryLabels`,
             // so the selected value is one of its keys.
             setCategory(event.target.value as ActivityCategory);
           }}
-          className="min-h-11 max-w-full rounded-m3-xs border border-m3-outline-variant bg-transparent px-3 text-m3-body-md text-m3-on-surface"
+          className="min-h-11 max-w-full rounded-m3-xs border border-m3-outline-variant bg-transparent px-3 text-m3-body-lg text-m3-on-surface m3-medium:text-m3-body-md"
         >
           {categoryEntries.map(([value, label]) => (
             <option key={value} value={value}>
@@ -434,7 +439,7 @@ export function JournalExplorer({
       ) : (
         <div className="mt-4 grid gap-5">
           {groups.map((group) => (
-            <section key={group.name} role="region" aria-label={group.name}>
+            <section key={group.name}>
               <h3 className="text-m3-title-sm wrap-anywhere text-m3-on-surface">
                 {group.name}
               </h3>

@@ -153,4 +153,12 @@ describe("trust documents", () => {
       "data-access",
     ]);
   });
+
+  it("uses the product's British spelling and straight-apostrophe conventions", () => {
+    for (const document of trustDocuments) {
+      const text = textOf(document);
+      expect(text).not.toMatch(/\blabeled\b/i);
+      expect(text).not.toMatch(/[‘’]/);
+    }
+  });
 });

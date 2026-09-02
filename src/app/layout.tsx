@@ -21,7 +21,7 @@ export default function RootLayout({
 }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body>
+      <body className="antialiased">
         <ThemeProvider defaultTheme="system">
           <RouterAppServices>{children}</RouterAppServices>
         </ThemeProvider>

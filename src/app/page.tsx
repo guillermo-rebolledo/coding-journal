@@ -158,7 +158,7 @@ export default function HomePage() {
       <footer className="border-t border-m3-outline-variant px-4 py-8 sm:px-6">
         <div className="mx-auto flex max-w-[76rem] flex-col gap-3 text-m3-body-sm text-m3-on-surface-variant m3-expanded:flex-row m3-expanded:items-center m3-expanded:justify-between">
           <p>Coding Journal is open source and made for thoughtful work.</p>
-          <TrustNav />
+          <TrustNav underline />
         </div>
       </footer>
     </div>

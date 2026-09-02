@@ -25,15 +25,6 @@ export type CircuitConfiguration = {
   cooldownMs: number;
 };
 
-export type CircuitSnapshot = {
-  service: string;
-  state: "closed" | "open";
-  failureCount: number;
-  openedAt: Date | null;
-  retryAt: Date | null;
-  updatedAt: Date;
-};
-
 export type CircuitDecision =
   | { allowed: true }
   | { allowed: false; retryAfterSeconds: number };
@@ -50,7 +41,6 @@ export type CircuitStore = {
     now: Date;
     configuration: CircuitConfiguration;
   }): Promise<void>;
-  readAll(): Promise<CircuitSnapshot[]>;
 };
 
 export class ProviderUnavailableError extends Error {
@@ -148,6 +138,49 @@ export async function withProviderCircuit<T>(
       jobId,
       error,
     });
+    throw error;
+  }
+}
+
+/**
+ * Wraps providers whose domain operation intentionally turns failures into a
+ * stored degraded result. The predicate translates that result back into the
+ * circuit's success/failure vocabulary without splitting check and record
+ * across the caller.
+ */
+export async function withProviderCircuitOutcome<T>(
+  {
+    service,
+    store,
+    now = new Date(),
+    jobId,
+  }: {
+    service: CircuitService;
+    store: CircuitStore;
+    now?: Date;
+    jobId?: string;
+  },
+  call: () => Promise<T>,
+  outcome: (result: T) => "success" | "failure" | "neutral",
+): Promise<T> {
+  await assertProviderAvailable({
+    service,
+    store,
+    now,
+    jobId,
+    category: "provider",
+  });
+  try {
+    const result = await call();
+    const providerOutcome = outcome(result);
+    if (providerOutcome === "failure") {
+      await recordProviderFailure({ service, store, now, jobId });
+    } else if (providerOutcome === "success") {
+      await recordProviderSuccess({ service, store, now });
+    }
+    return result;
+  } catch (error) {
+    await recordProviderFailure({ service, store, now, jobId, error });
     throw error;
   }
 }

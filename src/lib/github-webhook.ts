@@ -12,20 +12,22 @@ import {
   type JsonObject,
 } from "@/lib/json-payload";
 import {
+  isStaleGitHubDelivery,
+  validGitHubDeliveryId,
+} from "@/lib/github-delivery-rules";
+import {
+  activityIdentity,
   commitDeduplicationKey,
-  getLocalDayWindow,
-  parseDate,
+  createActivityRecord,
   pushDeduplicationKey,
-  pushEvidenceUrl,
   validRepositoryName,
   validSha,
   type ActivityRecord,
-} from "@/lib/github-reconciliation";
+} from "@/lib/github-activity";
+import { getLocalDayWindow, parseDate } from "@/lib/time-zone";
 
 // Deliveries whose push happened this long before receipt rewrite history the
 // journal no longer reconciles; they are acknowledged but never enqueued.
-const staleDeliveryMs = 7 * 24 * 60 * 60 * 1000;
-
 export const webhookDeliveryTopic = "github-webhook-deliveries";
 
 export type PushDeliveryMessage = {
@@ -64,7 +66,7 @@ export function verifyGitHubSignature(
 
 /** Narrows a header or decoded string to GitHub's delivery-id form. */
 export function validDeliveryId(value: string | null): value is string {
-  return value !== null && /^[A-Za-z0-9-]{1,100}$/.test(value);
+  return validGitHubDeliveryId(value);
 }
 
 /**
@@ -128,7 +130,7 @@ export function extractPushDelivery({
   }
 
   const pushedAt = readPushedAt(repository, "pushed_at") ?? receivedAt;
-  if (receivedAt.getTime() - pushedAt.getTime() > staleDeliveryMs) {
+  if (isStaleGitHubDelivery(receivedAt, pushedAt)) {
     return { ok: false, reason: "stale" };
   }
 
@@ -260,32 +262,36 @@ export function normalizePushMessage(
   const observedAt = new Date(message.receivedAt);
   const window = getLocalDayWindow(occurredAt, user.timeZone);
   const records = new Map<string, ActivityRecord>();
-  const visibility = push.private ? "private" : "public";
 
   const pushKey = pushDeduplicationKey(
     push.repositoryId,
     push.before,
     push.head,
   );
-  records.set(pushKey, {
-    deduplicationKey: pushKey,
-    localDate: window.localDate,
-    kind: "push",
-    actorId: push.senderId,
-    actorLogin: push.senderLogin,
-    repositoryId: push.repositoryId,
-    repositoryName: push.repositoryName,
-    evidenceUrl: pushEvidenceUrl(push.repositoryName, push.before, push.head),
-    visibility,
-    source: "github-webhook",
-    subjectId: push.head,
-    subjectNumber: null,
-    subjectTitle: null,
-    occurredAt,
-    observedAt,
-    authoredBeforeDay: false,
-    installationId: message.installationId,
-  });
+  records.set(
+    pushKey,
+    createActivityRecord({
+      kind: "push",
+      identity: activityIdentity.push(
+        push.repositoryId,
+        push.before,
+        push.head,
+      ),
+      evidence: { shape: "push", before: push.before, head: push.head },
+      actor: { id: push.senderId, login: push.senderLogin },
+      repository: {
+        id: push.repositoryId,
+        name: push.repositoryName,
+        private: push.private,
+      },
+      subject: { id: push.head, number: null, title: null },
+      source: "github-webhook",
+      occurredAt,
+      observedAt,
+      window,
+      installationId: message.installationId,
+    }),
+  );
 
   for (const commit of push.commits) {
     if (commit.authorLogin?.toLowerCase() !== push.senderLogin.toLowerCase()) {
@@ -294,25 +300,26 @@ export function normalizePushMessage(
     const authoredAt = new Date(commit.authoredAt);
     const commitKey = commitDeduplicationKey(push.repositoryId, commit.sha);
     if (records.has(commitKey)) continue;
-    records.set(commitKey, {
-      deduplicationKey: commitKey,
-      localDate: window.localDate,
-      kind: "commit",
-      actorId: push.senderId,
-      actorLogin: push.senderLogin,
-      repositoryId: push.repositoryId,
-      repositoryName: push.repositoryName,
-      evidenceUrl: `https://github.com/${push.repositoryName}/commit/${commit.sha}`,
-      visibility,
-      source: "github-webhook",
-      subjectId: commit.sha,
-      subjectNumber: null,
-      subjectTitle: null,
-      occurredAt: authoredAt,
-      observedAt,
-      authoredBeforeDay: authoredAt < window.startsAt,
-      installationId: message.installationId,
-    });
+    records.set(
+      commitKey,
+      createActivityRecord({
+        kind: "commit",
+        identity: activityIdentity.commit(push.repositoryId, commit.sha),
+        evidence: { shape: "commit", sha: commit.sha },
+        actor: { id: push.senderId, login: push.senderLogin },
+        repository: {
+          id: push.repositoryId,
+          name: push.repositoryName,
+          private: push.private,
+        },
+        subject: { id: commit.sha, number: null, title: null },
+        source: "github-webhook",
+        occurredAt: authoredAt,
+        observedAt,
+        window,
+        installationId: message.installationId,
+      }),
+    );
   }
 
   return [...records.values()];

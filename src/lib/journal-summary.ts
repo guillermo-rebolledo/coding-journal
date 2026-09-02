@@ -107,6 +107,11 @@ export type SummaryUsage = {
   globalDaily: number;
   monthlyCostUsd: number;
   lastGeneratedAt?: Date;
+  activeClaims?: number;
+};
+
+export type SummaryClaimSlot = {
+  finish(succeeded: boolean): Promise<void>;
 };
 
 export type SummaryStore = {
@@ -119,42 +124,15 @@ export type SummaryStore = {
     summary: JournalSummary,
     evidence: ActivityRecord[],
   ): Promise<JournalSummary>;
-  claim?(input: SummaryClaimRequest): Promise<SummaryClaimResult>;
-  finishClaim?(
-    userId: string,
-    snapshotHash: string,
-    succeeded: boolean,
-  ): Promise<void>;
+  claimSlot(input: SummaryClaimSlotRequest): Promise<SummaryClaimSlot | null>;
 };
 
-export type SummaryClaimRequest = {
+export type SummaryClaimSlotRequest = {
   userId: string;
   localDate: string;
   snapshotHash: string;
   now: Date;
-  globalDailyLimit: number;
-  monthlySpendLimitUsd: number;
-  queueConcurrency: number;
 };
-
-export type SummaryClaimResult =
-  | { allowed: true }
-  | {
-      allowed: false;
-      reason:
-        | "cooldown"
-        | "daily-exhausted"
-        | "global-paused"
-        | "budget-exhausted"
-        | "queue-busy";
-      retryAt?: Date;
-    };
-
-/** The refusal arm of `SummaryClaimResult`, named so it can be built in steps. */
-export type SummaryClaimRejected = Extract<
-  SummaryClaimResult,
-  { allowed: false }
->;
 
 type ProviderResult = {
   /** The model's structured output, decoded but not yet validated. */
@@ -190,6 +168,59 @@ export type SummaryResult =
 
 /** The refusal arm of `SummaryResult`, named so it can be built in steps. */
 type SummaryUnavailable = Extract<SummaryResult, { status: "unavailable" }>;
+
+export type SummaryUnavailableReason = SummaryUnavailable["reason"];
+
+const summaryUnavailableMessages: Record<SummaryUnavailableReason, string> = {
+  "no-activity":
+    "No narrative was generated because this day has no eligible evidence.",
+  cooldown: "The narrative is cooling down.",
+  "daily-exhausted": "Today's narrative allowance is exhausted.",
+  "global-paused": "Narrative generation is globally paused.",
+  "budget-exhausted": "The monthly narrative budget is exhausted.",
+  "input-too-large":
+    "Narrative generation is temporarily paused by a service limit.",
+  "queue-busy":
+    "Narrative generation is temporarily paused by a service limit.",
+  "invalid-output": "The narrative provider returned an invalid response.",
+  "provider-error": "The narrative provider is unavailable right now.",
+};
+
+export function summaryUnavailableMessage(reason: SummaryUnavailableReason) {
+  return summaryUnavailableMessages[reason];
+}
+
+const retryableSummaryReasons = new Set<SummaryUnavailableReason>([
+  "cooldown",
+  "daily-exhausted",
+  "global-paused",
+  "budget-exhausted",
+  "queue-busy",
+  "invalid-output",
+  "provider-error",
+]);
+
+export function isRetryableSummaryReason(reason: SummaryUnavailableReason) {
+  return retryableSummaryReasons.has(reason);
+}
+
+function configuredSummaryNumber(name: string, fallback: number) {
+  const parsed = Number(process.env[name]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export const summaryLimitConfiguration = {
+  globalDaily: configuredSummaryNumber("SUMMARY_GLOBAL_DAILY_LIMIT", 1_000),
+  monthlySpendUsd: configuredSummaryNumber(
+    "SUMMARY_MONTHLY_SPEND_LIMIT_USD",
+    100,
+  ),
+  maximumInputBytes: configuredSummaryNumber(
+    "SUMMARY_MAXIMUM_INPUT_BYTES",
+    16_000,
+  ),
+  queueConcurrency: configuredSummaryNumber("SUMMARY_QUEUE_CONCURRENCY", 5),
+};
 
 function sanitizeTitle(value: string | null): string {
   if (!value) return "Untitled activity";
@@ -529,55 +560,54 @@ export async function generateJournalSummary({
   if (cached) return { status: "available", summary: cached, cached: true };
 
   const configured = {
-    globalDaily: limits.globalDaily ?? 1_000,
-    monthlySpendUsd: limits.monthlySpendUsd ?? 100,
-    maximumInputBytes: limits.maximumInputBytes ?? 16_000,
-    queueConcurrency: limits.queueConcurrency ?? 5,
+    ...summaryLimitConfiguration,
+    ...limits,
   };
+  const slot = await store.claimSlot({
+    userId,
+    localDate,
+    snapshotHash: snapshot.hash,
+    now,
+  });
+  if (!slot) {
+    return {
+      status: "unavailable",
+      reason: "cooldown",
+      retryAt: new Date(now.getTime() + summaryCooldownMs),
+    };
+  }
+
+  const usage = await store.getUsage(userId, localDate, now);
+  let refusal: SummaryUnavailable | null = null;
   if (
+    usage.lastGeneratedAt &&
+    usage.lastGeneratedAt.getTime() + summaryCooldownMs > now.getTime()
+  ) {
+    refusal = {
+      status: "unavailable",
+      reason: "cooldown",
+      retryAt: new Date(usage.lastGeneratedAt.getTime() + summaryCooldownMs),
+    };
+  } else if (usage.userDaily >= 12) {
+    refusal = { status: "unavailable", reason: "daily-exhausted" };
+  } else if (usage.globalDaily >= configured.globalDaily) {
+    refusal = { status: "unavailable", reason: "global-paused" };
+  } else if (usage.monthlyCostUsd >= configured.monthlySpendUsd) {
+    refusal = { status: "unavailable", reason: "budget-exhausted" };
+  } else if (
     Buffer.byteLength(JSON.stringify(snapshot.evidence), "utf8") >
     configured.maximumInputBytes
-  )
-    return { status: "unavailable", reason: "input-too-large" };
-  if (queueActive >= configured.queueConcurrency)
-    return { status: "unavailable", reason: "queue-busy" };
-
-  if (store.claim) {
-    const claim = await store.claim({
-      userId,
-      localDate,
-      snapshotHash: snapshot.hash,
-      now,
-      globalDailyLimit: configured.globalDaily,
-      monthlySpendLimitUsd: configured.monthlySpendUsd,
-      queueConcurrency: configured.queueConcurrency,
-    });
-    if (!claim.allowed) {
-      const unavailable: SummaryUnavailable = {
-        status: "unavailable",
-        reason: claim.reason,
-      };
-      if (claim.retryAt) unavailable.retryAt = claim.retryAt;
-      return unavailable;
-    }
-  } else {
-    const usage = await store.getUsage(userId, localDate, now);
-    if (usage.userDaily >= 12)
-      return { status: "unavailable", reason: "daily-exhausted" };
-    if (usage.globalDaily >= configured.globalDaily)
-      return { status: "unavailable", reason: "global-paused" };
-    if (usage.monthlyCostUsd >= configured.monthlySpendUsd)
-      return { status: "unavailable", reason: "budget-exhausted" };
-    if (
-      usage.lastGeneratedAt &&
-      usage.lastGeneratedAt.getTime() + summaryCooldownMs > now.getTime()
-    ) {
-      return {
-        status: "unavailable",
-        reason: "cooldown",
-        retryAt: new Date(usage.lastGeneratedAt.getTime() + summaryCooldownMs),
-      };
-    }
+  ) {
+    refusal = { status: "unavailable", reason: "input-too-large" };
+  } else if (
+    queueActive >= configured.queueConcurrency ||
+    (usage.activeClaims ?? 1) > configured.queueConcurrency
+  ) {
+    refusal = { status: "unavailable", reason: "queue-busy" };
+  }
+  if (refusal) {
+    await slot.finish(false);
+    return refusal;
   }
 
   try {
@@ -598,17 +628,17 @@ export async function generateJournalSummary({
         createdAt: now,
       };
       const saved = await store.save(summary, activities);
-      await store.finishClaim?.(userId, snapshot.hash, true);
+      await slot.finish(true);
       return {
         status: "available",
         summary: saved,
         cached: false,
       };
     }
-    await store.finishClaim?.(userId, snapshot.hash, false);
+    await slot.finish(false);
     return { status: "unavailable", reason: "invalid-output" };
   } catch {
-    await store.finishClaim?.(userId, snapshot.hash, false);
+    await slot.finish(false);
     return { status: "unavailable", reason: "provider-error" };
   }
 }

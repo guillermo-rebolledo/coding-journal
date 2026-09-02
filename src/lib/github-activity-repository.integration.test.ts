@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import * as schema from "@/db/auth-schema";
 import { journalReconciliation, user } from "@/db/auth-schema";
 import { createGitHubActivityRepository } from "@/lib/github-activity-repository";
-import type { ActivityRecord } from "@/lib/github-reconciliation";
+import type { ActivityRecord } from "@/lib/github-activity";
 
 describe("GitHub activity repository with Postgres", () => {
   const client = new PGlite();

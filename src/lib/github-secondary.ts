@@ -1,4 +1,6 @@
 import {
+  activityIdentity,
+  createActivityRecord,
   validRepositoryName,
   type ActivityRecord,
 } from "@/lib/github-activity";
@@ -103,24 +105,19 @@ export function normalizeGistActivity({
     return [];
   }
 
-  const visibility: ActivityRecord["visibility"] = isPublic
-    ? "public"
-    : "private";
   const title = boundedDescription(readString(gist, "description"));
   const forkOf = readObject(gist, "fork_of");
   const base = {
-    localDate: window.localDate,
-    actorId: String(actor.id),
-    actorLogin: actor.login,
-    repositoryId: `gists:${actor.id}`,
-    repositoryName: `${actor.login}/Gists`,
-    evidenceUrl,
-    visibility,
+    actor: { id: String(actor.id), login: actor.login },
+    repository: {
+      id: `gists:${actor.id}`,
+      name: `${actor.login}/Gists`,
+      private: !isPublic,
+    },
+    evidence: { shape: "absolute", url: evidenceUrl } as const,
     source: "github-gists" as const,
-    subjectNumber: null,
-    subjectTitle: title,
     observedAt,
-    authoredBeforeDay: false,
+    window,
     installationId: null,
     narrativeEligible: true,
   };
@@ -145,28 +142,37 @@ export function normalizeGistActivity({
         ? "gist-forked"
         : "gist-created"
       : "gist-updated";
-    records.push({
-      ...base,
-      kind,
-      deduplicationKey: isCreation
-        ? `github:${kind}:${gistId}`
-        : `github:gist-updated:${gistId}:${version}`,
-      subjectId: isCreation ? gistId : version,
-      occurredAt: committedAt,
-    });
+    records.push(
+      createActivityRecord({
+        ...base,
+        kind,
+        identity: activityIdentity.global(
+          kind,
+          isCreation ? gistId : `${gistId}:${version}`,
+        ),
+        subject: {
+          id: isCreation ? gistId : version,
+          number: null,
+          title,
+        },
+        occurredAt: committedAt,
+      }),
+    );
   }
 
   // A list response can occasionally race the commits endpoint. Preserve a
   // metadata-only creation observation rather than reading Gist files.
   if (records.length === 0 && createdAt && withinWindow(createdAt, window)) {
     const kind = forkOf !== null ? "gist-forked" : "gist-created";
-    records.push({
-      ...base,
-      kind,
-      deduplicationKey: `github:${kind}:${gistId}`,
-      subjectId: gistId,
-      occurredAt: createdAt,
-    });
+    records.push(
+      createActivityRecord({
+        ...base,
+        kind,
+        identity: activityIdentity.global(kind, gistId),
+        subject: { id: gistId, number: null, title },
+        occurredAt: createdAt,
+      }),
+    );
   }
 
   for (const comment of comments) {
@@ -180,13 +186,18 @@ export function normalizeGistActivity({
     ) {
       continue;
     }
-    records.push({
-      ...base,
-      kind: "gist-comment",
-      deduplicationKey: `github:gist-comment:${gistId}:${commentId}`,
-      subjectId: String(commentId),
-      occurredAt: commentAt,
-    });
+    records.push(
+      createActivityRecord({
+        ...base,
+        kind: "gist-comment",
+        identity: activityIdentity.global(
+          "gist-comment",
+          `${gistId}:${commentId}`,
+        ),
+        subject: { id: String(commentId), number: null, title },
+        occurredAt: commentAt,
+      }),
+    );
   }
 
   return records;
@@ -214,26 +225,28 @@ export function normalizeGistStarActivity({
     return null;
   }
 
-  return {
-    deduplicationKey: `github:gist-starred:${gistId}`,
-    localDate: window.localDate,
+  return createActivityRecord({
     kind: "gist-starred",
-    actorId: String(actor.id),
-    actorLogin: actor.login,
-    repositoryId: `gists:${actor.id}`,
-    repositoryName: `${actor.login}/Gists`,
-    evidenceUrl,
-    visibility: isPublic ? "public" : "private",
+    identity: activityIdentity.global("gist-starred", gistId),
+    evidence: { shape: "absolute", url: evidenceUrl },
+    actor: { id: String(actor.id), login: actor.login },
+    repository: {
+      id: `gists:${actor.id}`,
+      name: `${actor.login}/Gists`,
+      private: !isPublic,
+    },
+    subject: {
+      id: gistId,
+      number: null,
+      title: boundedDescription(readString(gist, "description")),
+    },
     source: "github-gists",
-    subjectId: gistId,
-    subjectNumber: null,
-    subjectTitle: boundedDescription(readString(gist, "description")),
     occurredAt: observedAt,
     observedAt,
-    authoredBeforeDay: false,
+    window,
     installationId: null,
     narrativeEligible: false,
-  };
+  });
 }
 
 export function normalizeSocialEvent({
@@ -295,26 +308,24 @@ export function normalizeSocialEvent({
     return null;
   }
 
-  return {
-    deduplicationKey: `github:${kind}:${eventId}`,
-    localDate: window.localDate,
+  return createActivityRecord({
     kind,
-    actorId: String(actor.id),
-    actorLogin: actor.login,
-    repositoryId: String(repositoryId),
-    repositoryName,
-    evidenceUrl,
-    visibility: isPublic ? "public" : "private",
+    identity: activityIdentity.global(kind, eventId),
+    evidence: { shape: "absolute", url: evidenceUrl },
+    actor: { id: String(actor.id), login: actor.login },
+    repository: {
+      id: String(repositoryId),
+      name: repositoryName,
+      private: !isPublic,
+    },
+    subject: { id: subjectId, number: null, title: subjectTitle },
     source: "github-events",
-    subjectId,
-    subjectNumber: null,
-    subjectTitle,
     occurredAt,
     observedAt,
-    authoredBeforeDay: false,
+    window,
     installationId: null,
     narrativeEligible: false,
-  };
+  });
 }
 
 export function secondarySourceFreshness({

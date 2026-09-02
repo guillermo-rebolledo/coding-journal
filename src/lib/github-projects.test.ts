@@ -31,6 +31,7 @@ function projectPayload(
       number: 12,
       title: "Engineering roadmap",
       html_url: "https://github.com/orgs/acme/projects/12",
+      updated_at: "2026-08-31T12:00:00.000Z",
     },
     changes: { title: { from: "PRIVATE ROADMAP" } },
     ...overrides,
@@ -196,5 +197,16 @@ describe("GitHub organization Projects preview contract", () => {
       }),
     ).toEqual({ ok: false, reason: "no-activity" });
     expect(parseProjectsDeliveryMessage({ version: 999 })).toBeNull();
+  });
+
+  it("ignores organization Project deliveries older than the shared window", () => {
+    expect(
+      extractProjectsDelivery({
+        eventType: "projects_v2",
+        payload: projectPayload(),
+        deliveryId: "stale-project-delivery",
+        receivedAt: new Date("2026-09-08T12:05:00.001Z"),
+      }),
+    ).toEqual({ ok: false, reason: "stale" });
   });
 });

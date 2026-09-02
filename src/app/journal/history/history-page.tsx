@@ -3,9 +3,10 @@ import Link from "next/link";
 import { AppShell } from "@/components/journal/app-shell";
 import { StateBlock } from "@/components/journal/state-block";
 import { StatusChip } from "@/components/journal/status-chip";
-import { getE2EJournalHistory, isE2EJournalUser } from "@/lib/e2e-fixtures";
-import type { JournalHistoryItem } from "@/lib/journal-finalization-repository";
-import type { JournalFinalizationRepository } from "@/lib/journal-finalization-repository";
+import type {
+  JournalHistoryItem,
+  JournalHistoryStore,
+} from "@/lib/journal-history";
 import type { JournalSession } from "@/lib/session";
 
 function displayDate(localDate: string) {
@@ -43,7 +44,7 @@ function statusLabel(day: JournalHistoryItem) {
 export type HistoryPageDependencies = {
   requestHeaders: Headers;
   getSession: (requestHeaders: Headers) => Promise<JournalSession | null>;
-  store: Pick<JournalFinalizationRepository, "list">;
+  store: Pick<JournalHistoryStore, "list">;
   redirect: (destination: string) => never;
 };
 
@@ -63,9 +64,7 @@ export async function renderJournalHistoryPage({
 }: HistoryPageDependencies) {
   const session = await getSession(requestHeaders);
   if (!session) return redirect("/sign-in?next=%2Fjournal%2Fhistory");
-  const history = isE2EJournalUser(session.user.id)
-    ? getE2EJournalHistory()
-    : await store.list(session.user.id);
+  const history = await store.list(session.user.id);
 
   const months = history.reduce<
     Array<{ label: string; days: JournalHistoryItem[] }>

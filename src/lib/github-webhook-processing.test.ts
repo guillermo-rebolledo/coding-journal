@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { ActivityRecord } from "@/lib/github-reconciliation";
+import type { ActivityRecord } from "@/lib/github-activity";
 import type { PushDeliveryMessage } from "@/lib/github-webhook";
 import {
   processWebhookDeliveryMessage,

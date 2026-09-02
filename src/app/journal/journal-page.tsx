@@ -6,7 +6,7 @@ import { JournalRefresh } from "@/app/journal/journal-refresh";
 import type { RefreshActionResult } from "@/app/journal/refresh-action";
 import { TimeZoneStep } from "@/app/journal/time-zone-step";
 import { AppShell } from "@/components/journal/app-shell";
-import { EvidenceLink } from "@/components/journal/evidence-link";
+import { JournalNarrative } from "@/components/journal/journal-narrative";
 import { MetricOverview } from "@/components/journal/metric-overview";
 import { StateBlock } from "@/components/journal/state-block";
 import { StatusChip } from "@/components/journal/status-chip";
@@ -14,24 +14,16 @@ import { Button } from "@/components/ui/button";
 import { buttonVariants } from "@/components/ui/button-variants";
 import type { StoredGitHubInstallation } from "@/lib/github-installation";
 import { getGitHubJournalCompleteness } from "@/lib/github-completeness";
-import { isE2EJournalUser } from "@/lib/e2e-fixtures";
 import type { JournalOnboarding } from "@/lib/journal";
-import {
-  reconciliationCooldownMs,
-  type TodayJournal,
-} from "@/lib/github-reconciliation";
+import type { TodayJournal } from "@/lib/github-reconciliation";
 import type { JournalSession } from "@/lib/session";
 import {
-  buildSummarySnapshot,
-  summaryEvidenceLinks,
+  describeJournalStatus,
+} from "@/lib/today-journal";
+import {
   type JournalSummary,
 } from "@/lib/journal-summary";
 import { cn } from "@/lib/utils";
-
-type EvidenceIndex = Map<
-  string,
-  ReturnType<typeof summaryEvidenceLinks>[number]
->;
 
 function formatTime(value: Date, timeZone: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -159,12 +151,14 @@ function Today({
   installations,
   journal,
   summary,
+  nextSyncAt,
   refresh,
 }: {
   timeZone: string;
   installations: StoredGitHubInstallation[];
   journal: TodayJournal;
   summary: JournalSummary | null;
+  nextSyncAt: Date | null;
   refresh: () => Promise<RefreshActionResult>;
 }) {
   const localDate = {
@@ -214,11 +208,7 @@ function Today({
           <JournalRefresh
             refresh={refresh}
             nextSyncAt={
-              journal.lastAttemptAt
-                ? new Date(
-                    journal.lastAttemptAt.getTime() + reconciliationCooldownMs,
-                  ).toISOString()
-                : null
+              nextSyncAt?.toISOString() ?? null
             }
             timeZone={timeZone}
           />
@@ -232,9 +222,12 @@ function Today({
         />
 
         <JournalNarrative
-          summary={summary}
-          activities={journal.activities}
-          timeZone={timeZone}
+          narrative={summary?.output ?? null}
+          evidence={journal.activities}
+          generatedAt={
+            summary?.createdAt ? formatTime(summary.createdAt, timeZone) : null
+          }
+          emptyMessage="No narrative yet. A summary appears after a successful refresh when generation and allowance are available. The recorded journal below is unaffected."
         />
 
         {journal.activities.length === 0 ? (
@@ -257,30 +250,15 @@ function Today({
 }
 
 function TodayEmptyState({ journal }: { journal: TodayJournal }) {
-  const [title, body] = journal.awaitingReconciliation
-    ? [
-        "Your day is ready to refresh",
-        "Nothing has been reconciled with GitHub yet today. Stored activity, if any, is already shown.",
-      ]
-    : journal.status === "error"
-      ? [
-          "Today could not be refreshed",
-          "GitHub did not respond. Everything already stored is shown and stays usable. Try again after the reconciliation cooldown.",
-        ]
-      : journal.status === "loading"
-        ? [
-            "Reconciling your day",
-            "Checking the repositories Coding Journal can see. This usually takes a few seconds.",
-          ]
-        : [
-            "Nothing recorded today",
-            "Coding Journal reconciled with GitHub and found no activity. Private or delayed work outside the repositories it can see would not appear here.",
-          ];
+  const description = describeJournalStatus({
+    status: journal.status,
+    awaitingReconciliation: journal.awaitingReconciliation,
+  });
 
   return (
     <StateBlock
       headingId="empty-today-heading"
-      title={title}
+      title={description.emptyTitle}
       size="expressive"
       className="mt-8"
       action={
@@ -292,131 +270,8 @@ function TodayEmptyState({ journal }: { journal: TodayJournal }) {
         </Link>
       }
     >
-      {body}
+      {description.emptyDetail}
     </StateBlock>
-  );
-}
-
-/**
- * The narrative slot — pattern 9. The only tertiary-tinted, 28dp surface in
- * the product, so you can tell at a glance which sentences a model wrote.
- * Degrading it never touches the deterministic journal above or below.
- */
-function JournalNarrative({
-  summary,
-  activities,
-  timeZone,
-}: {
-  summary: JournalSummary | null;
-  activities: TodayJournal["activities"];
-  timeZone: string;
-}) {
-  const evidence: EvidenceIndex = new Map(
-    summaryEvidenceLinks(activities).map((item) => [item.id, item]),
-  );
-  const generatedAt = summary?.createdAt
-    ? formatTime(summary.createdAt, timeZone)
-    : null;
-
-  return (
-    <section
-      aria-labelledby="summary-heading"
-      className={cn(
-        "mt-8 rounded-m3-xl p-6 sm:p-7",
-        summary
-          ? "bg-m3-tertiary-container text-m3-on-tertiary-container"
-          : "bg-m3-surface-container-low text-m3-on-surface",
-      )}
-    >
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 id="summary-heading" className="text-m3-title-lg">
-          Written for you
-        </h2>
-        <p className="text-m3-label-md">
-          Read-only{generatedAt ? ` · generated ${generatedAt}` : null}
-        </p>
-      </div>
-      {summary ? (
-        <div className="mt-4 grid gap-6">
-          <p className="max-w-[62ch] text-m3-body-lg">
-            {summary.output.overview}
-          </p>
-          {summary.output.accomplishments.length ? (
-            <SummaryClaims
-              title="Accomplishments"
-              claims={summary.output.accomplishments}
-              evidence={evidence}
-              withRepository
-            />
-          ) : null}
-          {summary.output.collaboration.length ? (
-            <SummaryClaims
-              title="Reviews and collaboration"
-              claims={summary.output.collaboration}
-              evidence={evidence}
-            />
-          ) : null}
-          {summary.output.inProgress.length ? (
-            <SummaryClaims
-              title="In progress"
-              claims={summary.output.inProgress}
-              evidence={evidence}
-            />
-          ) : null}
-          <p className="text-m3-body-sm">
-            Every claim links to the recorded event it came from. Gists and
-            social activity are excluded from the narrative.
-          </p>
-        </div>
-      ) : (
-        <p className="mt-3 max-w-[62ch] text-m3-body-md text-m3-on-surface-variant">
-          No narrative yet. A summary appears after a successful refresh when
-          generation and allowance are available. The recorded journal below is
-          unaffected.
-        </p>
-      )}
-    </section>
-  );
-}
-
-function SummaryClaims({
-  title,
-  claims,
-  evidence,
-  withRepository = false,
-}: {
-  title: string;
-  claims: Array<{ summary: string; evidenceIds: string[] }>;
-  evidence: EvidenceIndex;
-  withRepository?: boolean;
-}) {
-  return (
-    <div>
-      <h3 className="text-m3-title-sm">{title}</h3>
-      <ul className="mt-2 grid gap-4">
-        {claims.map((claim, index) => {
-          const repository = withRepository
-            ? evidence.get(claim.evidenceIds[0] ?? "")?.repositoryName
-            : null;
-          return (
-            <li key={`${title}-${index}`} className="max-w-[62ch]">
-              {repository ? (
-                <p className="text-m3-label-md wrap-anywhere">{repository}</p>
-              ) : null}
-              <p className="text-m3-body-md">{claim.summary}</p>
-              <div className="flex flex-wrap gap-x-4">
-                {claim.evidenceIds.flatMap((id) => {
-                  const item = evidence.get(id);
-                  return item
-                    ? [<EvidenceLink key={id} href={item.url} noun="source" />]
-                    : [];
-                })}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
   );
 }
 
@@ -441,24 +296,11 @@ function JournalStatusPane({
   const stored = journal.storedAt
     ? formatTime(journal.storedAt, timeZone)
     : reconciled;
-  const statusTitle = journal.awaitingReconciliation
-    ? "GitHub reconciliation pending"
-    : journal.status === "loading"
-      ? "Reconciling today's GitHub activity"
-      : journal.status === "partial"
-        ? "Partial GitHub response"
-        : journal.status === "error"
-          ? "GitHub reconciliation unavailable"
-          : "GitHub activity reconciled";
-  const statusDetail = journal.awaitingReconciliation
-    ? "Refresh Today when you want to check GitHub."
-    : journal.status === "partial"
-      ? "Some granted sources could not be refreshed."
-      : journal.status === "error"
-        ? "Stored activity remains available while GitHub recovers."
-        : reconciled
-          ? `Updated at ${reconciled}.`
-          : "This may take a moment.";
+  const description = describeJournalStatus({
+    status: journal.status,
+    awaitingReconciliation: journal.awaitingReconciliation,
+    reconciledLabel: reconciled,
+  });
 
   return (
     <aside
@@ -493,7 +335,7 @@ function JournalStatusPane({
         </dl>
         <StateBlock
           role="status"
-          title={statusTitle}
+          title={description.paneTitle}
           tone={
             journal.status === "error"
               ? "error"
@@ -503,7 +345,7 @@ function JournalStatusPane({
           }
           className="mt-3"
         >
-          {statusDetail}
+          {description.paneDetail}
         </StateBlock>
       </section>
 
@@ -561,17 +403,14 @@ export type JournalPageDependencies = {
     requestHeaders: Headers,
   ) => Promise<JournalOnboarding>;
   getInstallations: (userId: string) => Promise<StoredGitHubInstallation[]>;
-  readStoredJournal: (input: {
-    requestHeaders: Headers;
+  readToday: (input: {
     userId: string;
     timeZone: string;
-    accessMode: "best-effort" | "app";
-    installations: StoredGitHubInstallation[];
-  }) => Promise<TodayJournal>;
-  findSummary: (
-    userId: string,
-    snapshotHash: string,
-  ) => Promise<JournalSummary | null>;
+  }) => Promise<{
+    journal: TodayJournal;
+    narrative: JournalSummary | null;
+    nextSyncAt: Date | null;
+  }>;
   /** The server action the refresh button runs. */
   refresh: () => Promise<RefreshActionResult>;
   redirect: (destination: string) => never;
@@ -584,8 +423,7 @@ export async function renderJournalPage(
     getSession,
     getOnboarding,
     getInstallations,
-    readStoredJournal,
-    findSummary,
+    readToday,
     refresh,
     redirect,
   }: JournalPageDependencies,
@@ -600,25 +438,17 @@ export async function renderJournalPage(
     searchParams,
   ]);
 
-  const today =
+  const todayRead =
     onboarding.timeZone &&
     onboarding.githubAccessMode &&
     query.setup !== "repositories"
-      ? await readStoredJournal({
-          requestHeaders,
+      ? await readToday({
           userId: session.user.id,
           timeZone: onboarding.timeZone,
-          accessMode: onboarding.githubAccessMode,
-          installations,
         })
       : null;
-  const summary =
-    today && !isE2EJournalUser(session.user.id)
-      ? await findSummary(
-          session.user.id,
-          buildSummarySnapshot(today.activities).hash,
-        )
-      : null;
+  const today = todayRead?.journal ?? null;
+  const summary = todayRead?.narrative ?? null;
 
   const onboardingStep = !onboarding.timeZone || !onboarding.githubAccessMode;
 
@@ -638,6 +468,7 @@ export async function renderJournalPage(
           installations={installations}
           journal={today}
           summary={summary}
+          nextSyncAt={todayRead?.nextSyncAt ?? null}
         />
       ) : null}
     </AppShell>

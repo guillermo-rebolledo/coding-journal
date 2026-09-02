@@ -2,7 +2,7 @@ import {
   enqueueDueJournalFinalizations,
   type FinalizationStore,
 } from "@/lib/journal-finalization";
-import { authorizeOperationsRequest } from "@/lib/operations-auth";
+import { refuseUnauthorizedOperationsRequest } from "@/lib/operations-auth";
 import type { QueuePublisher } from "@/lib/queue";
 
 /**
@@ -21,9 +21,11 @@ export function createFinalizationScheduleRoute({
   queue,
 }: FinalizationScheduleDependencies) {
   return async function GET(request: Request) {
-    if (!authorizeOperationsRequest(request)) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const refusal = refuseUnauthorizedOperationsRequest(
+      request,
+      "finalization-schedule-unauthorized",
+    );
+    if (refusal) return refusal;
     const enqueued = await enqueueDueJournalFinalizations(
       store,
       queue,

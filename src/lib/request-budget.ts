@@ -1,11 +1,6 @@
-import { isE2EJournalUser } from "@/lib/e2e-fixtures";
-import {
-  consumeRateLimit,
-  type RateLimitDecision,
-  type RateLimitPolicyName,
-} from "@/lib/rate-limit";
+import type { RateLimitDecision, RateLimitPolicyName } from "@/lib/rate-limit";
 import { rateLimitRepository } from "@/lib/rate-limit-repository";
-import { logServiceEvent } from "@/lib/telemetry";
+import { guardAction } from "@/lib/request-guard";
 
 /**
  * Spends one request from a policy's window and reports the refusal.
@@ -19,14 +14,13 @@ export async function spendRequestBudget({
   policy,
   userId = null,
   now = new Date(),
-  event,
   service,
   store = rateLimitRepository,
 }: {
   policy: RateLimitPolicyName;
   userId?: string | null;
   now?: Date;
-  event: string;
+  event?: string;
   service?: "github" | "openai";
   /**
    * Where the spend is counted. It is a parameter with the production default
@@ -34,25 +28,24 @@ export async function spendRequestBudget({
    */
   store?: typeof rateLimitRepository;
 }): Promise<RateLimitDecision | null> {
-  if (userId && isE2EJournalUser(userId)) return null;
-
-  const decision = await consumeRateLimit({
-    store,
+  const guarded = await guardAction({
     policy,
     userId,
     now,
+    provider: service,
+    rateStore: store,
   });
-  if (!decision.allowed) {
-    logServiceEvent({
-      category: "budget",
-      event,
-      outcome: "limited",
-      userId: userId ?? undefined,
-      service,
-      reason: decision.policy,
-      limit: decision.limit,
-      retryAfterSeconds: decision.retryAfterSeconds,
-    });
-  }
-  return decision;
+  if (guarded.proceed) return null;
+  const resetAt = guarded.refusal.resumeAt;
+  return {
+    allowed: false,
+    policy,
+    limit: 0,
+    remaining: 0,
+    resetAt,
+    retryAfterSeconds: Math.max(
+      1,
+      Math.ceil((resetAt.getTime() - now.getTime()) / 1000),
+    ),
+  };
 }

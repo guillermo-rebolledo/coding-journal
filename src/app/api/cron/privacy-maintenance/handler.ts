@@ -1,4 +1,4 @@
-import { authorizeOperationsRequest } from "@/lib/operations-auth";
+import { refuseUnauthorizedOperationsRequest } from "@/lib/operations-auth";
 import type { PrivacyMaintenanceResult } from "@/lib/privacy-maintenance";
 
 /**
@@ -15,9 +15,11 @@ export function createPrivacyMaintenanceRoute({
   run,
 }: PrivacyMaintenanceDependencies) {
   return async function GET(request: Request) {
-    if (!authorizeOperationsRequest(request)) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const refusal = refuseUnauthorizedOperationsRequest(
+      request,
+      "privacy-maintenance-unauthorized",
+    );
+    if (refusal) return refusal;
     return Response.json(await run(new Date()));
   };
 }

@@ -1,25 +1,37 @@
 import { randomUUID } from "node:crypto";
 
 import type { StoredGitHubInstallation } from "@/lib/github-installation";
-import { isE2EJournalUser } from "@/lib/e2e-fixtures";
-import { githubActivityRepository } from "@/lib/github-activity-repository";
 import {
   computeActivityMetrics,
+} from "@/lib/github-activity";
+import { githubActivityRepository } from "@/lib/github-activity-repository";
+import {
   describeError,
-  getLocalDayWindow,
   reconcileGitHubActivity,
-  type ActivityRecord,
   type ReconciliationDiagnostic,
   type TodayJournal,
 } from "@/lib/github-reconciliation";
 import { getGitHubUserAccessToken } from "@/lib/github-user-token";
+import { createGitHubHttpReadClient } from "@/lib/github-read-client";
+import { providerReconciliationStages } from "@/lib/github-reconciliation-stages";
 import { JournalNotFoundError } from "@/lib/journal-errors";
 import {
-  recordProviderFailure,
-  recordProviderSuccess,
+  buildSummarySnapshot,
+  type JournalSummary,
+} from "@/lib/journal-summary";
+import { journalSummaryRepository } from "@/lib/journal-summary-repository";
+import {
+  withProviderCircuitOutcome,
 } from "@/lib/service-circuit";
 import { serviceCircuitRepository } from "@/lib/service-circuit-repository";
 import { logServiceEvent } from "@/lib/telemetry";
+import { getLocalDayWindow } from "@/lib/time-zone";
+import { nextJournalSyncAt } from "@/lib/today-journal-policy";
+
+export {
+  journalReconciliationCooldownMs,
+  nextJournalSyncAt,
+} from "@/lib/today-journal-policy";
 
 /**
  * The stores a reconciliation pass writes through. They are a parameter with
@@ -41,63 +53,64 @@ const productionStores: TodayJournalStores = {
   getAccessToken: getGitHubUserAccessToken,
 };
 
-function e2eJournal(userId: string, timeZone: string, now: Date): TodayJournal {
-  const localDate = getLocalDayWindow(now, timeZone).localDate;
-  const awaitingReconciliation = userId === "e2e-user";
-  const activities =
-    userId === "e2e-all"
-      ? ([
-          {
-            deduplicationKey: "e2e:push:api",
-            localDate,
-            kind: "push",
-            actorId: "7",
-            actorLogin: "ada",
-            repositoryId: "42",
-            repositoryName: "acme/api",
-            evidenceUrl:
-              "https://github.com/acme/api/compare/1111111...2222222",
-            visibility: "private",
-            source: "github-webhook",
-            subjectId: "push-api",
-            subjectNumber: null,
-            subjectTitle: "main",
-            occurredAt: new Date(now.getTime() - 30 * 60 * 1000),
-            observedAt: now,
-            authoredBeforeDay: false,
-            installationId: "10",
-          },
-          {
-            deduplicationKey: "e2e:issue:web",
-            localDate,
-            kind: "issue-opened",
-            actorId: "7",
-            actorLogin: "ada",
-            repositoryId: "43",
-            repositoryName: "acme/web",
-            evidenceUrl: "https://github.com/acme/web/issues/51",
-            visibility: "public",
-            source: "github-events",
-            subjectId: "51",
-            subjectNumber: 51,
-            subjectTitle: "Polish Today filters",
-            occurredAt: new Date(now.getTime() - 15 * 60 * 1000),
-            observedAt: now,
-            authoredBeforeDay: false,
-            installationId: null,
-          },
-        ] satisfies ActivityRecord[])
-      : [];
+export function describeJournalStatus({
+  status,
+  awaitingReconciliation = false,
+  reconciledLabel = null,
+}: {
+  status: TodayJournal["status"];
+  awaitingReconciliation?: boolean;
+  reconciledLabel?: string | null;
+}) {
+  if (awaitingReconciliation) {
+    return {
+      emptyTitle: "Your day is ready to refresh",
+      emptyDetail:
+        "Nothing has been reconciled with GitHub yet today. Stored activity, if any, is already shown.",
+      paneTitle: "GitHub reconciliation pending",
+      paneDetail: "Refresh Today when you want to check GitHub.",
+      completeness: "Final coverage pending",
+    };
+  }
+  if (status === "error") {
+    return {
+      emptyTitle: "Today could not be refreshed",
+      emptyDetail:
+        "GitHub did not respond. Everything already stored is shown and stays usable. Try again after the reconciliation cooldown.",
+      paneTitle: "GitHub reconciliation unavailable",
+      paneDetail: "Stored activity remains available while GitHub recovers.",
+      completeness: "Provider unavailable",
+    };
+  }
+  if (status === "loading") {
+    return {
+      emptyTitle: "Reconciling your day",
+      emptyDetail:
+        "Checking the repositories Coding Journal can see. This usually takes a few seconds.",
+      paneTitle: "Reconciling today's GitHub activity",
+      paneDetail: "This may take a moment.",
+      completeness: "Final coverage pending",
+    };
+  }
+  if (status === "partial") {
+    return {
+      emptyTitle: "Nothing recorded today",
+      emptyDetail:
+        "Coding Journal reconciled with GitHub and found no activity. Private or delayed work outside the repositories it can see would not appear here.",
+      paneTitle: "Partial GitHub response",
+      paneDetail: "Some granted sources could not be refreshed.",
+      completeness: "Partial coverage",
+    };
+  }
   return {
-    localDate,
-    timeZone,
-    status: "complete",
-    refreshedAt: awaitingReconciliation ? null : now,
-    ...(awaitingReconciliation
-      ? { awaitingReconciliation: true }
-      : { storedAt: now, lastAttemptAt: now }),
-    metrics: computeActivityMetrics(activities),
-    activities,
+    emptyTitle: "Nothing recorded today",
+    emptyDetail:
+      "Coding Journal reconciled with GitHub and found no activity. Private or delayed work outside the repositories it can see would not appear here.",
+    paneTitle: "GitHub activity reconciled",
+    paneDetail: reconciledLabel
+      ? `Updated at ${reconciledLabel}.`
+      : "This may take a moment.",
+    completeness: "Complete coverage",
   };
 }
 
@@ -139,17 +152,7 @@ function createDiagnosticReporter(userId: string) {
 
 // A stage that failed because GitHub itself was unavailable feeds the shared
 // circuit; a missing user token is a per-user condition and must not open it.
-const providerStages = new Set<ReconciliationDiagnostic["stage"]>([
-  "actor",
-  "events",
-  "gists",
-  "gist-metadata",
-  "push-commits",
-  "installation-repositories",
-  "repository-commits",
-]);
-
-export async function getTodayJournal({
+export async function reconcileTodayJournalDay({
   requestHeaders,
   userId,
   timeZone,
@@ -170,16 +173,14 @@ export async function getTodayJournal({
   accessToken?: string | null;
   stores?: TodayJournalStores;
 }) {
-  if (isE2EJournalUser(userId)) {
-    return e2eJournal(userId, timeZone, now);
-  }
-
   let rateLimitedUntil: Date | undefined;
   let providerFailures = 0;
   const logDiagnostic = createDiagnosticReporter(userId);
   const reportDiagnostic = (diagnostic: ReconciliationDiagnostic) => {
     logDiagnostic(diagnostic);
-    if (providerStages.has(diagnostic.stage)) providerFailures += 1;
+    if (providerReconciliationStages.has(diagnostic.stage)) {
+      providerFailures += 1;
+    }
     if (
       diagnostic.rateLimitResetAt &&
       (!rateLimitedUntil || diagnostic.rateLimitResetAt > rateLimitedUntil)
@@ -207,26 +208,34 @@ export async function getTodayJournal({
   }
 
   const startedAt = Date.now();
-  const journal = await reconcileGitHubActivity({
-    userId,
-    timeZone,
-    accessMode,
-    installationIds: installations.flatMap((installation) =>
-      installation.status === "active" && installation.installationId
-        ? [installation.installationId]
-        : [],
-    ),
-    accessToken,
-    now,
-    localDate,
-    store: stores.activities,
-    reportDiagnostic,
-  });
-  if (providerFailures > 0) {
-    await recordProviderFailure({ service: "github", store: stores.circuits });
-  } else if (journal.status === "complete") {
-    await recordProviderSuccess({ service: "github", store: stores.circuits });
-  }
+  const reconcile = () =>
+    reconcileGitHubActivity({
+      userId,
+      timeZone,
+      accessMode,
+      installationIds: installations.flatMap((installation) =>
+        installation.status === "active" && installation.installationId
+          ? [installation.installationId]
+          : [],
+      ),
+      client: accessToken ? createGitHubHttpReadClient(accessToken) : null,
+      now,
+      localDate,
+      store: stores.activities,
+      reportDiagnostic,
+    });
+  const journal = accessToken
+    ? await withProviderCircuitOutcome(
+        { service: "github", store: stores.circuits, now },
+        reconcile,
+        (result) =>
+          providerFailures > 0
+            ? "failure"
+            : result.status === "complete"
+              ? "success"
+              : "neutral",
+      )
+    : await reconcile();
   logServiceEvent({
     category: "sync",
     event: "reconciliation-finished",
@@ -245,24 +254,65 @@ export async function getTodayJournal({
   return rateLimitedUntil ? { ...journal, rateLimitedUntil } : journal;
 }
 
-export async function getStoredTodayJournal(
-  options: Parameters<typeof getTodayJournal>[0],
-) {
-  if (isE2EJournalUser(options.userId)) {
-    return getTodayJournal(options);
-  }
-  const localDate = getLocalDayWindow(
-    options.now ?? new Date(),
-    options.timeZone,
-  ).localDate;
+export async function readStoredTodayJournal({
+  userId,
+  timeZone,
+  now = new Date(),
+  stores = productionStores,
+}: {
+  userId: string;
+  timeZone: string;
+  now?: Date;
+  stores?: TodayJournalStores;
+}) {
+  const localDate = getLocalDayWindow(now, timeZone).localDate;
   try {
-    return await (options.stores ?? productionStores).activities.read(
-      options.userId,
-      localDate,
-    );
+    return await stores.activities.read(userId, localDate);
   } catch (error) {
     if (error instanceof JournalNotFoundError)
-      return emptyStoredJournal(options.timeZone, options.now ?? new Date());
+      return emptyStoredJournal(timeZone, now);
     throw error;
   }
+}
+
+export type TodayJournalRead = {
+  journal: TodayJournal;
+  narrative: JournalSummary | null;
+  nextSyncAt: Date | null;
+};
+
+/** Reads every piece the Today page renders through one domain operation. */
+export async function readTodayJournal({
+  userId,
+  timeZone,
+  now = new Date(),
+  stores = productionStores,
+  findSummary = journalSummaryRepository.findBySnapshotHash,
+}: {
+  userId: string;
+  timeZone: string;
+  now?: Date;
+  stores?: TodayJournalStores;
+  findSummary?: (
+    userId: string,
+    snapshotHash: string,
+  ) => Promise<JournalSummary | null>;
+}): Promise<TodayJournalRead> {
+  const journal = await readStoredTodayJournal({
+    userId,
+    timeZone,
+    now,
+    stores,
+  });
+  const narrative = await findSummary(
+    userId,
+    buildSummarySnapshot(journal.activities).hash,
+  );
+  return {
+    journal,
+    narrative,
+    nextSyncAt: journal.lastAttemptAt
+      ? nextJournalSyncAt(journal.lastAttemptAt)
+      : null,
+  };
 }

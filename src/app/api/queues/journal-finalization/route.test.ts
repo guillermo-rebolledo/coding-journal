@@ -25,7 +25,6 @@ const boundaries = {
   tryEnter: vi.fn<CircuitStore["tryEnter"]>(),
   recordSuccess: vi.fn<CircuitStore["recordSuccess"]>(),
   recordFailure: vi.fn<CircuitStore["recordFailure"]>(),
-  readAll: vi.fn<CircuitStore["readAll"]>(),
 };
 
 const consumer = createFinalizationConsumer({
@@ -38,7 +37,6 @@ const consumer = createFinalizationConsumer({
     tryEnter: boundaries.tryEnter,
     recordSuccess: boundaries.recordSuccess,
     recordFailure: boundaries.recordFailure,
-    readAll: boundaries.readAll,
   },
   finalize: boundaries.process,
 });

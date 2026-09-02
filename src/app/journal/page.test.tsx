@@ -11,8 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   computeActivityMetrics,
   type ActivityRecord,
-  type TodayJournal,
-} from "@/lib/github-reconciliation";
+} from "@/lib/github-activity";
+import type { TodayJournal } from "@/lib/github-reconciliation";
 import { JournalNotFoundError } from "@/lib/journal-errors";
 
 import { renderJournalPage } from "@/app/journal/journal-page";
@@ -22,7 +22,6 @@ import {
   type AppServices,
 } from "@/components/app-services";
 import { ThemeProvider } from "@/components/theme-provider";
-import { isE2EJournalUser } from "@/lib/e2e-fixtures";
 import { getGitHubInstallations } from "@/lib/github-installation";
 import type { JournalOnboarding } from "@/lib/journal";
 import {
@@ -31,10 +30,10 @@ import {
 } from "@/lib/journal-summary";
 import type { CircuitStore } from "@/lib/service-circuit";
 import type { JournalSession } from "@/lib/session";
-import { spendRequestBudget } from "@/lib/request-budget";
+import { guardAction } from "@/lib/request-guard";
 import {
-  getStoredTodayJournal,
-  getTodayJournal,
+  readTodayJournal,
+  reconcileTodayJournalDay,
   type TodayJournalStores,
 } from "@/lib/today-journal";
 import type { rateLimitRepository } from "@/lib/rate-limit-repository";
@@ -73,6 +72,7 @@ const githubBoundary = {
 const summaryBoundary = {
   findBySnapshotHash: vi.fn<SummaryStore["findBySnapshotHash"]>(),
   getUsage: vi.fn<SummaryStore["getUsage"]>(),
+  claimSlot: vi.fn<SummaryStore["claimSlot"]>(),
   save: vi.fn<SummaryStore["save"]>(),
 };
 
@@ -91,7 +91,6 @@ const circuitBoundary = {
   tryEnter: vi.fn<CircuitStore["tryEnter"]>(),
   recordSuccess: vi.fn<CircuitStore["recordSuccess"]>(),
   recordFailure: vi.fn<CircuitStore["recordFailure"]>(),
-  readAll: vi.fn<CircuitStore["readAll"]>(),
 };
 
 const services: AppServices = {
@@ -117,39 +116,36 @@ function JournalPage(
     getSession: authBoundary.getSession,
     getOnboarding: journalBoundary.getOnboarding,
     getInstallations: (userId) => getGitHubInstallations(userId, installations),
-    readStoredJournal: (input) =>
-      getStoredTodayJournal({ ...input, stores: activityStores() }),
-    findSummary: (userId, snapshotHash) =>
-      summaryBoundary.findBySnapshotHash(userId, snapshotHash),
+    readToday: (input) =>
+      readTodayJournal({
+        ...input,
+        stores: activityStores(),
+        findSummary: summaryBoundary.findBySnapshotHash,
+      }),
     refresh: refreshTodayJournal,
     redirect,
   });
 }
-
-const limitEvents = {
-  "journal-refresh": "journal-refresh-limited",
-  "github-sync-daily": "github-sync-budget-exhausted",
-} as const;
 
 function refreshTodayJournal() {
   return runRefreshTodayJournal({
     requestHeaders: new Headers(),
     getSession: authBoundary.getSession,
     getOnboarding: journalBoundary.getOnboarding,
-    spendBudget: (policy, userId, now) =>
-      spendRequestBudget({
+    guard: (policy, userId, now, provider) =>
+      guardAction({
         policy,
         userId,
         now,
-        event: limitEvents[policy],
-        store: budgetBoundary,
-        service: policy === "github-sync-daily" ? "github" : undefined,
+        rateStore: budgetBoundary,
+        provider,
+        circuitStore: provider ? circuitBoundary : undefined,
       }),
     readStoredJournal: (userId, localDate) =>
       activityRepositoryBoundary.read(userId, localDate),
     getInstallations: (userId) => getGitHubInstallations(userId, installations),
     reconcile: (input) =>
-      getTodayJournal({ ...input, stores: activityStores() }),
+      reconcileTodayJournalDay({ ...input, stores: activityStores() }),
     summarize: ({ userId, localDate, activities, now }) =>
       generateJournalSummary({
         userId,
@@ -160,7 +156,6 @@ function refreshTodayJournal() {
           Promise.reject(new Error("no summary provider in this test")),
         now,
       }),
-    isFixtureUser: isE2EJournalUser,
     redirect,
   });
 }
@@ -203,6 +198,7 @@ describe("protected journal boundary", () => {
       globalDaily: 0,
       monthlyCostUsd: 0,
     });
+    summaryBoundary.claimSlot.mockResolvedValue({ finish: vi.fn() });
     navigation.refresh.mockReset();
     budgetBoundary.increment.mockReset();
     budgetBoundary.increment.mockImplementation(
@@ -215,8 +211,6 @@ describe("protected journal boundary", () => {
     circuitBoundary.tryEnter.mockResolvedValue({ allowed: true });
     circuitBoundary.recordSuccess.mockReset();
     circuitBoundary.recordFailure.mockReset();
-    circuitBoundary.readAll.mockReset();
-    circuitBoundary.readAll.mockResolvedValue([]);
     journalBoundary.getOnboarding.mockReset();
     installationBoundary.getInstallations.mockReset();
     installationBoundary.getInstallations.mockResolvedValue([]);

@@ -3,7 +3,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { db } from "@/db";
 import { serviceCircuit } from "@/db/auth-schema";
-import type { CircuitSnapshot, CircuitStore } from "@/lib/service-circuit";
+import type { CircuitStore } from "@/lib/service-circuit";
 
 /**
  * Every transition is a single conditional statement, so two instances that
@@ -119,18 +119,6 @@ export function createServiceCircuitRepository<
             eq(serviceCircuit.state, "closed"),
           ),
         );
-    },
-
-    async readAll(): Promise<CircuitSnapshot[]> {
-      const rows = await database.query.serviceCircuit.findMany();
-      return rows.map((row) => ({
-        service: row.service,
-        state: row.state,
-        failureCount: row.failureCount,
-        openedAt: row.openedAt,
-        retryAt: row.retryAt,
-        updatedAt: row.updatedAt,
-      }));
     },
   };
 }

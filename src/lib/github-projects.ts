@@ -1,4 +1,6 @@
 import {
+  activityIdentity,
+  createActivityRecord,
   projectKinds,
   type ActivityRecord,
   type ProjectKind,
@@ -13,6 +15,10 @@ import {
   type JsonObject,
 } from "@/lib/json-payload";
 import { getLocalDayWindow, parseDate } from "@/lib/time-zone";
+import {
+  isStaleGitHubDelivery,
+  validGitHubDeliveryId,
+} from "@/lib/github-delivery-rules";
 
 export const projectsWebhookEvents = [
   "projects_v2",
@@ -45,7 +51,7 @@ export type ProjectsDeliveryMessage = {
 
 export type ProjectsExtraction =
   | { ok: true; message: ProjectsDeliveryMessage }
-  | { ok: false; reason: "malformed" | "no-activity" };
+  | { ok: false; reason: "malformed" | "stale" | "no-activity" };
 
 /** The activity each `projects_v2` action records. */
 const projectActions = {
@@ -72,10 +78,6 @@ function projectKindFor(
   action: string,
 ): ProjectKind | null {
   return Object.hasOwn(actions, action) ? (actions[action] ?? null) : null;
-}
-
-function validDeliveryId(value: string | null): value is string {
-  return value !== null && /^[A-Za-z0-9-]{1,100}$/.test(value);
 }
 
 function boundedTitle(value: string | null) {
@@ -198,7 +200,19 @@ export function extractProjectsDelivery({
     (number
       ? `https://github.com/orgs/${encodeURIComponent(organizationLogin)}/projects/${number}`
       : `https://github.com/orgs/${encodeURIComponent(organizationLogin)}/projects`);
-  const occurredAt = receivedAt.toISOString();
+  const occurredAt =
+    parseDate(
+      readEitherString(
+        subject,
+        "updated_at",
+        "updatedAt",
+        "created_at",
+        "createdAt",
+      ),
+    ) ?? receivedAt;
+  if (isStaleGitHubDelivery(receivedAt, occurredAt)) {
+    return { ok: false, reason: "stale" };
+  }
 
   return {
     ok: true,
@@ -206,7 +220,7 @@ export function extractProjectsDelivery({
       version: 1,
       deliveryId,
       installationId: String(installationId),
-      receivedAt: occurredAt,
+      receivedAt: receivedAt.toISOString(),
       project: {
         kind,
         deduplicationKey: `github:${kind}:${projectId}:${subjectId}:${deliveryId}`,
@@ -219,7 +233,7 @@ export function extractProjectsDelivery({
         subjectNumber: number,
         title: isItem ? null : boundedTitle(readString(subject, "title")),
         evidenceUrl,
-        occurredAt,
+        occurredAt: occurredAt.toISOString(),
         completeness: "best-effort",
       },
     },
@@ -280,7 +294,7 @@ export function parseProjectsDeliveryMessage(
   }
 
   if (
-    !validDeliveryId(deliveryId) ||
+    !validGitHubDeliveryId(deliveryId) ||
     installationId === null ||
     receivedAt === null ||
     !parseDate(receivedAt) ||
@@ -331,25 +345,33 @@ export function normalizeProjectsMessage(
   const { project } = message;
   if (project.senderId !== user.githubAccountId) return [];
   const occurredAt = new Date(project.occurredAt);
+  const window = getLocalDayWindow(occurredAt, user.timeZone);
   return [
-    {
-      deduplicationKey: project.deduplicationKey,
-      localDate: getLocalDayWindow(occurredAt, user.timeZone).localDate,
+    createActivityRecord({
       kind: project.kind,
-      actorId: project.senderId,
-      actorLogin: project.senderLogin,
-      repositoryId: project.organizationId,
-      repositoryName: `${project.organizationLogin}/Projects`,
-      evidenceUrl: project.evidenceUrl,
-      visibility: "private",
+      identity: activityIdentity.project(
+        project.kind,
+        project.projectId,
+        project.subjectId,
+        message.deliveryId,
+      ),
+      evidence: { shape: "absolute", url: project.evidenceUrl },
+      actor: { id: project.senderId, login: project.senderLogin },
+      repository: {
+        id: project.organizationId,
+        name: `${project.organizationLogin}/Projects`,
+        private: true,
+      },
+      subject: {
+        id: project.subjectId,
+        number: project.subjectNumber,
+        title: project.title,
+      },
       source: "github-projects-preview",
-      subjectId: project.subjectId,
-      subjectNumber: project.subjectNumber,
-      subjectTitle: project.title,
       occurredAt,
       observedAt: new Date(message.receivedAt),
-      authoredBeforeDay: false,
+      window,
       installationId: message.installationId,
-    },
+    }),
   ];
 }

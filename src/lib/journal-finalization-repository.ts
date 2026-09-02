@@ -15,80 +15,28 @@ import {
   isActivityBlocked,
   neutralizeBlockedActivity,
 } from "@/lib/github-access-block";
-import type { ActivityMetrics, ActivityRecord } from "@/lib/github-activity";
+import {
+  activityRecordFromRow,
+} from "@/lib/github-activity";
 import type {
   FinalizationCandidate,
   FinalizationFailure,
   FinalizationStore,
   FinalizedJournalInput,
 } from "@/lib/journal-finalization";
-import type { SummaryOutput } from "@/lib/journal-summary";
+import type {
+  HistoricalJournal,
+  JournalHistoryItem,
+  JournalHistoryStore,
+} from "@/lib/journal-history";
 import { getFinalizationDueAt, getLocalDate } from "@/lib/time-zone";
 
 const schedulingLookbackDays = 7;
-
-export type JournalHistoryItem = {
-  localDate: string;
-  timeZone: string;
-  status: "finalizing" | "finalized" | "corrected" | "recoverable-error";
-  completeness: "loading" | "complete" | "partial" | "error" | null;
-  finalizedAt: Date | null;
-  correctionCount: number;
-};
-
-export type HistoricalJournal = JournalHistoryItem & {
-  metrics: ActivityMetrics | null;
-  narrative: SummaryOutput | null;
-  evidence: ActivityRecord[];
-  corrections: ActivityRecord[];
-  failure: FinalizationFailure | null;
-};
 
 function subtractCalendarDays(localDate: string, count: number) {
   const date = new Date(`${localDate}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() - count);
   return date.toISOString().slice(0, 10);
-}
-
-function hydrateActivity(activity: ActivityRecord): ActivityRecord {
-  const hydrated: ActivityRecord = {
-    ...activity,
-    occurredAt: new Date(activity.occurredAt),
-    observedAt: new Date(activity.observedAt),
-  };
-  if (activity.statusOccurredAt) {
-    hydrated.statusOccurredAt = new Date(activity.statusOccurredAt);
-  }
-  return hydrated;
-}
-
-function activityFromRow(
-  row: typeof githubActivity.$inferSelect,
-): ActivityRecord {
-  return {
-    deduplicationKey: row.deduplicationKey,
-    localDate: row.localDate,
-    kind: row.kind,
-    actorId: row.actorId,
-    actorLogin: row.actorLogin,
-    repositoryId: row.repositoryId,
-    repositoryName: row.repositoryName,
-    evidenceUrl: row.evidenceUrl,
-    visibility: row.visibility,
-    source: row.source,
-    subjectId: row.subjectId,
-    subjectNumber: row.subjectNumber,
-    subjectTitle: row.subjectTitle,
-    occurredAt: row.occurredAt,
-    observedAt: row.observedAt,
-    authoredBeforeDay: row.authoredBeforeDay,
-    installationId: row.installationId,
-    status: row.status,
-    statusOccurredAt: row.statusOccurredAt,
-    narrativeEligible: row.narrativeEligible,
-    attributionKeys: row.attributionKeys ?? undefined,
-    attributed: row.attributed,
-  };
 }
 
 function historicalStatus(
@@ -301,7 +249,7 @@ export function createJournalFinalizationRepository<
     const frozenEvidence = new Set(evidenceKeys);
     return rows
       .filter((row) => !frozenEvidence.has(row.deduplicationKey))
-      .map(activityFromRow);
+      .map(activityRecordFromRow);
   }
 
   async function read(
@@ -328,7 +276,7 @@ export function createJournalFinalizationRepository<
       completeness: row.completeness,
       metrics: row.metrics,
       narrative: row.narrative,
-      evidence: (row.evidence ?? []).map(hydrateActivity),
+      evidence: (row.evidence ?? []).map(activityRecordFromRow),
       corrections,
       finalizedAt: row.finalizedAt,
       correctionCount: corrections.length,
@@ -390,20 +338,7 @@ export function createJournalFinalizationRepository<
     list,
     read,
     redactNarrative,
-  } satisfies FinalizationStore & {
-    list(userId: string): Promise<JournalHistoryItem[]>;
-    read(userId: string, localDate: string): Promise<HistoricalJournal | null>;
-    redactNarrative(
-      userId: string,
-      localDate: string,
-      now?: Date,
-    ): Promise<boolean>;
-    retry(
-      userId: string,
-      localDate: string,
-      now?: Date,
-    ): Promise<(FinalizationCandidate & { attemptCount: number }) | null>;
-  };
+  } satisfies FinalizationStore & JournalHistoryStore;
 }
 
 /** Every operation the finalization repository offers. */

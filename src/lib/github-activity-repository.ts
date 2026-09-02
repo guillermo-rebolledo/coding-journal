@@ -6,12 +6,15 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { db } from "@/db";
 import { githubActivity, journalReconciliation } from "@/db/auth-schema";
-import { computeActivityMetrics } from "@/lib/github-activity";
+import {
+  activityRecordFromRow,
+  computeActivityMetrics,
+  type ActivityRecord,
+} from "@/lib/github-activity";
 import { JournalNotFoundError } from "@/lib/journal-errors";
 import { deleteBlockedGitHubActivities } from "@/lib/github-access-block";
 import type { StoredSecondarySourceFreshness } from "@/lib/github-secondary";
 import type {
-  ActivityRecord,
   ReconciliationStore,
   TodayJournal,
 } from "@/lib/github-reconciliation";
@@ -226,29 +229,7 @@ export function createGitHubActivityRepository<
         refreshedAt: source.refreshedAt ? new Date(source.refreshedAt) : null,
       })),
       metrics: computeActivityMetrics(activities),
-      activities: activities.map((activity) => ({
-        deduplicationKey: activity.deduplicationKey,
-        localDate: activity.localDate,
-        kind: activity.kind,
-        actorId: activity.actorId,
-        actorLogin: activity.actorLogin,
-        repositoryId: activity.repositoryId,
-        repositoryName: activity.repositoryName,
-        evidenceUrl: activity.evidenceUrl,
-        visibility: activity.visibility,
-        source: activity.source,
-        subjectId: activity.subjectId,
-        subjectNumber: activity.subjectNumber,
-        subjectTitle: activity.subjectTitle,
-        occurredAt: activity.occurredAt,
-        observedAt: activity.observedAt,
-        authoredBeforeDay: activity.authoredBeforeDay,
-        installationId: activity.installationId,
-        status: activity.status,
-        narrativeEligible: activity.narrativeEligible,
-        attributionKeys: activity.attributionKeys ?? undefined,
-        attributed: activity.attributed,
-      })),
+      activities: activities.map(activityRecordFromRow),
     };
   }
 

@@ -2,6 +2,7 @@ import { readNumber, readString, type JsonObject } from "@/lib/json-payload";
 import type { ActivityMetrics, ActivityRecord } from "@/lib/github-activity";
 import {
   buildSummarySnapshot,
+  isRetryableSummaryReason,
   type SummaryOutput,
   type SummaryResult,
 } from "@/lib/journal-summary";
@@ -176,7 +177,10 @@ export async function processJournalFinalization(
   }
 
   const snapshot = buildSummarySnapshot(journal.activities);
-  if (summary.status === "unavailable" && summary.reason !== "no-activity") {
+  if (
+    summary.status === "unavailable" &&
+    isRetryableSummaryReason(summary.reason)
+  ) {
     await failAttempt(
       store,
       message,

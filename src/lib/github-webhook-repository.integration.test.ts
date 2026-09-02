@@ -14,6 +14,7 @@ import {
   user,
 } from "@/db/auth-schema";
 import { createGitHubActivityRepository } from "@/lib/github-activity-repository";
+import { createGitHubHttpReadClient } from "@/lib/github-read-client";
 import { reconcileGitHubActivity } from "@/lib/github-reconciliation";
 import { processWebhookDeliveryMessage } from "@/lib/github-webhook-processing";
 import { createGitHubWebhookRepository } from "@/lib/github-webhook-repository";
@@ -187,9 +188,8 @@ describe("GitHub webhook repository with Postgres", () => {
       timeZone: "America/New_York",
       accessMode: "best-effort",
       installationIds: [],
-      accessToken: "fixture-token",
+      client: createGitHubHttpReadClient("fixture-token", fetchFixture),
       now,
-      fetchImplementation: fetchFixture,
       store: activityRepository,
     });
 
@@ -286,9 +286,8 @@ describe("GitHub webhook repository with Postgres", () => {
       timeZone: "America/New_York",
       accessMode: "best-effort",
       installationIds: [],
-      accessToken: "fixture-token",
+      client: createGitHubHttpReadClient("fixture-token", fetchFixture),
       now: new Date("2026-03-08T18:20:00Z"),
-      fetchImplementation: fetchFixture,
       store: activityRepository,
     });
 

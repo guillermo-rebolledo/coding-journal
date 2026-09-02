@@ -5,6 +5,7 @@ import {
   readNumber,
   type JsonObject,
 } from "@/lib/json-payload";
+import type { LocalDayWindow } from "@/lib/time-zone";
 
 // Shared GitHub activity primitives. Both ingestion paths (Events API
 // reconciliation and durable webhooks) build the same canonical records from
@@ -124,6 +125,182 @@ export type ActivityRecord = {
   attributionKeys?: string[];
   attributed?: boolean;
 };
+
+export type ActivityIdentity = { deduplicationKey: string };
+
+export const activityIdentity = {
+  push(repositoryId: string, before: string, head: string): ActivityIdentity {
+    return {
+      deduplicationKey: `github:push:${repositoryId}:${before}:${head}`,
+    };
+  },
+  commit(repositoryId: string, sha: string): ActivityIdentity {
+    return { deduplicationKey: `github:commit:${repositoryId}:${sha}` };
+  },
+  repository(
+    kind: ActivityKind,
+    repositoryId: string,
+    discriminator: string,
+  ): ActivityIdentity {
+    return {
+      deduplicationKey: `github:${kind}:${repositoryId}:${discriminator}`,
+    };
+  },
+  global(kind: ActivityKind, discriminator: string): ActivityIdentity {
+    return { deduplicationKey: `github:${kind}:${discriminator}` };
+  },
+  project(
+    kind: ProjectKind,
+    projectId: string,
+    subjectId: string,
+    deliveryId: string,
+  ): ActivityIdentity {
+    return {
+      deduplicationKey: `github:${kind}:${projectId}:${subjectId}:${deliveryId}`,
+    };
+  },
+};
+
+export type ActivityEvidence =
+  | { shape: "push"; before: string; head: string }
+  | { shape: "commit"; sha: string }
+  | { shape: "repository" }
+  | { shape: "repository-path"; path: string }
+  | { shape: "absolute"; url: string };
+
+/** Narrows decoded evidence to an HTTPS URL on a GitHub-owned web host. */
+export function validEvidenceUrl(value: string | null): value is string {
+  if (value === null || value.trim().length === 0) return false;
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      (url.hostname === "github.com" || url.hostname === "gist.github.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function evidenceUrlFor(
+  repositoryName: string,
+  evidence: ActivityEvidence,
+): string {
+  switch (evidence.shape) {
+    case "push":
+      return pushEvidenceUrl(repositoryName, evidence.before, evidence.head);
+    case "commit":
+      return `https://github.com/${repositoryName}/commit/${evidence.sha}`;
+    case "repository":
+      return `https://github.com/${repositoryName}`;
+    case "repository-path":
+      return `https://github.com/${repositoryName}/${evidence.path.replace(/^\//, "")}`;
+    case "absolute":
+      if (!validEvidenceUrl(evidence.url)) {
+        throw new Error("Invalid GitHub evidence URL");
+      }
+      return evidence.url;
+  }
+}
+
+/**
+ * The one constructor for persisted journal activity. Producers describe what
+ * happened; this boundary derives storage identity, evidence, day placement,
+ * visibility and authored-before-day consistently.
+ */
+export function createActivityRecord({
+  kind,
+  identity,
+  evidence,
+  actor,
+  repository,
+  subject,
+  occurredAt,
+  observedAt,
+  source,
+  window,
+  installationId,
+  ...optional
+}: {
+  kind: ActivityKind;
+  identity: ActivityIdentity;
+  evidence: ActivityEvidence;
+  actor: { id: string; login: string };
+  repository: { id: string; name: string; private: boolean };
+  subject: { id: string; number: number | null; title: string | null };
+  occurredAt: Date;
+  observedAt: Date;
+  source: ActivityRecord["source"];
+  window: LocalDayWindow;
+  installationId: string | null;
+} & Pick<
+  ActivityRecord,
+  | "status"
+  | "statusOccurredAt"
+  | "narrativeEligible"
+  | "attributionKey"
+  | "attributionKeys"
+  | "attributed"
+>): ActivityRecord {
+  if (!validRepositoryName(repository.name)) {
+    throw new Error("Invalid GitHub repository name");
+  }
+  return {
+    deduplicationKey: identity.deduplicationKey,
+    localDate: window.localDate,
+    kind,
+    actorId: actor.id,
+    actorLogin: actor.login,
+    repositoryId: repository.id,
+    repositoryName: repository.name,
+    evidenceUrl: evidenceUrlFor(repository.name, evidence),
+    visibility: repository.private ? "private" : "public",
+    source,
+    subjectId: subject.id,
+    subjectNumber: subject.number,
+    subjectTitle: subject.title,
+    occurredAt,
+    observedAt,
+    authoredBeforeDay: occurredAt < window.startsAt,
+    installationId,
+    ...optional,
+  };
+}
+
+/** Maps database or JSON activity rows back to the canonical record once. */
+export function activityRecordFromRow(
+  row: Omit<ActivityRecord, "attributionKeys"> & {
+    attributionKeys?: string[] | null;
+  },
+): ActivityRecord {
+  return {
+    deduplicationKey: row.deduplicationKey,
+    localDate: row.localDate,
+    kind: row.kind,
+    actorId: row.actorId,
+    actorLogin: row.actorLogin,
+    repositoryId: row.repositoryId,
+    repositoryName: row.repositoryName,
+    evidenceUrl: row.evidenceUrl,
+    visibility: row.visibility,
+    source: row.source,
+    subjectId: row.subjectId,
+    subjectNumber: row.subjectNumber,
+    subjectTitle: row.subjectTitle,
+    occurredAt: new Date(row.occurredAt),
+    observedAt: new Date(row.observedAt),
+    authoredBeforeDay: row.authoredBeforeDay,
+    installationId: row.installationId,
+    status: row.status,
+    statusOccurredAt: row.statusOccurredAt
+      ? new Date(row.statusOccurredAt)
+      : row.statusOccurredAt,
+    narrativeEligible: row.narrativeEligible,
+    attributionKey: row.attributionKey,
+    attributionKeys: row.attributionKeys ?? undefined,
+    attributed: row.attributed,
+  };
+}
 
 export type ActivityMetrics = {
   pushes: number;
@@ -259,11 +436,11 @@ export function pushDeduplicationKey(
   before: string,
   head: string,
 ) {
-  return `github:push:${repositoryId}:${before}:${head}`;
+  return activityIdentity.push(repositoryId, before, head).deduplicationKey;
 }
 
 export function commitDeduplicationKey(repositoryId: string, sha: string) {
-  return `github:commit:${repositoryId}:${sha}`;
+  return activityIdentity.commit(repositoryId, sha).deduplicationKey;
 }
 
 export function pushEvidenceUrl(

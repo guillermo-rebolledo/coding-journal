@@ -2,16 +2,19 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { JsonObject, JsonValue } from "@/lib/json-payload";
 import {
   computeActivityMetrics,
-  getLocalDayWindow,
-  reconcileGitHubActivity,
   type ActivityRecord,
+} from "@/lib/github-activity";
+import { createGitHubHttpReadClient } from "@/lib/github-read-client";
+import type { JsonObject, JsonValue } from "@/lib/json-payload";
+import {
+  reconcileGitHubActivity,
   type ReconciliationDiagnostic,
   type ReconciliationStore,
   type TodayJournal,
 } from "@/lib/github-reconciliation";
+import { getLocalDayWindow } from "@/lib/time-zone";
 
 class MemoryStore implements ReconciliationStore {
   private activities = new Map<string, ActivityRecord>();
@@ -140,9 +143,8 @@ describe("GitHub current-day reconciliation", () => {
       timeZone: "America/New_York",
       accessMode: "best-effort",
       installationIds: [],
-      accessToken: "fixture-token",
+      client: createGitHubHttpReadClient("fixture-token", fetchFixture),
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture,
       store,
     });
     const repeated = await reconcileGitHubActivity({
@@ -150,9 +152,8 @@ describe("GitHub current-day reconciliation", () => {
       timeZone: "America/New_York",
       accessMode: "best-effort",
       installationIds: [],
-      accessToken: "fixture-token",
+      client: createGitHubHttpReadClient("fixture-token", fetchFixture),
       now: new Date("2026-03-08T18:16:00Z"),
-      fetchImplementation: fetchFixture,
       store,
     });
 
@@ -250,9 +251,8 @@ describe("GitHub current-day reconciliation", () => {
       timeZone: "America/New_York",
       accessMode: "app",
       installationIds: ["99"],
-      accessToken: "fixture-token",
+      client: createGitHubHttpReadClient("fixture-token", fetchFixture),
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture,
       store,
     });
 
@@ -362,9 +362,8 @@ describe("GitHub current-day reconciliation", () => {
       timeZone: "America/New_York",
       accessMode: "best-effort",
       installationIds: [],
-      accessToken: "fixture-token",
+      client: createGitHubHttpReadClient("fixture-token", fetchFixture),
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture,
       store,
     });
 
@@ -403,9 +402,8 @@ describe("GitHub current-day reconciliation", () => {
       timeZone: "America/New_York",
       accessMode: "best-effort",
       installationIds: [],
-      accessToken: "fixture-token",
+      client: createGitHubHttpReadClient("fixture-token", fetchFixture),
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture,
       store,
       reportDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     });
@@ -438,9 +436,8 @@ describe("GitHub current-day reconciliation", () => {
       timeZone: "America/New_York",
       accessMode: "best-effort",
       installationIds: [],
-      accessToken: "fixture-token",
+      client: createGitHubHttpReadClient("fixture-token", fetchFixture),
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture,
       store,
       reportDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     });
@@ -487,9 +484,8 @@ describe("GitHub current-day reconciliation", () => {
       timeZone: "America/New_York",
       accessMode: "best-effort",
       installationIds: [],
-      accessToken: "fixture-token",
+      client: createGitHubHttpReadClient("fixture-token", fetchFixture),
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture,
       store,
       reportDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     });
@@ -517,9 +513,8 @@ describe("GitHub current-day reconciliation", () => {
       timeZone: "America/New_York",
       accessMode: "best-effort",
       installationIds: [],
-      accessToken: "fixture-token",
+      client: createGitHubHttpReadClient("fixture-token", fetchFixture),
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture,
       store,
     });
 
@@ -536,9 +531,8 @@ describe("GitHub current-day reconciliation", () => {
       timeZone: "America/New_York",
       accessMode: "best-effort",
       installationIds: [],
-      accessToken: "fixture-token",
+      client: createGitHubHttpReadClient("fixture-token", fetchFixture),
       now: new Date("2026-03-08T18:00:00Z"),
-      fetchImplementation: fetchFixture,
       store,
     });
 
@@ -674,9 +668,8 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
       timeZone: "America/New_York",
       accessMode: "best-effort",
       installationIds: [],
-      accessToken: "fixture-token",
+      client: createGitHubHttpReadClient("fixture-token", fetchFixture),
       now: window.now,
-      fetchImplementation: fetchFixture,
       store,
     });
 
@@ -785,9 +778,8 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
       timeZone: "America/New_York",
       accessMode: "best-effort",
       installationIds: [],
-      accessToken: "fixture-token",
+      client: createGitHubHttpReadClient("fixture-token", fetchFixture),
       now: window.now,
-      fetchImplementation: fetchFixture,
       store,
     });
 
@@ -809,9 +801,8 @@ describe("GitHub collaboration reconciliation from the events feed", () => {
       timeZone: "America/New_York",
       accessMode: "app",
       installationIds: ["99"],
-      accessToken: "fixture-token",
+      client: createGitHubHttpReadClient("fixture-token", fetchFixture),
       now: window.now,
-      fetchImplementation: fetchFixture,
       store: new MemoryStore(),
     });
     expect(

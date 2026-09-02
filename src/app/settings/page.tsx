@@ -2,9 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { refreshGitHubConnections } from "@/lib/github-connection";
-import { getJournalOnboarding } from "@/lib/journal";
-import { getJournalSession } from "@/lib/session";
+import { chooseJournalRequestAdapters } from "@/lib/journal-request-adapters";
 
 import { renderSettingsPage } from "./settings-page";
 
@@ -16,11 +14,13 @@ export default async function SettingsPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 } = {}) {
+  const requestHeaders = await headers();
+  const adapters = chooseJournalRequestAdapters(requestHeaders);
   return renderSettingsPage(searchParams, {
-    requestHeaders: await headers(),
-    getSession: getJournalSession,
-    getOnboarding: getJournalOnboarding,
-    refreshConnections: refreshGitHubConnections,
+    requestHeaders,
+    getSession: adapters.session,
+    getOnboarding: adapters.onboarding.read,
+    refreshConnections: adapters.refreshConnections,
     redirect,
   });
 }

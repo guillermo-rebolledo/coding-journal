@@ -1,5 +1,7 @@
 import {
+  activityIdentity,
   collaborationKinds,
+  createActivityRecord,
   readAttributionKeys,
   validRepositoryName,
   validSha,
@@ -15,11 +17,11 @@ import {
   readString,
   type JsonObject,
 } from "@/lib/json-payload";
+import { isStaleGitHubDelivery } from "@/lib/github-delivery-rules";
 import { getLocalDayWindow, parseDate } from "@/lib/time-zone";
 
 // Deliveries whose action happened this long before receipt describe history
 // the journal no longer reconciles; they are acknowledged but never enqueued.
-const staleDeliveryMs = 7 * 24 * 60 * 60 * 1000;
 
 // Titles and ref/tag names are the only free text this activity contract
 // keeps. Bodies, diffs, patches, release assets, and comments are never
@@ -595,7 +597,7 @@ export function extractCollaborationDelivery({
   }
   const { subject } = derivation;
 
-  if (receivedAt.getTime() - subject.occurredAt.getTime() > staleDeliveryMs) {
+  if (isStaleGitHubDelivery(receivedAt, subject.occurredAt)) {
     return { ok: false, reason: "stale" };
   }
 
@@ -758,26 +760,34 @@ export function normalizeCollaborationMessage(
   const occurredAt = new Date(subject.occurredAt);
   const window = getLocalDayWindow(occurredAt, user.timeZone);
 
+  const keyPrefix = `github:${subject.kind}:${collaboration.repositoryId}:`;
+  if (!subject.deduplicationKey.startsWith(keyPrefix)) return [];
   return [
-    {
-      deduplicationKey: subject.deduplicationKey,
-      localDate: window.localDate,
+    createActivityRecord({
       kind: subject.kind,
-      actorId: collaboration.senderId,
-      actorLogin: collaboration.senderLogin,
-      repositoryId: collaboration.repositoryId,
-      repositoryName: collaboration.repositoryName,
-      evidenceUrl: subject.evidenceUrl,
-      visibility: collaboration.private ? "private" : "public",
+      identity: activityIdentity.repository(
+        subject.kind,
+        collaboration.repositoryId,
+        subject.deduplicationKey.slice(keyPrefix.length),
+      ),
+      evidence: { shape: "absolute", url: subject.evidenceUrl },
+      actor: { id: collaboration.senderId, login: collaboration.senderLogin },
+      repository: {
+        id: collaboration.repositoryId,
+        name: collaboration.repositoryName,
+        private: collaboration.private,
+      },
+      subject: {
+        id: subject.subjectId,
+        number: subject.subjectNumber,
+        title: subject.title,
+      },
       source: "github-webhook",
-      subjectId: subject.subjectId,
-      subjectNumber: subject.subjectNumber,
-      subjectTitle: subject.title,
       occurredAt,
       observedAt: new Date(message.receivedAt),
-      authoredBeforeDay: false,
+      window,
       installationId: message.installationId,
       attributionKeys: subject.attributionKeys,
-    },
+    }),
   ];
 }

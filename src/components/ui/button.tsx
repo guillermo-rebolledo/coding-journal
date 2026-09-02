@@ -63,19 +63,19 @@ function Button({
   onKeyDown,
   variant: variantProp,
   size: sizeProp,
-  shape: shapeProp,
+  corner: cornerProp,
   ...props
 }: ButtonProps) {
   const groupDefaults = useContext(ButtonGroupContext);
   const variant = variantProp ?? groupDefaults.variant ?? "default";
   const size = sizeProp ?? groupDefaults.size ?? "default";
-  const shape = shapeProp ?? groupDefaults.shape ?? "round";
+  const corner = cornerProp ?? groupDefaults.corner ?? "round";
 
   return (
     <ButtonPrimitive
       data-slot="button"
       data-loading={loading || undefined}
-      data-shape={shape}
+      data-corner={corner}
       data-size={size}
       data-variant={variant}
       /*
@@ -91,7 +91,7 @@ function Button({
       aria-busy={loading || undefined}
       aria-disabled={loading || undefined}
       className={cn(
-        buttonVariants({ variant, size, shape, className }),
+        buttonVariants({ variant, size, corner, className }),
         loading && "relative cursor-wait",
       )}
       onClick={(event) => {

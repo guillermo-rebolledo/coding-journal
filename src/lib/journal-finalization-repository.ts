@@ -51,14 +51,15 @@ function subtractCalendarDays(localDate: string, count: number) {
 }
 
 function hydrateActivity(activity: ActivityRecord): ActivityRecord {
-  return {
+  const hydrated: ActivityRecord = {
     ...activity,
     occurredAt: new Date(activity.occurredAt),
     observedAt: new Date(activity.observedAt),
-    ...(activity.statusOccurredAt
-      ? { statusOccurredAt: new Date(activity.statusOccurredAt) }
-      : {}),
   };
+  if (activity.statusOccurredAt) {
+    hydrated.statusOccurredAt = new Date(activity.statusOccurredAt);
+  }
+  return hydrated;
 }
 
 function activityFromRow(

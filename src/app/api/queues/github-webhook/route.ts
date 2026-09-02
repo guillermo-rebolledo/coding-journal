@@ -1,6 +1,7 @@
 import { handleCallback } from "@vercel/queue";
 
 import { processWebhookDeliveryMessage } from "@/lib/github-webhook-processing";
+import { isJsonObject } from "@/lib/json-payload";
 import { githubWebhookRepository } from "@/lib/github-webhook-repository";
 import {
   QueueSaturatedError,
@@ -21,7 +22,7 @@ export const POST = handleCallback(
   async (message, metadata) => {
     await withQueueSlot({ topic, store: queueLeaseRepository }, () =>
       processWebhookDeliveryMessage(
-        message,
+        isJsonObject(message) ? message : null,
         { deliveryCount: metadata.deliveryCount },
         githubWebhookRepository,
       ),

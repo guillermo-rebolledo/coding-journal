@@ -7,6 +7,7 @@ import { journalSummary, journalSummaryGeneration } from "@/db/auth-schema";
 import type {
   JournalSummary,
   SummaryStore,
+  SummaryClaimRejected,
   SummaryUsage,
 } from "@/lib/journal-summary";
 import { deleteSummaryWhenEvidenceIsBlocked } from "@/lib/github-access-block";
@@ -90,12 +91,13 @@ export function createJournalSummaryRepository(
           orderBy: (table, { desc }) => [desc(table.createdAt)],
         }),
       ]);
-      return {
+      const usage: SummaryUsage = {
         userDaily: userRows[0]?.value ?? 0,
         globalDaily: globalRows[0]?.value ?? 0,
         monthlyCostUsd: Number(spendRows[0]?.value ?? 0) / 1_000_000,
-        ...(latest ? { lastGeneratedAt: latest.createdAt } : {}),
       };
+      if (latest) usage.lastGeneratedAt = latest.createdAt;
+      return usage;
     },
 
     async save(summary, evidence) {
@@ -236,13 +238,11 @@ export function createJournalSummaryRepository(
         .update(journalSummaryGeneration)
         .set({ status: "rejected" })
         .where(eq(journalSummaryGeneration.id, claimed.id));
-      return {
-        allowed: false,
-        reason,
-        ...(reason === "cooldown"
-          ? { retryAt: new Date(input.now.getTime() + 15 * 60 * 1000) }
-          : {}),
-      };
+      const rejected: SummaryClaimRejected = { allowed: false, reason };
+      if (reason === "cooldown") {
+        rejected.retryAt = new Date(input.now.getTime() + 15 * 60 * 1000);
+      }
+      return rejected;
     },
 
     async finishClaim(userId, snapshotHash, succeeded) {

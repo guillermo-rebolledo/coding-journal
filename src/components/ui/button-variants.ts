@@ -120,7 +120,7 @@ export const buttonVariants = cva(
           "size-14 rounded-[28px] active:not-disabled:rounded-m3-md [&_svg:not([class*='size-'])]:size-6",
       },
       /** Square buttons keep the size scale but start from a rounded rect. */
-      shape: {
+      corner: {
         round: "",
         square: "",
       },
@@ -137,52 +137,52 @@ export const buttonVariants = cva(
       { variant: "link", size: "2xl", class: "px-0" },
 
       {
-        shape: "square",
+        corner: "square",
         size: "xs",
         class: "rounded-m3-md active:not-disabled:rounded-m3-sm",
       },
       {
-        shape: "square",
+        corner: "square",
         size: "sm",
         class: "rounded-m3-md active:not-disabled:rounded-m3-sm",
       },
       {
-        shape: "square",
+        corner: "square",
         size: "default",
         class: "rounded-m3-md active:not-disabled:rounded-m3-sm",
       },
       {
-        shape: "square",
+        corner: "square",
         size: "lg",
         class: "rounded-m3-lg active:not-disabled:rounded-m3-md",
       },
       {
-        shape: "square",
+        corner: "square",
         size: "xl",
         class: "rounded-m3-xl active:not-disabled:rounded-m3-lg",
       },
       {
-        shape: "square",
+        corner: "square",
         size: "2xl",
         class: "rounded-m3-xl active:not-disabled:rounded-m3-lg",
       },
       {
-        shape: "square",
+        corner: "square",
         size: "icon",
         class: "rounded-m3-md active:not-disabled:rounded-m3-sm",
       },
       {
-        shape: "square",
+        corner: "square",
         size: "icon-xs",
         class: "rounded-m3-md active:not-disabled:rounded-m3-sm",
       },
       {
-        shape: "square",
+        corner: "square",
         size: "icon-sm",
         class: "rounded-m3-md active:not-disabled:rounded-m3-sm",
       },
       {
-        shape: "square",
+        corner: "square",
         size: "icon-lg",
         class: "rounded-m3-lg active:not-disabled:rounded-m3-md",
       },
@@ -190,7 +190,7 @@ export const buttonVariants = cva(
     defaultVariants: {
       variant: "default",
       size: "default",
-      shape: "round",
+      corner: "round",
     },
   },
 );

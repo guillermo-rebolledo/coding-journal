@@ -10,7 +10,8 @@ export const metadata: Metadata = {
   title: "Sign in",
 };
 
-const errors: Record<string, string> = {
+/** The sign-in failures GitHub reports, and what each one means here. */
+const errors = {
   access_denied:
     "GitHub sign-in was cancelled. You can try again when you’re ready.",
   email_not_found:
@@ -18,6 +19,16 @@ const errors: Record<string, string> = {
   email_is_missing:
     "GitHub did not provide a usable profile. Check the app’s email permission, then try again.",
 };
+
+type SignInErrorCode = keyof typeof errors;
+
+function isSignInErrorCode(code: string): code is SignInErrorCode {
+  return Object.hasOwn(errors, code);
+}
+
+function describedError(code: string): string | null {
+  return isSignInErrorCode(code) ? errors[code] : null;
+}
 
 /**
  * Sign-in — frame 1l of the look-and-feel reference
@@ -33,9 +44,11 @@ export default async function SignInPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const { error } = await searchParams;
-  const message = error
-    ? (errors[error] ?? "GitHub sign-in did not finish. Please try again.")
-    : null;
+  const message =
+    error === undefined
+      ? null
+      : (describedError(error) ??
+        "GitHub sign-in did not finish. Please try again.");
 
   return (
     <main className="grid min-h-screen place-items-center bg-m3-surface-container-low px-4 py-10">

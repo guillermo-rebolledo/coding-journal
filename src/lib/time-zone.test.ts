@@ -12,8 +12,11 @@ describe("journal time zone", () => {
       "America/Mexico_City",
     );
     expect(normalizeTimeZone("Not/A_Time_Zone")).toBeNull();
+    // A fixed offset names an instant's offset, not the zone whose rules
+    // decide when a day starts.
     expect(normalizeTimeZone("+01:00")).toBeNull();
-    expect(normalizeTimeZone(42)).toBeNull();
+    expect(normalizeTimeZone("   ")).toBeNull();
+    expect(normalizeTimeZone(null)).toBeNull();
   });
 
   it("derives the local date across the spring DST boundary", () => {

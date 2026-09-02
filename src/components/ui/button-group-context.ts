@@ -7,7 +7,7 @@ import type { buttonVariants } from "./button-variants";
 
 type ButtonGroupButtonDefaults = Pick<
   VariantProps<typeof buttonVariants>,
-  "shape" | "size" | "variant"
+  "corner" | "size" | "variant"
 >;
 
 const ButtonGroupContext = createContext<ButtonGroupButtonDefaults>({});

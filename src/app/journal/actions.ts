@@ -82,7 +82,11 @@ export async function confirmTimeZone(
   formData: FormData,
 ): Promise<TimeZoneActionState> {
   const currentUser = await requireUser();
-  const timeZone = normalizeTimeZone(formData.get("timeZone"));
+  // A submitted field is text or an upload; only text can name a time zone.
+  const submitted = formData.get("timeZone");
+  const timeZone = normalizeTimeZone(
+    submitted instanceof File ? null : submitted,
+  );
   if (!timeZone) return { error: "Enter a valid IANA time zone." };
 
   if (isE2EJournalUser(currentUser.id)) {

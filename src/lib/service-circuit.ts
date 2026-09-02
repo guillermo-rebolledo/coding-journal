@@ -104,7 +104,7 @@ export async function assertProviderAvailable({
     event: "provider-circuit-open",
     outcome: "blocked",
     service,
-    ...(jobId ? { jobId } : {}),
+    jobId,
     retryAfterSeconds: decision.retryAfterSeconds,
   });
   throw new ProviderUnavailableError(service, decision.retryAfterSeconds);
@@ -133,7 +133,7 @@ export async function withProviderCircuit<T>(
     service,
     store,
     now,
-    ...(jobId ? { jobId } : {}),
+    jobId,
     category: "provider",
   });
 
@@ -145,7 +145,7 @@ export async function withProviderCircuit<T>(
     await recordProviderFailure({
       service,
       store,
-      ...(jobId ? { jobId } : {}),
+      jobId,
       error,
     });
     throw error;
@@ -175,7 +175,7 @@ export async function recordProviderFailure({
     event: "call-failed",
     outcome: "failed",
     service,
-    ...(jobId ? { jobId } : {}),
+    jobId,
     ...(error === undefined
       ? { errorName: "ProviderCallFailed" }
       : describeErrorForTelemetry(error)),

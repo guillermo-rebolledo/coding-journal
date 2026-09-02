@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import type { JsonObject } from "@/lib/json-payload";
 import {
   deriveCollaborationSubject,
   extractCollaborationDelivery,
@@ -57,7 +58,7 @@ function pullRequestPayload(overrides: Record<string, unknown> = {}) {
 
 function extract(
   eventType: CollaborationWebhookEvent,
-  payload: unknown,
+  payload: JsonObject | null,
   at = receivedAt,
 ) {
   return extractCollaborationDelivery({
@@ -70,7 +71,7 @@ function extract(
 
 function extractedMessage(
   eventType: CollaborationWebhookEvent,
-  payload: unknown,
+  payload: JsonObject,
 ): CollaborationDeliveryMessage {
   const extraction = extract(eventType, payload);
   if (!extraction.ok)

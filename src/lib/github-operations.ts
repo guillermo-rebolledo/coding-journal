@@ -1,10 +1,23 @@
 import {
+  operationsKinds,
   validRepositoryName,
+  validSha,
   type ActivityRecord,
   type ActivityStatus,
   type OperationsKind,
 } from "@/lib/github-activity";
 import { validDeliveryId } from "@/lib/github-webhook";
+import {
+  asString,
+  readArray,
+  readBoolean,
+  readNonEmptyString,
+  readNumber,
+  readObject,
+  readPositiveInteger,
+  readString,
+  type JsonObject,
+} from "@/lib/json-payload";
 import { getLocalDayWindow, parseDate } from "@/lib/time-zone";
 
 const staleDeliveryMs = 7 * 24 * 60 * 60 * 1000;
@@ -23,7 +36,7 @@ export type OperationsWebhookEvent = (typeof operationsWebhookEvents)[number];
 export function isOperationsWebhookEvent(
   value: string,
 ): value is OperationsWebhookEvent {
-  return (operationsWebhookEvents as readonly string[]).includes(value);
+  return operationsWebhookEvents.some((event) => event === value);
 }
 
 type OperationsMessage = {
@@ -56,66 +69,25 @@ export type OperationsExtraction =
   | { ok: true; message: OperationsMessage }
   | { ok: false; reason: "malformed" | "stale" | "no-activity" };
 
-type Actor = { id?: unknown; login?: unknown; type?: unknown } | null;
+/** The `action` values that describe real package work. */
+const packageActions = ["published", "updated", "deleted", "restored"] as const;
 
-type OperationsPayload = {
-  action?: unknown;
-  repository?: {
-    id?: unknown;
-    full_name?: unknown;
-    private?: unknown;
-  } | null;
-  sender?: Actor;
-  approver?: Actor;
-  installation?: { id?: unknown } | null;
-  workflow_run?: {
-    id?: unknown;
-    run_attempt?: unknown;
-    name?: unknown;
-    event?: unknown;
-    status?: unknown;
-    conclusion?: unknown;
-    created_at?: unknown;
-    updated_at?: unknown;
-    triggering_actor?: Actor;
-  } | null;
-  since?: unknown;
-  package?: PackagePayload | null;
-  registry_package?: PackagePayload | null;
-  deployment?: {
-    id?: unknown;
-    sha?: unknown;
-    ref?: unknown;
-    created_at?: unknown;
-    environment?: unknown;
-  } | null;
-  deployment_status?: {
-    id?: unknown;
-    state?: unknown;
-    created_at?: unknown;
-  } | null;
-};
+type PackageAction = (typeof packageActions)[number];
 
-type PackagePayload = {
-  id?: unknown;
-  name?: unknown;
-  package_type?: unknown;
-  package_version?: {
-    id?: unknown;
-    version?: unknown;
-    created_at?: unknown;
-    updated_at?: unknown;
-    target_commitish?: unknown;
-    target_oid?: unknown;
-  } | null;
-};
-
-function positiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+function isPackageAction(value: string | null): value is PackageAction {
+  return packageActions.some((action) => action === value);
 }
 
-function boundedTitle(value: unknown) {
-  if (typeof value !== "string") return null;
+/** The activity each package action records. */
+const packageActionKinds = {
+  published: "package-published",
+  updated: "package-updated",
+  deleted: "package-deleted",
+  restored: "package-restored",
+} as const satisfies Record<PackageAction, OperationsKind>;
+
+function boundedTitle(value: string | null) {
+  if (value === null) return null;
   const title = value.trim();
   if (!title) return null;
   return title.length > subjectTitleMaxLength
@@ -123,7 +95,10 @@ function boundedTitle(value: unknown) {
     : title;
 }
 
-function workflowStatus(action: unknown, conclusion: unknown): ActivityStatus {
+function workflowStatus(
+  action: string | null,
+  conclusion: string | null,
+): ActivityStatus {
   if (action !== "completed") return "pending";
   if (conclusion === "success") return "success";
   if (conclusion === "cancelled") return "cancelled";
@@ -137,79 +112,81 @@ export function extractOperationsDelivery({
   receivedAt,
 }: {
   eventType: OperationsWebhookEvent;
-  payload: unknown;
+  payload: JsonObject | null;
   deliveryId: string;
   receivedAt: Date;
 }): OperationsExtraction {
-  if (
-    !validDeliveryId(deliveryId) ||
-    typeof payload !== "object" ||
-    payload === null
-  ) {
+  if (!validDeliveryId(deliveryId) || payload === null) {
     return { ok: false, reason: "malformed" };
   }
 
   if (eventType === "package" || eventType === "registry_package") {
-    return extractPackageDelivery(
-      payload as OperationsPayload,
-      eventType,
-      deliveryId,
-      receivedAt,
-    );
+    return extractPackageDelivery(payload, eventType, deliveryId, receivedAt);
   }
   if (eventType === "deployment_status") {
-    return extractDeploymentDelivery(
-      payload as OperationsPayload,
-      deliveryId,
-      receivedAt,
-    );
+    return extractDeploymentDelivery(payload, deliveryId, receivedAt);
   }
   if (eventType !== "workflow_run" && eventType !== "deployment_review") {
     return { ok: false, reason: "no-activity" };
   }
 
-  const candidate = payload as OperationsPayload;
-  const repository = candidate.repository;
-  const run = candidate.workflow_run;
   const approval = eventType === "deployment_review";
-  const actor = approval ? candidate.approver : run?.triggering_actor;
-  const installationId = candidate.installation?.id;
-  const occurredAt = parseDate(run?.created_at);
+  const action = readString(payload, "action");
+  const repository = readObject(payload, "repository");
+  const repositoryNumericId = readPositiveInteger(repository, "id");
+  const repositoryName = readString(repository, "full_name");
+  const isPrivate = readBoolean(repository, "private");
+  const installationId = readPositiveInteger(
+    readObject(payload, "installation"),
+    "id",
+  );
+  const run = readObject(payload, "workflow_run");
+  const runId = readPositiveInteger(run, "id");
+  const runAttempt = readPositiveInteger(run, "run_attempt");
+  const runEvent = readString(run, "event");
+  const actor = approval
+    ? readObject(payload, "approver")
+    : readObject(run, "triggering_actor");
+  const actorId = readPositiveInteger(actor, "id");
+  const actorLogin = readString(actor, "login");
+  const occurredAt = parseDate(readString(run, "created_at"));
+  // An approval is stamped by the review event; a run carries its own last
+  // transition. Either way the run's start is the fallback.
   const observedOutcomeAt =
-    (approval ? parseDate(candidate.since) : parseDate(run?.updated_at)) ??
-    occurredAt;
+    (approval
+      ? parseDate(readString(payload, "since"))
+      : parseDate(readString(run, "updated_at"))) ?? occurredAt;
 
   if (
-    !positiveInteger(repository?.id) ||
-    !validRepositoryName(repository.full_name) ||
-    typeof repository.private !== "boolean" ||
-    !positiveInteger(installationId) ||
-    !positiveInteger(run?.id) ||
-    !positiveInteger(run.run_attempt) ||
-    typeof run.event !== "string" ||
-    !positiveInteger(actor?.id) ||
-    typeof actor.login !== "string" ||
-    (approval && actor.type !== "User") ||
+    repositoryNumericId === null ||
+    !validRepositoryName(repositoryName) ||
+    isPrivate === null ||
+    installationId === null ||
+    runId === null ||
+    runAttempt === null ||
+    runEvent === null ||
+    actorId === null ||
+    actorLogin === null ||
+    (approval && readString(actor, "type") !== "User") ||
     !occurredAt ||
     !observedOutcomeAt
   ) {
     return { ok: false, reason: "malformed" };
   }
-  if (approval && candidate.action !== "approved") {
+  if (approval && action !== "approved") {
     return { ok: false, reason: "no-activity" };
   }
-  const direct =
-    approval || run.event === "workflow_dispatch" || run.run_attempt > 1;
-  if (!direct && candidate.action !== "completed") {
+  const direct = approval || runEvent === "workflow_dispatch" || runAttempt > 1;
+  if (!direct && action !== "completed") {
     return { ok: false, reason: "no-activity" };
   }
   if (receivedAt.getTime() - observedOutcomeAt.getTime() > staleDeliveryMs) {
     return { ok: false, reason: "stale" };
   }
 
-  const repositoryId = String(repository.id);
-  const runId = String(run.id);
-  const key = `github:workflow-run:${repositoryId}:${runId}:${run.run_attempt}`;
+  const repositoryId = String(repositoryNumericId);
+  const subjectId = String(runId);
+  const key = `github:workflow-run:${repositoryId}:${subjectId}:${runAttempt}`;
   return {
     ok: true,
     message: {
@@ -223,25 +200,25 @@ export function extractOperationsDelivery({
         attributionKey: key,
         attribution: direct ? "direct" : "linked",
         repositoryId,
-        repositoryName: repository.full_name,
-        private: repository.private,
-        actorId: String(actor.id),
-        actorLogin: actor.login,
-        subjectId: runId,
-        title: boundedTitle(run.name),
+        repositoryName,
+        private: isPrivate,
+        actorId: String(actorId),
+        actorLogin,
+        subjectId,
+        title: boundedTitle(readString(run, "name")),
         occurredAt: occurredAt.toISOString(),
         statusOccurredAt: observedOutcomeAt.toISOString(),
         status: approval
           ? "approved"
-          : workflowStatus(candidate.action, run.conclusion),
-        evidenceUrl: `https://github.com/${repository.full_name}/actions/runs/${runId}/attempts/${run.run_attempt}`,
+          : workflowStatus(action, readString(run, "conclusion")),
+        evidenceUrl: `https://github.com/${repositoryName}/actions/runs/${subjectId}/attempts/${runAttempt}`,
         narrativeEligible: true,
       },
     },
   };
 }
 
-function deploymentStatus(value: unknown): ActivityStatus | null {
+function deploymentStatus(value: string | null): ActivityStatus | null {
   if (value === "success") return "success";
   if (value === "failure" || value === "error") return "failure";
   if (value === "inactive") return "cancelled";
@@ -252,29 +229,36 @@ function deploymentStatus(value: unknown): ActivityStatus | null {
 }
 
 function extractDeploymentDelivery(
-  candidate: OperationsPayload,
+  payload: JsonObject,
   deliveryId: string,
   receivedAt: Date,
 ): OperationsExtraction {
-  const repository = candidate.repository;
-  const installationId = candidate.installation?.id;
-  const deployment = candidate.deployment;
-  const outcome = candidate.deployment_status;
-  const status = deploymentStatus(outcome?.state);
-  const occurredAt = parseDate(deployment?.created_at);
-  const outcomeAt = parseDate(outcome?.created_at);
+  const repository = readObject(payload, "repository");
+  const repositoryNumericId = readPositiveInteger(repository, "id");
+  const repositoryName = readString(repository, "full_name");
+  const isPrivate = readBoolean(repository, "private");
+  const installationId = readPositiveInteger(
+    readObject(payload, "installation"),
+    "id",
+  );
+  const deployment = readObject(payload, "deployment");
+  const deploymentNumericId = readPositiveInteger(deployment, "id");
+  const sha = readString(deployment, "sha");
+  const ref = readNonEmptyString(deployment, "ref");
+  const outcome = readObject(payload, "deployment_status");
+  const status = deploymentStatus(readString(outcome, "state"));
+  const occurredAt = parseDate(readString(deployment, "created_at"));
+  const outcomeAt = parseDate(readString(outcome, "created_at"));
   if (
-    candidate.action !== "created" ||
-    !positiveInteger(repository?.id) ||
-    !validRepositoryName(repository.full_name) ||
-    typeof repository.private !== "boolean" ||
-    !positiveInteger(installationId) ||
-    !positiveInteger(deployment?.id) ||
-    typeof deployment.sha !== "string" ||
-    !/^[a-fA-F0-9]{7,64}$/.test(deployment.sha) ||
-    typeof deployment.ref !== "string" ||
-    !deployment.ref.trim() ||
-    !positiveInteger(outcome?.id) ||
+    readString(payload, "action") !== "created" ||
+    repositoryNumericId === null ||
+    !validRepositoryName(repositoryName) ||
+    isPrivate === null ||
+    installationId === null ||
+    deploymentNumericId === null ||
+    !validSha(sha) ||
+    ref === null ||
+    readPositiveInteger(outcome, "id") === null ||
     !status ||
     !occurredAt ||
     !outcomeAt
@@ -285,36 +269,40 @@ function extractDeploymentDelivery(
     return { ok: false, reason: "stale" };
   }
 
-  const repositoryId = String(repository.id);
-  const run = candidate.workflow_run;
-  const runActor = run?.triggering_actor;
+  const repositoryId = String(repositoryNumericId);
+  // A deployment triggered by a dispatched or re-run workflow is the user's own
+  // work; anything else is attributed to the commit and ref it shipped.
+  const run = readObject(payload, "workflow_run");
+  const runId = readPositiveInteger(run, "id");
+  const runAttempt = readPositiveInteger(run, "run_attempt");
+  const runActor = readObject(run, "triggering_actor");
+  const runActorId = readPositiveInteger(runActor, "id");
+  const runActorLogin = readString(runActor, "login");
   const directWorkflow =
-    positiveInteger(run?.id) &&
-    positiveInteger(run.run_attempt) &&
-    (run.event === "workflow_dispatch" || run.run_attempt > 1) &&
-    positiveInteger(runActor?.id) &&
-    typeof runActor.login === "string" &&
-    runActor.type === "User";
-  const sender = candidate.sender;
-  if (
-    !directWorkflow &&
-    (!positiveInteger(sender?.id) || typeof sender.login !== "string")
-  ) {
+    runId !== null &&
+    runAttempt !== null &&
+    (readString(run, "event") === "workflow_dispatch" || runAttempt > 1) &&
+    runActorId !== null &&
+    runActorLogin !== null &&
+    readString(runActor, "type") === "User";
+
+  const sender = readObject(payload, "sender");
+  const senderId = readPositiveInteger(sender, "id");
+  const senderLogin = readString(sender, "login");
+  const actorId = directWorkflow ? runActorId : senderId;
+  const actorLogin = directWorkflow ? runActorLogin : senderLogin;
+  if (actorId === null || actorLogin === null) {
     return { ok: false, reason: "malformed" };
   }
-  const actor = directWorkflow ? runActor : sender;
-  if (!actor || !positiveInteger(actor.id) || typeof actor.login !== "string") {
-    return { ok: false, reason: "malformed" };
-  }
-  const attributionKeys = directWorkflow
-    ? [
-        `github:workflow-run:${repositoryId}:${String(run!.id)}:${String(run!.run_attempt)}`,
-      ]
-    : [
-        `github:commit:${repositoryId}:${deployment.sha}`,
-        `github:ref:${repositoryId}:${encodeURIComponent(deployment.ref.trim())}`,
-      ];
-  const deploymentId = String(deployment.id);
+
+  const attributionKeys =
+    directWorkflow && runId !== null && runAttempt !== null
+      ? [`github:workflow-run:${repositoryId}:${runId}:${runAttempt}`]
+      : [
+          `github:commit:${repositoryId}:${sha}`,
+          `github:ref:${repositoryId}:${encodeURIComponent(ref)}`,
+        ];
+  const deploymentId = String(deploymentNumericId);
   return {
     ok: true,
     message: {
@@ -329,16 +317,16 @@ function extractDeploymentDelivery(
         attributionKeys,
         attribution: directWorkflow ? "direct" : "linked",
         repositoryId,
-        repositoryName: repository.full_name,
-        private: repository.private,
-        actorId: String(actor.id),
-        actorLogin: actor.login,
+        repositoryName,
+        private: isPrivate,
+        actorId: String(actorId),
+        actorLogin,
         subjectId: deploymentId,
-        title: boundedTitle(deployment.environment),
+        title: boundedTitle(readString(deployment, "environment")),
         occurredAt: occurredAt.toISOString(),
         statusOccurredAt: outcomeAt.toISOString(),
         status,
-        evidenceUrl: `https://github.com/${repository.full_name}/deployments`,
+        evidenceUrl: `https://github.com/${repositoryName}/deployments`,
         narrativeEligible: true,
       },
     },
@@ -346,41 +334,49 @@ function extractDeploymentDelivery(
 }
 
 function extractPackageDelivery(
-  candidate: OperationsPayload,
+  payload: JsonObject,
   eventType: "package" | "registry_package",
   deliveryId: string,
   receivedAt: Date,
 ): OperationsExtraction {
-  const repository = candidate.repository;
-  const actor = candidate.sender;
-  const installationId = candidate.installation?.id;
-  const packageInfo =
-    eventType === "package" ? candidate.package : candidate.registry_package;
-  const version = packageInfo?.package_version;
-  const action = candidate.action;
-  if (
-    !["published", "updated", "deleted", "restored"].includes(String(action))
-  ) {
-    return { ok: false, reason: "no-activity" };
-  }
+  const action = readString(payload, "action");
+  if (!isPackageAction(action)) return { ok: false, reason: "no-activity" };
+
+  const repository = readObject(payload, "repository");
+  const repositoryNumericId = readPositiveInteger(repository, "id");
+  const repositoryName = readString(repository, "full_name");
+  const isPrivate = readBoolean(repository, "private");
+  const installationId = readPositiveInteger(
+    readObject(payload, "installation"),
+    "id",
+  );
+  const actor = readObject(payload, "sender");
+  const actorId = readPositiveInteger(actor, "id");
+  const actorLogin = readString(actor, "login");
+  const actorType = readString(actor, "type");
+  const packageInfo = readObject(payload, eventType);
+  const packageName = readNonEmptyString(packageInfo, "name");
+  const version = readObject(packageInfo, "package_version");
+  const versionNumericId = readPositiveInteger(version, "id");
+  const versionName = readNonEmptyString(version, "version");
+  // Publishing stamps the version's creation; every later transition stamps
+  // its update.
   const occurredAt = parseDate(
-    action === "published" ? version?.created_at : version?.updated_at,
+    readString(version, action === "published" ? "created_at" : "updated_at"),
   );
   if (
-    !positiveInteger(repository?.id) ||
-    !validRepositoryName(repository.full_name) ||
-    typeof repository.private !== "boolean" ||
-    !positiveInteger(installationId) ||
-    !positiveInteger(actor?.id) ||
-    typeof actor.login !== "string" ||
-    (actor.type !== "User" && actor.type !== "Bot") ||
-    !positiveInteger(packageInfo?.id) ||
-    typeof packageInfo.name !== "string" ||
-    !packageInfo.name.trim() ||
-    typeof packageInfo.package_type !== "string" ||
-    !positiveInteger(version?.id) ||
-    typeof version.version !== "string" ||
-    !version.version.trim() ||
+    repositoryNumericId === null ||
+    !validRepositoryName(repositoryName) ||
+    isPrivate === null ||
+    installationId === null ||
+    actorId === null ||
+    actorLogin === null ||
+    (actorType !== "User" && actorType !== "Bot") ||
+    readPositiveInteger(packageInfo, "id") === null ||
+    packageName === null ||
+    readString(packageInfo, "package_type") === null ||
+    versionNumericId === null ||
+    versionName === null ||
     !occurredAt
   ) {
     return { ok: false, reason: "malformed" };
@@ -388,24 +384,21 @@ function extractPackageDelivery(
   if (receivedAt.getTime() - occurredAt.getTime() > staleDeliveryMs) {
     return { ok: false, reason: "stale" };
   }
-  const kind = `package-${action}` as OperationsKind;
-  const repositoryId = String(repository.id);
-  const versionId = String(version.id);
-  const targetOid =
-    typeof version.target_oid === "string" &&
-    /^[a-fA-F0-9]{7,64}$/.test(version.target_oid)
-      ? version.target_oid
-      : null;
-  const targetCommitish =
-    typeof version.target_commitish === "string" &&
-    version.target_commitish.trim()
-      ? version.target_commitish.trim()
-      : null;
-  const direct = actor.type === "User";
+
+  const kind = packageActionKinds[action];
+  const repositoryId = String(repositoryNumericId);
+  const versionId = String(versionNumericId);
+  const targetOid = readString(version, "target_oid");
+  const targetCommitish = readNonEmptyString(version, "target_commitish");
+  // A person publishing is doing the work. A bot release is only the user's
+  // work through the commit or ref it was cut from.
+  const direct = actorType === "User";
   const attributionKeys = direct
     ? [`github:package:${repositoryId}:${versionId}`]
     : [
-        ...(targetOid ? [`github:commit:${repositoryId}:${targetOid}`] : []),
+        ...(validSha(targetOid)
+          ? [`github:commit:${repositoryId}:${targetOid}`]
+          : []),
         ...(targetCommitish
           ? [
               `github:ref:${repositoryId}:${encodeURIComponent(targetCommitish)}`,
@@ -415,12 +408,12 @@ function extractPackageDelivery(
   if (!direct && attributionKeys.length === 0) {
     return { ok: false, reason: "no-activity" };
   }
-  const packageName = boundedTitle(packageInfo.name);
-  const versionName = boundedTitle(version.version);
+  const boundedName = boundedTitle(packageName);
+  const boundedVersion = boundedTitle(versionName);
   const title =
-    packageName && versionName
-      ? boundedTitle(`${packageName} · ${versionName}`)
-      : packageName;
+    boundedName && boundedVersion
+      ? boundedTitle(`${boundedName} · ${boundedVersion}`)
+      : boundedName;
   const lifecycleIdentity =
     action === "published"
       ? versionId
@@ -439,94 +432,181 @@ function extractPackageDelivery(
         attributionKeys,
         attribution: direct ? "direct" : "linked",
         repositoryId,
-        repositoryName: repository.full_name,
-        private: repository.private,
-        actorId: String(actor.id),
-        actorLogin: actor.login,
+        repositoryName,
+        private: isPrivate,
+        actorId: String(actorId),
+        actorLogin,
         subjectId: versionId,
         title,
         occurredAt: occurredAt.toISOString(),
         statusOccurredAt: occurredAt.toISOString(),
         status: action === "deleted" ? "cancelled" : "success",
-        evidenceUrl: `https://github.com/${repository.full_name}/packages`,
+        evidenceUrl: `https://github.com/${repositoryName}/packages`,
         narrativeEligible: action === "published" || action === "updated",
       },
     },
   };
 }
 
+/** The statuses an operations activity may carry, as data the parser can test. */
+const operationStatuses = [
+  "pending",
+  "approved",
+  "success",
+  "failure",
+  "cancelled",
+] as const satisfies readonly ActivityStatus[];
+
+function isOperationsKind(value: string | null): value is OperationsKind {
+  return operationsKinds.some((kind) => kind === value);
+}
+
+function isOperationStatus(value: string | null): value is ActivityStatus {
+  return operationStatuses.some((status) => status === value);
+}
+
+const maximumKeyLength = 1024;
+
+function isBoundedKey(value: string | null): value is string {
+  return value !== null && value.length > 0 && value.length <= maximumKeyLength;
+}
+
+/**
+ * Decodes a queue message this service published earlier. The message crossed
+ * a queue, so it is re-parsed field by field rather than trusted: every value
+ * below is read and checked before the message is rebuilt.
+ */
 export function parseOperationsDeliveryMessage(
-  value: unknown,
+  value: JsonObject | null,
 ): OperationsMessage | null {
-  if (typeof value !== "object" || value === null) return null;
-  const message = value as Partial<OperationsMessage>;
-  const operation = message.operation;
-  const validStatuses: readonly string[] = [
-    "pending",
-    "approved",
-    "success",
-    "failure",
-    "cancelled",
-  ];
-  const validKinds: readonly string[] = [
-    "workflow-run",
-    "deployment",
-    "package-published",
-    "package-updated",
-    "package-deleted",
-    "package-restored",
-  ];
+  if (value === null || readNumber(value, "version") !== 1) return null;
+
+  const deliveryId = readString(value, "deliveryId");
+  const installationId = readString(value, "installationId");
+  const receivedAt = readString(value, "receivedAt");
+  const operation = readObject(value, "operation");
   if (
-    message.version !== 1 ||
-    !validDeliveryId(message.deliveryId) ||
-    typeof message.installationId !== "string" ||
-    !/^\d+$/.test(message.installationId) ||
-    !parseDate(message.receivedAt) ||
-    !operation ||
-    !validKinds.includes(operation.kind) ||
-    typeof operation.deduplicationKey !== "string" ||
-    operation.deduplicationKey.length === 0 ||
-    operation.deduplicationKey.length > 1024 ||
-    typeof operation.attributionKey !== "string" ||
-    operation.attributionKey.length === 0 ||
-    operation.attributionKey.length > 1024 ||
-    (operation.attributionKeys !== undefined &&
-      (!Array.isArray(operation.attributionKeys) ||
-        operation.attributionKeys.length === 0 ||
-        operation.attributionKeys.length > 4 ||
-        operation.attributionKeys.some(
-          (key) =>
-            typeof key !== "string" || key.length === 0 || key.length > 1024,
-        ))) ||
-    (operation.attribution !== "direct" &&
-      operation.attribution !== "linked") ||
-    typeof operation.repositoryId !== "string" ||
-    typeof operation.actorId !== "string" ||
-    operation.actorId.length === 0 ||
-    typeof operation.actorLogin !== "string" ||
-    operation.actorLogin.length === 0 ||
-    typeof operation.private !== "boolean" ||
-    typeof operation.subjectId !== "string" ||
-    operation.subjectId.length === 0 ||
-    operation.subjectId.length > 255 ||
-    (operation.title !== null &&
-      (typeof operation.title !== "string" ||
-        operation.title.length > subjectTitleMaxLength)) ||
-    !parseDate(operation.occurredAt) ||
-    (operation.statusOccurredAt !== undefined &&
-      !parseDate(operation.statusOccurredAt)) ||
-    !validStatuses.includes(operation.status) ||
-    typeof operation.evidenceUrl !== "string" ||
-    operation.evidenceUrl.length > 2048 ||
-    !validRepositoryName(operation.repositoryName) ||
-    !operation.evidenceUrl.startsWith(
-      `https://github.com/${operation.repositoryName}/`,
-    ) ||
-    typeof operation.narrativeEligible !== "boolean"
+    !validDeliveryId(deliveryId) ||
+    installationId === null ||
+    !/^\d+$/.test(installationId) ||
+    receivedAt === null ||
+    !parseDate(receivedAt) ||
+    operation === null
   ) {
     return null;
   }
-  return message as OperationsMessage;
+
+  const kind = readString(operation, "kind");
+  const deduplicationKey = readString(operation, "deduplicationKey");
+  const attributionKey = readString(operation, "attributionKey");
+  const attribution = readString(operation, "attribution");
+  const repositoryId = readString(operation, "repositoryId");
+  const repositoryName = readString(operation, "repositoryName");
+  const actorId = readString(operation, "actorId");
+  const actorLogin = readString(operation, "actorLogin");
+  const isPrivate = readBoolean(operation, "private");
+  const subjectId = readString(operation, "subjectId");
+  const status = readString(operation, "status");
+  const evidenceUrl = readString(operation, "evidenceUrl");
+  const narrativeEligible = readBoolean(operation, "narrativeEligible");
+  const occurredAt = readString(operation, "occurredAt");
+
+  // `title` is nullable rather than optional: an absent member is malformed,
+  // an explicit null is a subject that simply has no title.
+  const titleMember = operation["title"];
+  const title = readString(operation, "title");
+  if (
+    titleMember !== null &&
+    (title === null || title.length > subjectTitleMaxLength)
+  ) {
+    return null;
+  }
+
+  // `statusOccurredAt` is optional, but a present value must be an instant.
+  const statusOccurredAt = readString(operation, "statusOccurredAt");
+  if (
+    operation["statusOccurredAt"] !== undefined &&
+    !parseDate(statusOccurredAt)
+  ) {
+    return null;
+  }
+
+  const attributionKeys = readBoundedKeys(operation);
+  if (attributionKeys === "invalid") return null;
+
+  if (
+    !isOperationsKind(kind) ||
+    !isBoundedKey(deduplicationKey) ||
+    !isBoundedKey(attributionKey) ||
+    (attribution !== "direct" && attribution !== "linked") ||
+    repositoryId === null ||
+    !validRepositoryName(repositoryName) ||
+    actorId === null ||
+    actorId.length === 0 ||
+    actorLogin === null ||
+    actorLogin.length === 0 ||
+    isPrivate === null ||
+    subjectId === null ||
+    subjectId.length === 0 ||
+    subjectId.length > 255 ||
+    occurredAt === null ||
+    !parseDate(occurredAt) ||
+    !isOperationStatus(status) ||
+    evidenceUrl === null ||
+    evidenceUrl.length > 2048 ||
+    !evidenceUrl.startsWith(`https://github.com/${repositoryName}/`) ||
+    narrativeEligible === null
+  ) {
+    return null;
+  }
+
+  const message: OperationsMessage = {
+    version: 1,
+    deliveryId,
+    installationId,
+    receivedAt,
+    operation: {
+      kind,
+      deduplicationKey,
+      attributionKey,
+      attribution,
+      repositoryId,
+      repositoryName,
+      private: isPrivate,
+      actorId,
+      actorLogin,
+      subjectId,
+      title,
+      occurredAt,
+      status,
+      evidenceUrl,
+      narrativeEligible,
+    },
+  };
+  if (attributionKeys !== undefined) {
+    message.operation.attributionKeys = attributionKeys;
+  }
+  if (statusOccurredAt !== null) {
+    message.operation.statusOccurredAt = statusOccurredAt;
+  }
+  return message;
+}
+
+/**
+ * Reads the optional `attributionKeys` list. Returns `undefined` when the
+ * member is absent and the sentinel `"invalid"` when it is present but is not
+ * a list of between one and four bounded keys.
+ */
+function readBoundedKeys(
+  operation: JsonObject,
+): string[] | undefined | "invalid" {
+  if (operation["attributionKeys"] === undefined) return undefined;
+  const entries = readArray(operation, "attributionKeys");
+  if (entries === null || entries.length === 0 || entries.length > 4) {
+    return "invalid";
+  }
+  const keys = entries.map((entry) => asString(entry));
+  return keys.every((key) => isBoundedKey(key)) ? keys : "invalid";
 }
 
 export function normalizeOperationsMessage(

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { deleteAccount } from "@/app/settings/actions";
@@ -41,7 +42,7 @@ export default async function SettingsPage({
   if (!session) redirect("/sign-in?next=%2Fsettings");
 
   const [onboarding, installations] = await Promise.all([
-    getJournalOnboarding(session.user.id),
+    getJournalOnboarding(session.user.id, requestHeaders),
     refreshGitHubConnections(requestHeaders, session.user.id),
   ]);
 
@@ -105,6 +106,36 @@ export default async function SettingsPage({
           className="mt-10"
         >
           <ListSurface>
+            <SettingsRow
+              label="The full account"
+              supporting={
+                <>
+                  Every permission, processor, retention window and quota is
+                  written out in{" "}
+                  <Link
+                    href="/data-access"
+                    className="text-m3-primary underline underline-offset-4"
+                  >
+                    Data access
+                  </Link>
+                  , alongside{" "}
+                  <Link
+                    href="/privacy"
+                    className="text-m3-primary underline underline-offset-4"
+                  >
+                    Privacy
+                  </Link>{" "}
+                  and{" "}
+                  <Link
+                    href="/terms"
+                    className="text-m3-primary underline underline-offset-4"
+                  >
+                    Terms
+                  </Link>
+                  .
+                </>
+              }
+            />
             <SettingsRow
               label="What is processed"
               supporting="Coding Journal processes only the GitHub account and active App installations shown above. OAuth and installation credentials stay encrypted on the server, and repository names and private visibility never leave the signed-in server boundary."

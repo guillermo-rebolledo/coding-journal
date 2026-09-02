@@ -20,7 +20,7 @@ numbered, and code comments and issues refer to them by number.
 | 1j     | Landing                                                                           |
 | 1k     | Settings, including the destructive zone                                          |
 | 1l     | Sign-in, onboarding steps 1 and 2, and the reusable progress pattern              |
-| 1m     | Trust pages (Privacy / Terms / Data access) — not built yet, issue #17            |
+| 1m     | Trust pages (Privacy / Terms / Data access)                                       |
 | 1n     | The twelve component patterns everything else is built from                       |
 | 1o     | The state gallery: completeness, freshness, limits, narrative, empties, auth      |
 | 1p     | Responsive and accessibility specification                                        |
@@ -59,6 +59,18 @@ Shared pieces live in `src/components/journal/`: `AppShell`, `MetricOverview`,
 `EvidenceLink` and `ProgressSteps`. Activity rows live in
 `src/app/journal/journal-explorer.tsx`.
 
-Landing, sign-in, onboarding, Today, History and Settings follow the reference.
-The trust pages (frame 1m) and the destructive account-deletion zone (frame 1k)
-are still open work — see issues #15 and #17.
+Landing, sign-in, onboarding, Today, History, Settings, the destructive
+account-deletion zone (frame 1k) and the trust pages (frame 1m) all follow the
+reference.
+
+The trust shell is `src/components/trust/trust-page.tsx`; the three documents
+it renders are data in `src/content/trust/`, so Privacy, Terms and Data access
+cannot drift into three different pages. It introduces one type role the M3
+scale does not define — `text-m3-body-editorial` (17/28) — because the
+reference asks for a reading size larger than the app's on those pages. It is a
+token in `globals.css` like every other role.
+
+Frame 1n's two documented registry gaps are built as project components rather
+than new `ui/` primitives: `MetricOverview` for the data strip, and History's
+own grid for the list-detail scaffold. See
+[the release gate](../release-gate.md) for the full MaterialCN coverage record.

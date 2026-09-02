@@ -46,6 +46,50 @@ Do not manually add these values to Vercel or GitHub Actions.
 | `NODE_ENV`                      | Next.js and package scripts | Do not set it in `.env.local`. Next.js and the repository scripts select `development`, `test`, or `production`.                                                              |
 | `CI`                            | GitHub Actions              | Changes Playwright retries, reporter, browser selection, and `forbidOnly`.                                                                                                    |
 
+## The AI narrative and its operator budget
+
+The daily narrative is the only part of Coding Journal that calls a paid
+provider, and it is entirely optional: leave `OPENAI_API_KEY` unset and the
+deterministic journal — metrics, activity, evidence, History, finalization —
+behaves exactly as it does with it set. The narrative slot then states that
+summaries are unavailable, which is one of the states the design reference
+already specifies (frame 1o).
+
+| Variable                             | Default                 | What it does                                                                            |
+| ------------------------------------ | ----------------------- | --------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`                     | —                       | Enables narratives. Unset means no request is ever made and no data leaves the service. |
+| `OPENAI_SUMMARY_MODEL`               | `gpt-5-mini-2025-08-07` | The model the summary request uses.                                                     |
+| `OPENAI_INPUT_COST_PER_MILLION_USD`  | `0`                     | Input price used to estimate spend. Leave at `0` and the spend budget cannot bind.      |
+| `OPENAI_OUTPUT_COST_PER_MILLION_USD` | `0`                     | Output price used to estimate spend.                                                    |
+| `SUMMARY_GLOBAL_DAILY_LIMIT`         | `1000`                  | Summaries generated product-wide per day.                                               |
+| `SUMMARY_MONTHLY_SPEND_LIMIT_USD`    | `100`                   | Estimated provider spend per calendar month, product-wide.                              |
+| `SUMMARY_MAXIMUM_INPUT_BYTES`        | `16000`                 | Cap on the evidence snapshot sent to the provider.                                      |
+| `SUMMARY_QUEUE_CONCURRENCY`          | `5`                     | Summary generations in flight at once.                                                  |
+
+Two per-user limits are not configurable and are stated on the trust pages: 12
+summaries per person per day, and a 15-minute cooldown between generations.
+
+**Set the two cost variables if you set the key.** They default to `0`, which
+makes every generation cost an estimated nothing, which makes
+`SUMMARY_MONTHLY_SPEND_LIMIT_USD` unreachable — the daily-count budget still
+binds, but the spend budget silently does not. Take the current per-million
+prices from OpenAI's pricing page for the model you configured.
+
+### Obtaining and scoping the key
+
+1. Create a project-scoped API key at <https://platform.openai.com/api-keys>,
+   restricted to the project that holds this deployment's usage.
+2. Set a hard monthly usage limit on that project in OpenAI's billing settings.
+   The application budget is a second line of defence, not the first: it
+   estimates spend from configured prices, and an estimate can be wrong.
+3. Add `OPENAI_API_KEY` to Vercel Production (and Preview only if previews
+   should generate real narratives — they will bill the same project).
+4. Rotate it the same way as any other secret: create the new key, update
+   Vercel, redeploy, then revoke the old key.
+
+Never expose the key through a `NEXT_PUBLIC_*` variable. Every provider call is
+made server-side from the finalization consumer and the refresh action.
+
 ## Optional service-protection tuning
 
 Every value below has a working default, and the application behaves correctly

@@ -1,4 +1,14 @@
-const E2E_SESSION_COOKIE = "coding-journal-e2e-session";
+export const E2E_SESSION_COOKIE = "coding-journal-e2e-session";
+
+/**
+ * Onboarding progress for a smoke run. A real user's two onboarding answers
+ * are a database row; a smoke deployment has no database, so the onboarding
+ * actions record the same two answers in this cookie instead. Only the
+ * `onboarding` session mode reads it — every other mode is already onboarded.
+ */
+export const E2E_ONBOARDING_COOKIE = "coding-journal-e2e-onboarding";
+
+export type E2EOnboardingStage = "time-zone" | "complete";
 
 const e2eModes = [
   "valid",
@@ -6,21 +16,58 @@ const e2eModes = [
   "partial",
   "pending",
   "disconnected",
+  "onboarding",
 ] as const;
 
 export type E2EMode = (typeof e2eModes)[number];
 
 const e2eModeSet = new Set<string>(e2eModes);
 
+function readCookie(requestHeaders: Headers, name: string) {
+  return (
+    requestHeaders
+      .get("cookie")
+      ?.split(";")
+      .map((cookie) => cookie.trim())
+      .find((cookie) => cookie.startsWith(`${name}=`))
+      ?.slice(name.length + 1) ?? null
+  );
+}
+
 export function getE2ESessionMode(requestHeaders: Headers): E2EMode | null {
-  const value = requestHeaders
-    .get("cookie")
-    ?.split(";")
-    .map((cookie) => cookie.trim())
-    .find((cookie) => cookie.startsWith(`${E2E_SESSION_COOKIE}=`))
-    ?.slice(E2E_SESSION_COOKIE.length + 1);
+  const value = readCookie(requestHeaders, E2E_SESSION_COOKIE);
 
   return value && e2eModeSet.has(value) ? (value as E2EMode) : null;
+}
+
+const e2eOnboardingUserId = "e2e-onboarding";
+
+/**
+ * The onboarding answers a fixture user has given. Every mode but
+ * `onboarding` starts already set up, so the smoke run can reach Today
+ * directly; `onboarding` starts at step 1 and advances as the real server
+ * actions run.
+ */
+export function getE2EOnboardingProgress(
+  userId: string,
+  requestHeaders: Headers | null,
+) {
+  if (userId !== e2eOnboardingUserId) {
+    return {
+      timeZone: "America/Mexico_City",
+      githubAccessMode: getE2EAccessMode(userId),
+    };
+  }
+
+  const stage = requestHeaders
+    ? readCookie(requestHeaders, E2E_ONBOARDING_COOKIE)
+    : null;
+
+  return {
+    timeZone:
+      stage === "time-zone" || stage === "complete" ? "Europe/Madrid" : null,
+    githubAccessMode: stage === "complete" ? ("best-effort" as const) : null,
+  };
 }
 
 export function getE2EUserId(mode: E2EMode) {
@@ -37,8 +84,8 @@ export function isE2EJournalUser(userId: string) {
 
 export function getE2EAccessMode(userId: string) {
   return userId === "e2e-user" || userId === "e2e-pending"
-    ? "best-effort"
-    : "app";
+    ? ("best-effort" as const)
+    : ("app" as const);
 }
 
 export const e2eGitHubInstallations = {

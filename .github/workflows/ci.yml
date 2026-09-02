@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,6 +33,8 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
+  # Chromium on every pull request: the smoke flow, the accessibility scan and
+  # the responsive checks. Fast enough to stay in the loop.
   browser-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -45,3 +48,38 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: browser-smoke-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
+
+  # Firefox and WebKit are the release gate — they run on main and on demand,
+  # not on every pull request. See docs/release-gate.md.
+  release-gate-browsers:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      E2E_RELEASE_GATE: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: release-gate-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 14

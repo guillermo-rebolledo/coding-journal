@@ -1,10 +1,14 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { githubActivityRepository } from "@/lib/github-activity-repository";
-import { isE2EJournalUser } from "@/lib/e2e-fixtures";
+import {
+  E2E_ONBOARDING_COOKIE,
+  isE2EJournalUser,
+  type E2EOnboardingStage,
+} from "@/lib/e2e-fixtures";
 import { getGitHubInstallations } from "@/lib/github-installation";
 import {
   getLocalDayWindow,
@@ -53,6 +57,20 @@ function limitedResult(
   };
 }
 
+/**
+ * A fixture user has no database row to write onboarding into, so the smoke
+ * run's progress is recorded in a cookie instead. Everything else about the
+ * action — validation, redirect, the rendered step — is the real path.
+ */
+async function recordFixtureOnboarding(stage: E2EOnboardingStage) {
+  const store = await cookies();
+  store.set(E2E_ONBOARDING_COOKIE, stage, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+  });
+}
+
 async function requireUser() {
   const session = await getJournalSession(await headers());
   if (!session) redirect("/sign-in?next=%2Fjournal");
@@ -67,13 +85,21 @@ export async function confirmTimeZone(
   const timeZone = normalizeTimeZone(formData.get("timeZone"));
   if (!timeZone) return { error: "Enter a valid IANA time zone." };
 
-  await saveJournalTimeZone(currentUser.id, timeZone);
+  if (isE2EJournalUser(currentUser.id)) {
+    await recordFixtureOnboarding("time-zone");
+  } else {
+    await saveJournalTimeZone(currentUser.id, timeZone);
+  }
   redirect("/journal");
 }
 
 export async function skipGitHubAppInstallation() {
   const currentUser = await requireUser();
-  await chooseBestEffortMode(currentUser.id);
+  if (isE2EJournalUser(currentUser.id)) {
+    await recordFixtureOnboarding("complete");
+  } else {
+    await chooseBestEffortMode(currentUser.id);
+  }
   redirect("/journal");
 }
 
@@ -82,7 +108,10 @@ export async function refreshTodayJournal(): Promise<RefreshActionResult> {
   const session = await getJournalSession(requestHeaders);
   if (!session) redirect("/sign-in?next=%2Fjournal");
 
-  const onboarding = await getJournalOnboarding(session.user.id);
+  const onboarding = await getJournalOnboarding(
+    session.user.id,
+    requestHeaders,
+  );
   if (!onboarding.timeZone || !onboarding.githubAccessMode) {
     return {
       outcome: "unavailable",

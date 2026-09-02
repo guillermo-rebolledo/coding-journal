@@ -31,6 +31,16 @@ export const dataAccessDocument: TrustDocument = {
                 "Pushes, ref changes and releases in the repositories you selected.",
             },
             {
+              term: "Issues · read",
+              description:
+                "Issues you opened, closed or commented on, and their titles.",
+            },
+            {
+              term: "Pull requests · read",
+              description:
+                "Pull requests you opened, reviewed, commented on or merged.",
+            },
+            {
               term: "Discussions · read",
               description: "Discussion creation, comments and answers.",
             },
@@ -185,11 +195,15 @@ export const dataAccessDocument: TrustDocument = {
         },
         {
           kind: "paragraph",
-          text: "Deleting your account from Settings requires typing the word delete, and then removes every journal day, narrative, correction and stored activity record, ends every session, and revokes Coding Journal's GitHub authorization grant. Deletion runs to completion in the background — you can close the page — and retries on its own if part of it fails. Nothing is partially exposed while it runs.",
+          text: "Deleting your account from Settings requires typing the word DELETE. It then removes every journal day, narrative, correction and stored activity record and ends every session, in a single database statement — so there is no half-deleted state in which some of your record is gone and some is still readable. It happens while the request is in flight, not later, and it cannot be undone.",
         },
         {
           kind: "paragraph",
-          text: "Deletion cannot uninstall the GitHub App for you, because that lives on your GitHub account. After deleting, remove the installation on GitHub if you want to; Coding Journal keeps nothing that could use it.",
+          text: "Coding Journal also asks GitHub to revoke its authorization grant as part of the same request. That call is best-effort: if GitHub is unreachable it is not retried, and your data is deleted regardless. Revoking the grant yourself at github.com/settings/applications is the way to be certain.",
+        },
+        {
+          kind: "paragraph",
+          text: "Deletion cannot uninstall the GitHub App for you either, because that lives on your GitHub account. After deleting, remove the installation on GitHub if you want to; Coding Journal keeps nothing that could use it.",
         },
       ],
     },

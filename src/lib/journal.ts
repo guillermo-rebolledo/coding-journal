@@ -19,8 +19,12 @@ const emptyOnboarding: JournalOnboarding = {
 
 export async function getJournalOnboarding(
   userId: string,
-  /** Only read for fixture users, whose onboarding progress lives in a cookie. */
-  requestHeaders: Headers | null = null,
+  /**
+   * Only read for fixture users, whose onboarding progress lives in a cookie.
+   * Required rather than defaulted: a caller that omitted it would silently
+   * report a fixture user as not onboarded.
+   */
+  requestHeaders: Headers | null,
 ): Promise<JournalOnboarding> {
   if (isE2EJournalUser(userId)) {
     return getE2EOnboardingProgress(userId, requestHeaders);

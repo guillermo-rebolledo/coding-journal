@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { signIn } from "./support/session";
+import { chooseTheme } from "./support/theme";
 
 /**
  * Responsive regression coverage — issue #17 and frame 1p of the look-and-feel
@@ -35,20 +36,6 @@ const routes = [
   { name: "Settings", session: "all", path: "/settings" },
 ] as const;
 
-async function setTheme(page: Page, theme: "Light" | "Dark") {
-  const item = page.getByRole("menuitem", { name: theme });
-  // The trigger is a client component; a click that lands before hydration is
-  // swallowed. Retry opening rather than racing it.
-  await expect(async () => {
-    await page.getByRole("button", { name: "Choose color theme" }).click();
-    await expect(item).toBeVisible({ timeout: 1_000 });
-  }).toPass();
-
-  await item.click();
-  await page.keyboard.press("Escape");
-  await expect(item).toHaveCount(0);
-}
-
 /** Every element that sticks out past the right edge of the viewport. */
 async function clippedElements(page: Page) {
   return page.evaluate(() => {
@@ -82,7 +69,7 @@ for (const route of routes) {
         if (route.session) await signIn(context, route.session);
         await page.setViewportSize({ width: size.width, height: size.height });
         await page.goto(route.path);
-        await setTheme(page, theme);
+        await chooseTheme(page, theme);
 
         await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
 

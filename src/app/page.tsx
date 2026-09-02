@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { DeletedAccountNotice } from "@/components/deleted-account-notice";
 import { SiteHeader } from "@/components/site-header";
-import { trustDocuments } from "@/content/trust";
+import { TrustNav } from "@/components/trust/trust-nav";
 
 /**
  * Landing — frame 1j of the look-and-feel reference
@@ -158,20 +158,7 @@ export default function HomePage() {
       <footer className="border-t border-m3-outline-variant px-4 py-8 sm:px-6">
         <div className="mx-auto flex max-w-[76rem] flex-col gap-3 text-m3-body-sm text-m3-on-surface-variant m3-expanded:flex-row m3-expanded:items-center m3-expanded:justify-between">
           <p>Coding Journal is open source and made for thoughtful work.</p>
-          <nav
-            aria-label="Trust pages"
-            className="flex flex-wrap items-center gap-x-6"
-          >
-            {trustDocuments.map((trustDocument) => (
-              <Link
-                key={trustDocument.slug}
-                href={`/${trustDocument.slug}`}
-                className="flex min-h-11 items-center rounded-m3-xs hover:underline focus-visible:underline"
-              >
-                {trustDocument.navLabel}
-              </Link>
-            ))}
-          </nav>
+          <TrustNav />
         </div>
       </footer>
     </div>

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { BrandMark } from "@/components/brand-mark";
 import { ThemeMenu } from "@/components/theme-menu";
+import { TrustNav } from "@/components/trust/trust-nav";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { trustDocuments } from "@/content/trust";
 import type { TrustBlock, TrustDocument } from "@/content/trust/types";
@@ -196,21 +197,10 @@ export function TrustPage({ document }: { document: TrustDocument }) {
       </div>
 
       <footer className="border-t border-m3-outline-variant px-4 py-8 sm:px-6">
-        <nav
-          aria-label="Trust pages"
-          className="mx-auto flex max-w-[76rem] flex-wrap items-center gap-x-6 gap-y-1 text-m3-body-sm text-m3-on-surface-variant"
-        >
-          {trustDocuments.map((other) => (
-            <Link
-              key={other.slug}
-              href={`/${other.slug}`}
-              aria-current={other.slug === document.slug ? "page" : undefined}
-              className="flex min-h-11 items-center rounded-m3-xs hover:underline focus-visible:underline"
-            >
-              {other.navLabel}
-            </Link>
-          ))}
-        </nav>
+        <TrustNav
+          current={document.slug}
+          className="mx-auto max-w-[76rem] gap-y-1 text-m3-body-sm text-m3-on-surface-variant"
+        />
       </footer>
     </div>
   );

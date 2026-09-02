@@ -139,7 +139,7 @@ test("Today keeps the refresh action ahead of the activity list in reading order
     );
     const list = document
       .querySelector(
-        'section[aria-labelledby]:has(select[aria-label="Activity type"])',
+        'section[aria-labelledby]:has(select[aria-label="Activity filters: Activity type"])',
       )
       ?.querySelector("ol");
     if (!refresh || !list) return null;

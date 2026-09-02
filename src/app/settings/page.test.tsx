@@ -79,6 +79,27 @@ describe("settings page", () => {
       screen.getByRole("heading", { name: "GitHub access" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Theme" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Access and retention" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/retained for 30 days/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "GitHub App settings" }),
+    ).toHaveAttribute("href", "https://github.com/settings/installations");
+    expect(
+      screen.getByRole("link", { name: "GitHub application settings" }),
+    ).toHaveAttribute("href", "https://github.com/settings/applications");
+    expect(
+      screen.getByText(
+        /permanently deletes your journal, summaries, settings/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("textbox", { name: /Type DELETE to confirm/i }),
+    ).toBeRequired();
+    expect(
+      screen.getByRole("button", { name: "Delete my account" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /Lavender/ })).toBeChecked();
     expect(screen.getByRole("radio", { name: /Warm ink/ })).not.toBeChecked();
     expect(screen.getByRole("radio", { name: /Tide/ })).toBeInTheDocument();

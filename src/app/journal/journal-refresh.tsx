@@ -12,6 +12,12 @@ import { Button } from "@/components/ui/button";
 
 const storedReloadIntervalMs = 30 * 60 * 1000;
 
+/**
+ * The day's one primary action, sitting in the masthead per frame 1g of the
+ * look-and-feel reference. The next allowed sync sits directly under it,
+ * because the action result — not the stored journal — is what knows about a
+ * provider rate limit that outlasts the ordinary cooldown.
+ */
 export function JournalRefresh({
   nextSyncAt,
   timeZone,
@@ -33,10 +39,9 @@ export function JournalRefresh({
   const availableAt = result?.nextSyncAt ?? nextSyncAt;
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div>
       <Button
         type="button"
-        variant="outline"
         disabled={pending}
         onClick={() =>
           startTransition(async () => {
@@ -63,9 +68,9 @@ export function JournalRefresh({
         {pending ? "Refreshing…" : "Refresh Today"}
       </Button>
       {availableAt ? (
-        <p className="text-m3-body-sm text-muted-foreground">
+        <p className="mt-2 text-m3-body-sm text-m3-on-surface-variant">
           Next GitHub sync{" "}
-          <time dateTime={availableAt}>
+          <time dateTime={availableAt} className="tabular-nums">
             {new Intl.DateTimeFormat("en-US", {
               timeZone,
               hour: "numeric",

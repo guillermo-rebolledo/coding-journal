@@ -10,6 +10,15 @@ Coding Journal turns a developer’s GitHub activity into a calm daily record. T
 - Neon Postgres through Drizzle and the Neon serverless driver
 - Vitest, Testing Library, and Playwright
 
+## Design
+
+The approved look and feel is `docs/design/Coding Journal look and feel.html`.
+Open it in a browser and check UI work against it; `docs/design/README.md`
+indexes its frames and states the rules it establishes (lists before cards, one
+display-scale element per screen, the AI narrative as the only tertiary
+surface, and semantic roles so all four palettes keep working in light and
+dark).
+
 ## Local setup
 
 Use Node 24 and pnpm through Corepack:

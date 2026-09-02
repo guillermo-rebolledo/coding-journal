@@ -1,18 +1,9 @@
 "use client";
 
-import {
-  ArrowUpRight,
-  CircleDot,
-  GitBranch,
-  GitCommitHorizontal,
-  LockKeyhole,
-  MessageSquare,
-  Rocket,
-  Upload,
-  type LucideIcon,
-} from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { EvidenceLink } from "@/components/journal/evidence-link";
+import { StatusChip } from "@/components/journal/status-chip";
 import {
   projectKinds,
   secondaryKinds,
@@ -174,24 +165,6 @@ const statusLabels = {
   cancelled: "Cancelled",
 } as const;
 
-const activityIcons: Partial<Record<ActivityKind, LucideIcon>> = {
-  push: Upload,
-  commit: GitCommitHorizontal,
-  "branch-created": GitBranch,
-  "branch-deleted": GitBranch,
-  "tag-created": GitBranch,
-  "tag-deleted": GitBranch,
-  "release-published": Rocket,
-  "release-updated": Rocket,
-  deployment: Rocket,
-  "discussion-created": MessageSquare,
-  "discussion-comment": MessageSquare,
-  "discussion-answered": MessageSquare,
-  "issue-comment": MessageSquare,
-  "pull-request-comment": MessageSquare,
-  "pull-request-review-comment": MessageSquare,
-};
-
 function coverageLabel(activity: ActivityRecord) {
   if (activity.kind === "gist-starred") return "First observed · best-effort";
   if (activity.source === "github-projects-preview")
@@ -202,6 +175,15 @@ function coverageLabel(activity: ActivityRecord) {
   return null;
 }
 
+/**
+ * Activity row — pattern 2 of the look-and-feel reference
+ * (`docs/design/Coding Journal look and feel.html`, frames 1g and 1n).
+ *
+ * Time · subject · source · evidence. No icon and no container per row: rows
+ * live on one shared surface separated by hairline rules, so a thirty-event
+ * day reads as a list instead of four screens of floating tiles. Long
+ * repository and subject names wrap rather than ellipsize.
+ */
 function ActivityItem({
   activity,
   timeZone,
@@ -210,105 +192,91 @@ function ActivityItem({
   timeZone: string;
 }) {
   const [label, evidenceNoun] = activityLabels[activity.kind];
-  const Icon = activityIcons[activity.kind] ?? CircleDot;
   const bestEffortLabel = coverageLabel(activity);
 
   return (
-    <li className="rounded-m3-xl bg-m3-surface-container-low p-5 sm:p-6">
-      <div className="flex gap-4">
-        <span className="bg-surface grid size-11 shrink-0 place-items-center rounded-m3-lg text-primary shadow-m3-1">
-          <Icon aria-hidden className="size-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-m3-title-md-emphasized">
-              {label}
-              {activity.subjectNumber !== null
-                ? ` #${activity.subjectNumber}`
-                : ""}
-            </h3>
-            {activity.visibility === "private" ? (
-              <span className="bg-secondary-container inline-flex items-center gap-1 rounded-m3-full px-2.5 py-1 text-m3-label-sm text-secondary-foreground">
-                <LockKeyhole aria-hidden className="size-3.5" /> Private
-                repository
+    <li className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 px-4 py-3 sm:px-5">
+      <p className="pt-0.5 text-m3-label-lg text-m3-on-surface-variant tabular-nums">
+        <time dateTime={activity.occurredAt.toISOString()}>
+          {new Intl.DateTimeFormat("en-US", {
+            timeZone,
+            hour: "numeric",
+            minute: "2-digit",
+            month: activity.authoredBeforeDay ? "short" : undefined,
+            day: activity.authoredBeforeDay ? "numeric" : undefined,
+          }).format(activity.occurredAt)}
+        </time>
+      </p>
+      <div className="min-w-0">
+        <p className="text-m3-body-md wrap-anywhere">
+          <span className="text-m3-title-sm text-m3-on-surface">
+            {label}
+            {activity.subjectNumber !== null
+              ? ` #${activity.subjectNumber}`
+              : ""}
+          </span>
+          {activity.subjectTitle ? (
+            <>
+              <span className="text-m3-on-surface-variant">{" — "}</span>
+              <span className="text-m3-on-surface-variant">
+                {activity.subjectTitle}
               </span>
+            </>
+          ) : null}
+        </p>
+        <p className="mt-0.5 text-m3-body-sm wrap-anywhere text-m3-on-surface-variant">
+          <span>{activity.repositoryName}</span>
+          <span>{` · @${activity.actorLogin}`}</span>
+        </p>
+        {activity.visibility === "private" ||
+        activity.authoredBeforeDay ||
+        activity.status ||
+        activity.narrativeEligible === false ||
+        bestEffortLabel ? (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {activity.visibility === "private" ? (
+              <StatusChip>Private repository</StatusChip>
             ) : null}
             {activity.authoredBeforeDay ? (
-              <span className="rounded-m3-full bg-m3-warning-container px-2.5 py-1 text-m3-label-sm text-m3-on-warning-container">
-                Authored before today
-              </span>
+              <StatusChip tone="warning">Authored before today</StatusChip>
             ) : null}
             {activity.status ? (
-              <span className="bg-secondary-container rounded-m3-full px-2.5 py-1 text-m3-label-sm text-secondary-foreground">
-                {statusLabels[activity.status]}
-              </span>
+              <StatusChip>{statusLabels[activity.status]}</StatusChip>
             ) : null}
             {activity.narrativeEligible === false ? (
-              <span className="rounded-m3-full bg-m3-warning-container px-2.5 py-1 text-m3-label-sm text-m3-on-warning-container">
-                Excluded from narrative
-              </span>
+              <StatusChip tone="warning">Excluded from narrative</StatusChip>
             ) : null}
             {bestEffortLabel ? (
-              <span className="bg-secondary-container rounded-m3-full px-2.5 py-1 text-m3-label-sm text-secondary-foreground">
-                {bestEffortLabel}
-              </span>
+              <StatusChip>{bestEffortLabel}</StatusChip>
             ) : null}
           </div>
-          {activity.subjectTitle ? (
-            <p className="mt-2 text-m3-body-md break-words">
-              {activity.subjectTitle}
-            </p>
-          ) : null}
-          <p
-            className={cn(
-              "break-words",
-              activity.subjectTitle
-                ? "mt-1 text-m3-body-sm text-muted-foreground"
-                : "mt-2 text-m3-body-md",
-            )}
-          >
-            {activity.repositoryName}
+        ) : null}
+        {activity.evidenceUrl ? (
+          <EvidenceLink href={activity.evidenceUrl} noun={evidenceNoun} />
+        ) : (
+          <p className="mt-1.5 text-m3-body-sm text-m3-on-surface-variant">
+            No evidence link
           </p>
-          <p className="mt-1 text-m3-body-sm text-muted-foreground">
-            <time dateTime={activity.occurredAt.toISOString()}>
-              {new Intl.DateTimeFormat("en-US", {
-                timeZone,
-                hour: "numeric",
-                minute: "2-digit",
-                month: activity.authoredBeforeDay ? "short" : undefined,
-                day: activity.authoredBeforeDay ? "numeric" : undefined,
-              }).format(activity.occurredAt)}
-            </time>
-            {` · @${activity.actorLogin}`}
-          </p>
-          {activity.evidenceUrl ? (
-            <a
-              href={activity.evidenceUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-m3-label-lg-emphasized mt-3 inline-flex min-h-11 items-center gap-2 text-primary underline-offset-4 hover:underline"
-            >
-              View {evidenceNoun} evidence{" "}
-              <ArrowUpRight aria-hidden className="size-4" />
-            </a>
-          ) : null}
-        </div>
+        )}
       </div>
     </li>
   );
 }
 
+/**
+ * Activity explorer — frames 1g/1h and pattern 8 of the look-and-feel
+ * reference. Switching between the chronological and repository views
+ * preserves the filters, and the result count lives in a polite live region.
+ */
 export function JournalExplorer({
   activities,
   timeZone,
-  title = "Today's activity",
-  eyebrow = "EXPLORE",
+  title = "Activity",
   headingId = "journal-timeline-heading",
 }: {
   activities: ActivityRecord[];
   timeZone: string;
   title?: string;
-  eyebrow?: string;
   headingId?: string;
 }) {
   const [repository, setRepository] = useState("all");
@@ -353,95 +321,102 @@ export function JournalExplorer({
         .filter((group) => group.activities.length > 0),
     [filtered, repositories],
   );
+  const filtersApplied = repository !== "all" || category !== "all";
 
   return (
-    <section aria-labelledby={headingId} className="mt-8">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-m3-label-lg-emphasized text-primary">{eyebrow}</p>
-          <h2 id={headingId} className="mt-2 text-m3-headline-sm">
-            {title}
-          </h2>
-        </div>
+    <section aria-labelledby={headingId} className="mt-10">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+        <h2 id={headingId} className="text-m3-title-lg text-m3-on-surface">
+          {title}
+        </h2>
+        <p
+          aria-live="polite"
+          className="text-m3-body-sm text-m3-on-surface-variant"
+        >
+          <span className="tabular-nums">{filtered.length}</span> of{" "}
+          <span className="tabular-nums">{activities.length}</span>{" "}
+          {activities.length === 1 ? "event" : "events"} shown
+        </p>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
         <div
           className="flex rounded-m3-full bg-m3-surface-container p-1"
           aria-label="Activity layout"
         >
-          <button
-            type="button"
-            aria-pressed={view === "chronological"}
-            onClick={() => setView("chronological")}
-            className={cn(
-              "text-m3-label-lg-emphasized min-h-11 rounded-m3-full px-4",
-              view === "chronological" && "bg-card text-primary shadow-m3-1",
-            )}
-          >
-            Chronological
-          </button>
-          <button
-            type="button"
-            aria-pressed={view === "repository"}
-            onClick={() => setView("repository")}
-            className={cn(
-              "text-m3-label-lg-emphasized min-h-11 rounded-m3-full px-4",
-              view === "repository" && "bg-card text-primary shadow-m3-1",
-            )}
-          >
-            Group by repository
-          </button>
+          {(
+            [
+              ["chronological", "Chronological"],
+              ["repository", "Group by repository"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={view === value}
+              onClick={() => setView(value)}
+              className={cn(
+                "min-h-11 rounded-m3-full px-4 text-m3-label-lg",
+                "transition-colors duration-(--m3-spring-effects-fast-duration) ease-(--m3-spring-effects-fast)",
+                view === value
+                  ? "bg-m3-secondary-container text-m3-on-secondary-container"
+                  : "text-m3-on-surface-variant",
+              )}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-      </div>
-      <div className="mt-5 grid gap-4 rounded-m3-xl bg-m3-surface-container-low p-4 sm:grid-cols-2">
-        <label className="text-m3-label-lg-emphasized">
-          Repository
-          <select
-            aria-label="Repository"
-            value={repository}
-            onChange={(event) => setRepository(event.target.value)}
-            className="mt-2 min-h-12 w-full rounded-m3-md border border-border bg-card px-3 text-m3-body-md"
+        <select
+          aria-label="Repository"
+          value={repository}
+          onChange={(event) => setRepository(event.target.value)}
+          className="min-h-11 max-w-full rounded-m3-xs border border-m3-outline-variant bg-transparent px-3 text-m3-body-md text-m3-on-surface"
+        >
+          <option value="all">All repositories</option>
+          {repositories.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Activity type"
+          value={category}
+          onChange={(event) =>
+            setCategory(event.target.value as ActivityCategory)
+          }
+          className="min-h-11 max-w-full rounded-m3-xs border border-m3-outline-variant bg-transparent px-3 text-m3-body-md text-m3-on-surface"
+        >
+          {(
+            Object.entries(categoryLabels) as Array<[ActivityCategory, string]>
+          ).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        {filtersApplied ? (
+          <button
+            type="button"
+            onClick={() => {
+              setRepository("all");
+              setCategory("all");
+            }}
+            className="min-h-11 rounded-m3-xs px-2 text-m3-label-lg text-m3-primary underline-offset-4 hover:underline"
           >
-            <option value="all">All repositories</option>
-            {repositories.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-m3-label-lg-emphasized">
-          Activity type
-          <select
-            aria-label="Activity type"
-            value={category}
-            onChange={(event) =>
-              setCategory(event.target.value as ActivityCategory)
-            }
-            className="mt-2 min-h-12 w-full rounded-m3-md border border-border bg-card px-3 text-m3-body-md"
-          >
-            {(
-              Object.entries(categoryLabels) as Array<
-                [ActivityCategory, string]
-              >
-            ).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
+            Clear filters
+          </button>
+        ) : null}
       </div>
-      <p
-        aria-live="polite"
-        className="mt-4 text-m3-body-sm text-muted-foreground"
-      >
-        Showing {filtered.length} of {activities.length} activities
-      </p>
+
       {filtered.length === 0 ? (
-        <p className="mt-5 rounded-m3-xl bg-m3-surface-container-low p-6 text-m3-body-md">
-          No activity matches these filters.
+        <p className="mt-4 rounded-m3-sm bg-m3-surface-container-low px-4 py-4 text-m3-body-md text-m3-on-surface-variant sm:px-5">
+          No activity matches these filters. {activities.length} recorded{" "}
+          {activities.length === 1 ? "event" : "events"} are still stored.
         </p>
       ) : view === "chronological" ? (
-        <ol className="mt-5 space-y-3">
+        <ol className="mt-4 divide-y divide-m3-outline-variant overflow-hidden rounded-m3-sm bg-m3-surface-container-low">
           {filtered.map((activity) => (
             <ActivityItem
               key={activity.deduplicationKey}
@@ -451,13 +426,13 @@ export function JournalExplorer({
           ))}
         </ol>
       ) : (
-        <div className="mt-5 space-y-6">
+        <div className="mt-4 grid gap-5">
           {groups.map((group) => (
             <section key={group.name} role="region" aria-label={group.name}>
-              <h3 className="text-m3-title-lg-emphasized break-words">
+              <h3 className="text-m3-title-sm wrap-anywhere text-m3-on-surface">
                 {group.name}
               </h3>
-              <ol className="mt-3 space-y-3">
+              <ol className="mt-2 divide-y divide-m3-outline-variant overflow-hidden rounded-m3-sm bg-m3-surface-container-low">
                 {group.activities.map((activity) => (
                   <ActivityItem
                     key={activity.deduplicationKey}

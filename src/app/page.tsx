@@ -1,29 +1,50 @@
-import {
-  ArrowRight,
-  CalendarDays,
-  GitCommitHorizontal,
-  Sparkles,
-} from "lucide-react";
 import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button-variants";
 import { SiteHeader } from "@/components/site-header";
 
-const benefits = [
+/**
+ * Landing — frame 1j of the look-and-feel reference
+ * (`docs/design/Coding Journal look and feel.html`).
+ *
+ * No benefit-card grid: the three claims are a divided definition list, which
+ * is denser and more legible than three shadowed tiles. The product's own
+ * texture does the selling — a real day, rendered in the real row component.
+ * Display-lg is spent once, on the promise.
+ */
+const claims = [
   {
-    icon: GitCommitHorizontal,
     title: "See the work, not the noise",
-    copy: "Turn commits, pull requests, and reviews into a clear account of what moved forward.",
+    copy: "Commits, pull requests and reviews become one chronological account of the day, deduplicated across GitHub's webhook and events sources.",
   },
   {
-    icon: Sparkles,
-    title: "Remember the thread",
-    copy: "Keep the decisions and momentum that disappear between tabs, tools, and stand-ups.",
+    title: "Honest about what it can't see",
+    copy: "Every day states which repositories it covered and which sources were delayed or unavailable. A partial record says so.",
   },
   {
-    icon: CalendarDays,
-    title: "Build a useful record",
-    copy: "Return to any day with a journal designed for reflection, updates, and planning.",
+    title: "Private by construction",
+    copy: "Read-only scopes, tokens encrypted server-side, 30-day retention, and deletion that actually deletes. No sharing, no profiles, no teams.",
+  },
+] as const;
+
+const sampleDay = [
+  {
+    time: "16:52",
+    action: "Merged pull request #482",
+    subject: "Reconcile ref lifecycle across sources",
+    repository: "acme/checkout-service",
+  },
+  {
+    time: "14:07",
+    action: "Ran workflow",
+    subject: "release-please · Failed",
+    repository: "acme/observability-toolkit",
+  },
+  {
+    time: "10:03",
+    action: "Commit",
+    subject: "Move completeness labels into the domain",
+    repository: "acme/coding-journal",
   },
 ] as const;
 
@@ -32,98 +53,96 @@ export default function HomePage() {
     <div className="min-h-screen bg-background text-foreground">
       <SiteHeader />
       <main>
-        <section className="mx-auto grid max-w-6xl gap-12 px-4 py-18 sm:px-6 sm:py-24 lg:grid-cols-[1.15fr_0.85fr] lg:items-center lg:py-32">
-          <div>
-            <p className="text-m3-label-lg-emphasized mb-5 text-primary">
-              A daily record for people who make software
+        <section className="mx-auto grid max-w-[76rem] gap-12 px-4 py-16 m3-expanded:grid-cols-[1.05fr_0.95fr] m3-expanded:items-start sm:px-6 sm:py-24">
+          <div className="min-w-0">
+            <p className="text-m3-label-lg text-balance text-m3-on-surface-variant">
+              A private daily record for people who make software
             </p>
-            <h1 className="max-w-3xl text-m3-display-lg text-balance">
+            <h1 className="mt-3 text-m3-display-md text-balance m3-expanded:text-m3-display-lg">
               Your GitHub day, distilled.
             </h1>
-            <p className="mt-6 max-w-2xl text-m3-body-lg text-muted-foreground">
-              Coding Journal gathers the shape of your work into one calm,
-              readable daily view—so progress is easier to understand and easier
-              to share.
+            <p className="mt-5 max-w-[52ch] text-m3-body-lg text-m3-on-surface-variant">
+              Coding Journal records what your day actually contained — commits,
+              reviews, merges, the workflow that failed — and keeps it as a
+              dated page you can return to. Nothing is scored. Nothing is
+              shared.
             </p>
-            <div className="mt-9 flex flex-wrap items-center gap-4">
+            <div className="mt-8">
               <Link href="/sign-in" className={buttonVariants({ size: "lg" })}>
                 Start your journal
-                <ArrowRight aria-hidden />
               </Link>
-              <p className="text-m3-body-sm text-muted-foreground">
-                Private by default. GitHub sign-in required.
+              <p className="mt-3 text-m3-body-sm text-m3-on-surface-variant">
+                Read-only access. You choose the repositories.
               </p>
             </div>
           </div>
 
-          <div
-            aria-label="Example journal summary"
-            className="rounded-m3-2xl bg-m3-surface-container-low p-5 shadow-m3-2 sm:p-7"
+          <section
+            aria-labelledby="sample-day-heading"
+            className="min-w-0 rounded-m3-xl bg-m3-surface-container-low p-5 sm:p-6"
           >
-            <div className="flex items-center justify-between border-b border-border pb-5">
-              <div>
-                <p className="text-m3-label-md text-muted-foreground">TODAY</p>
-                <p className="text-m3-title-lg-emphasized mt-1">
-                  Monday, August 31
-                </p>
-              </div>
-              <span className="bg-secondary-container text-m3-label-md-emphasized rounded-m3-full px-4 py-2 text-secondary-foreground">
-                6 contributions
-              </span>
-            </div>
-            <div className="grid gap-4 pt-5">
-              <article className="bg-surface rounded-m3-lg p-5">
-                <p className="text-m3-label-md text-primary">SHIPPED</p>
-                <h2 className="text-m3-title-md-emphasized mt-2">
-                  Authentication flow ready for review
-                </h2>
-                <p className="mt-2 text-m3-body-sm text-muted-foreground">
-                  3 commits · 1 pull request · 2 reviews
-                </p>
-              </article>
-              <article className="bg-surface rounded-m3-lg p-5">
-                <p className="text-m3-label-md text-primary">
-                  THREAD TO PICK UP
-                </p>
-                <h2 className="text-m3-title-md-emphasized mt-2">
-                  Finish the journal timeline states
-                </h2>
-              </article>
-            </div>
-          </div>
+            <h2
+              id="sample-day-heading"
+              className="text-m3-title-sm text-m3-on-surface"
+            >
+              A day in the journal
+            </h2>
+            <ol className="mt-3 divide-y divide-m3-outline-variant">
+              {sampleDay.map((entry) => (
+                <li
+                  key={entry.time}
+                  className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 py-3"
+                >
+                  <p className="text-m3-label-lg text-m3-on-surface-variant tabular-nums">
+                    {entry.time}
+                  </p>
+                  <div className="min-w-0">
+                    <p className="text-m3-body-md wrap-anywhere">
+                      <span className="text-m3-title-sm text-m3-on-surface">
+                        {entry.action}
+                      </span>
+                      <span className="text-m3-on-surface-variant">
+                        {" — "}
+                        {entry.subject}
+                      </span>
+                    </p>
+                    <p className="mt-0.5 text-m3-body-sm wrap-anywhere text-m3-on-surface-variant">
+                      {entry.repository}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
         </section>
 
         <section
           aria-labelledby="why-heading"
-          className="bg-m3-surface-container-low py-18 sm:py-24"
+          className="border-t border-m3-outline-variant"
         >
-          <div className="mx-auto max-w-6xl px-4 sm:px-6">
-            <h2
-              id="why-heading"
-              className="max-w-2xl text-m3-headline-lg text-balance"
-            >
-              Close the day knowing what actually happened.
+          <div className="mx-auto max-w-[76rem] px-4 py-16 sm:px-6 sm:py-20">
+            <h2 id="why-heading" className="sr-only">
+              What Coding Journal does
             </h2>
-            <div className="mt-10 grid gap-5 md:grid-cols-3">
-              {benefits.map(({ icon: Icon, title, copy }) => (
-                <article
+            <dl className="divide-y divide-m3-outline-variant border-y border-m3-outline-variant">
+              {claims.map(({ title, copy }) => (
+                <div
                   key={title}
-                  className="rounded-m3-lg bg-card p-6 shadow-m3-1"
+                  className="grid gap-x-10 gap-y-1 py-6 m3-expanded:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]"
                 >
-                  <span className="bg-primary-container grid size-12 place-items-center rounded-m3-lg text-primary">
-                    <Icon aria-hidden />
-                  </span>
-                  <h3 className="text-m3-title-lg-emphasized mt-6">{title}</h3>
-                  <p className="mt-3 text-m3-body-md text-muted-foreground">
+                  <dt className="text-m3-title-lg text-balance text-m3-on-surface">
+                    {title}
+                  </dt>
+                  <dd className="max-w-[62ch] text-m3-body-lg text-m3-on-surface-variant">
                     {copy}
-                  </p>
-                </article>
+                  </dd>
+                </div>
               ))}
-            </div>
+            </dl>
           </div>
         </section>
       </main>
-      <footer className="border-t border-border px-4 py-8 text-center text-m3-body-sm text-muted-foreground">
+      <footer className="border-t border-m3-outline-variant px-4 py-8 text-center text-m3-body-sm text-m3-on-surface-variant sm:px-6">
         Coding Journal is open source and made for thoughtful work.
       </footer>
     </div>

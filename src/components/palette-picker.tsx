@@ -1,5 +1,7 @@
 "use client";
 
+import { Check } from "lucide-react";
+
 import { useTheme, type Palette } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
 
@@ -35,7 +37,7 @@ function ThemeSwatches({ palette }: { palette: Palette }) {
     <span
       aria-hidden
       data-palette={palette === "default" ? undefined : palette}
-      className="flex shrink-0 items-center gap-1 rounded-m3-full border border-border bg-m3-surface p-1.5"
+      className="flex shrink-0 items-center gap-1 rounded-m3-full border border-m3-outline-variant bg-m3-surface p-1.5"
     >
       <span className="size-4 rounded-m3-full bg-m3-primary" />
       <span className="size-4 rounded-m3-full bg-m3-secondary-container" />
@@ -44,19 +46,28 @@ function ThemeSwatches({ palette }: { palette: Palette }) {
   );
 }
 
+/**
+ * Palette choice — frame 1k of the look-and-feel reference
+ * (`docs/design/Coding Journal look and feel.html`).
+ *
+ * The swatches preview primary, secondary container and tertiary container in
+ * the current mode: the three roles a user actually notices. Selection is
+ * marked by surface, border *and* a check, never by colour alone.
+ */
 export function PalettePicker() {
   const { palette, setPalette } = useTheme();
 
   return (
     <fieldset>
-      <legend className="sr-only">Theme</legend>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <legend className="sr-only">Palette</legend>
+      <div className="grid gap-2 sm:grid-cols-2">
         {themes.map(({ value, label, description }) => (
           <label
             key={value}
             className={cn(
-              "flex cursor-pointer items-center gap-3 rounded-m3-lg border border-border bg-m3-surface-container-lowest p-4",
-              "has-checked:border-primary has-checked:bg-m3-surface-container-low",
+              "flex min-h-14 cursor-pointer items-center gap-3 rounded-m3-xs border p-3",
+              "border-m3-outline-variant",
+              "has-checked:border-m3-primary has-checked:bg-m3-surface-container",
               "has-focus-visible:outline-3 has-focus-visible:outline-offset-3 has-focus-visible:outline-ring",
             )}
           >
@@ -66,15 +77,21 @@ export function PalettePicker() {
               value={value}
               checked={palette === value}
               onChange={() => setPalette(value)}
-              className="sr-only"
+              className="peer sr-only"
             />
             <ThemeSwatches palette={value} />
-            <span>
-              <span className="text-m3-label-lg-emphasized block">{label}</span>
-              <span className="mt-0.5 block text-m3-body-sm text-muted-foreground">
+            <span className="min-w-0">
+              <span className="block text-m3-label-lg text-m3-on-surface">
+                {label}
+              </span>
+              <span className="block text-m3-body-sm text-m3-on-surface-variant">
                 {description}
               </span>
             </span>
+            <Check
+              aria-hidden
+              className="ml-auto size-5 shrink-0 text-m3-primary opacity-0 peer-checked:opacity-100"
+            />
           </label>
         ))}
       </div>

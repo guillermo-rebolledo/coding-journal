@@ -1,17 +1,13 @@
-import {
-  AlertTriangle,
-  CalendarDays,
-  CheckCircle2,
-  Clock3,
-  History,
-} from "lucide-react";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { JournalFrame } from "@/app/journal/journal-frame";
+import { AppShell } from "@/components/journal/app-shell";
+import { StateBlock } from "@/components/journal/state-block";
+import { StatusChip } from "@/components/journal/status-chip";
 import { getE2EJournalHistory, isE2EJournalUser } from "@/lib/e2e-fixtures";
+import type { JournalHistoryItem } from "@/lib/journal-finalization-repository";
 import { journalFinalizationRepository } from "@/lib/journal-finalization-repository";
 import { getJournalSession } from "@/lib/session";
 
@@ -28,15 +24,31 @@ function displayDate(localDate: string) {
   }).format(new Date(`${localDate}T00:00:00Z`));
 }
 
-function statusLabel(status: string, correctionCount: number) {
-  if (status === "corrected") {
-    return `Corrected · ${correctionCount} late ${correctionCount === 1 ? "event" : "events"}`;
+function monthLabel(localDate: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(`${localDate}T00:00:00Z`));
+}
+
+function statusLabel(day: JournalHistoryItem) {
+  if (day.status === "corrected") {
+    return `Corrected · ${day.correctionCount} late ${day.correctionCount === 1 ? "event" : "events"}`;
   }
-  if (status === "recoverable-error") return "Needs retry";
-  if (status === "finalizing") return "Finalizing";
+  if (day.status === "recoverable-error") return "Needs retry";
+  if (day.status === "finalizing") return "Finalizing";
   return "Finalized";
 }
 
+/**
+ * History index — frame 1i of the look-and-feel reference
+ * (`docs/design/Coding Journal look and feel.html`).
+ *
+ * A divided list grouped by month, not a gallery of day cards. Each row states
+ * the date, the time zone it was recorded in, and its lifecycle state in
+ * words, so nothing about finalization depends on colour.
+ */
 export default async function JournalHistoryPage() {
   const session = await getJournalSession(await headers());
   if (!session) redirect("/sign-in?next=%2Fjournal%2Fhistory");
@@ -44,85 +56,82 @@ export default async function JournalHistoryPage() {
     ? getE2EJournalHistory()
     : await journalFinalizationRepository.list(session.user.id);
 
-  return (
-    <JournalFrame current="history">
-      <div className="flex max-w-3xl items-start gap-4">
-        <span className="bg-primary-container grid size-12 shrink-0 place-items-center rounded-m3-lg text-primary">
-          <History aria-hidden />
-        </span>
-        <div>
-          <p className="text-m3-label-lg-emphasized text-primary">ARCHIVE</p>
-          <h1 className="mt-2 text-m3-headline-lg text-balance">
-            Journal history
-          </h1>
-          <p className="mt-3 text-m3-body-lg text-muted-foreground">
-            Stable daily records keep their original metrics and narrative. Late
-            GitHub evidence is called out as a correction.
-          </p>
-        </div>
-      </div>
+  const months = history.reduce<
+    Array<{ label: string; days: JournalHistoryItem[] }>
+  >((groups, day) => {
+    const label = monthLabel(day.localDate);
+    const last = groups.at(-1);
+    if (last?.label === label) last.days.push(day);
+    else groups.push({ label, days: [day] });
+    return groups;
+  }, []);
 
-      {history.length ? (
-        <ol className="mt-10 grid gap-4 sm:grid-cols-2">
-          {history.map((day) => {
-            const needsRetry = day.status === "recoverable-error";
-            const finalizing = day.status === "finalizing";
-            const Icon = needsRetry
-              ? AlertTriangle
-              : finalizing
-                ? Clock3
-                : CheckCircle2;
-            return (
-              <li key={day.localDate}>
-                <Link
-                  href={`/journal/history/${day.localDate}`}
-                  className="group block h-full rounded-m3-xl bg-card p-5 shadow-m3-1 transition-shadow hover:shadow-m3-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:p-6"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-m3-title-lg-emphasized">
-                        {displayDate(day.localDate)}
-                      </p>
-                      <p className="mt-2 flex items-center gap-2 text-m3-body-sm text-muted-foreground">
-                        <CalendarDays aria-hidden className="size-4" />
-                        {day.timeZone}
-                      </p>
-                    </div>
-                    <Icon
-                      aria-hidden
-                      className={
-                        needsRetry ? "text-destructive" : "text-primary"
-                      }
-                    />
-                  </div>
-                  <p
-                    className={`text-m3-label-md-emphasized mt-5 w-fit rounded-m3-full px-3 py-1.5 ${
-                      needsRetry
-                        ? "bg-m3-error-container text-m3-on-error-container"
-                        : finalizing
-                          ? "bg-secondary-container text-secondary-foreground"
-                          : day.status === "corrected"
-                            ? "bg-m3-warning-container text-m3-on-warning-container"
-                            : "bg-primary-container text-primary"
-                    }`}
-                  >
-                    {statusLabel(day.status, day.correctionCount)}
-                  </p>
-                </Link>
-              </li>
-            );
-          })}
-        </ol>
-      ) : (
-        <section className="mt-10 rounded-m3-2xl bg-m3-surface-container-low px-6 py-14 text-center sm:px-10">
-          <CalendarDays aria-hidden className="mx-auto size-10 text-primary" />
-          <h2 className="mt-5 text-m3-headline-sm">No finalized days yet</h2>
-          <p className="mx-auto mt-3 max-w-lg text-m3-body-md text-muted-foreground">
+  return (
+    <AppShell current="history">
+      <div className="max-w-[72ch]">
+        <h1 className="text-m3-headline-lg text-balance m3-expanded:text-m3-display-sm">
+          Journal history
+        </h1>
+        <p className="mt-3 max-w-[62ch] text-m3-body-lg text-m3-on-surface-variant">
+          Finalized days are immutable: they keep the metrics and narrative they
+          were recorded with. Late GitHub evidence is appended as a dated
+          correction, never merged into the record.
+        </p>
+
+        {history.length ? (
+          <div className="mt-9 grid gap-8">
+            {months.map((month) => (
+              <section key={month.label} aria-label={month.label}>
+                <h2 className="text-m3-title-sm text-m3-on-surface-variant">
+                  {month.label}
+                </h2>
+                <ol className="mt-2 divide-y divide-m3-outline-variant overflow-hidden rounded-m3-sm bg-m3-surface-container-low">
+                  {month.days.map((day) => (
+                    <li key={day.localDate}>
+                      <Link
+                        href={`/journal/history/${day.localDate}`}
+                        className="flex min-h-14 flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 sm:px-5"
+                      >
+                        <span className="min-w-0">
+                          <span className="block text-m3-title-sm text-m3-on-surface">
+                            {displayDate(day.localDate)}
+                          </span>
+                          <span className="block text-m3-body-sm wrap-anywhere text-m3-on-surface-variant">
+                            {day.timeZone}
+                          </span>
+                        </span>
+                        <StatusChip
+                          tone={
+                            day.status === "recoverable-error" ||
+                            day.status === "corrected"
+                              ? "warning"
+                              : "neutral"
+                          }
+                        >
+                          {statusLabel(day)}
+                        </StatusChip>
+                      </Link>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ))}
+            <p className="text-m3-body-sm text-m3-on-surface-variant">
+              Days older than 30 days are removed by retention, not hidden.
+            </p>
+          </div>
+        ) : (
+          <StateBlock
+            headingId="empty-history-heading"
+            title="No finalized days yet"
+            size="expressive"
+            className="mt-9"
+          >
             A journal moves here after its local day closes and final processing
-            finishes.
-          </p>
-        </section>
-      )}
-    </JournalFrame>
+            finishes. Today stays on the Today page until then.
+          </StateBlock>
+        )}
+      </div>
+    </AppShell>
   );
 }

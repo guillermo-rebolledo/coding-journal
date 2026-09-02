@@ -4,6 +4,28 @@ const localBrowser = process.env.CI ? {} : { channel: "chrome" as const };
 const port = Number(process.env.E2E_PORT ?? 3000);
 const baseURL = `http://localhost:${port}`;
 
+/**
+ * Chromium runs on every pull request; Firefox and WebKit are the release
+ * gate — issue #17. The split is deliberate: the engine-specific failures
+ * worth catching are rare enough that paying for them on every push would slow
+ * the loop without finding much, and rare enough that shipping without ever
+ * checking them would be negligent. `docs/release-gate.md` records how the
+ * gate is run and what is verified by hand on real iOS and Android devices,
+ * which no headless engine substitutes for.
+ */
+const releaseGate = process.env.E2E_RELEASE_GATE === "true";
+
+const routineProjects = [
+  { name: "mobile", use: { ...devices["Pixel 7"], ...localBrowser } },
+  { name: "desktop", use: { ...devices["Desktop Chrome"], ...localBrowser } },
+];
+
+const releaseGateProjects = [
+  { name: "firefox", use: { ...devices["Desktop Firefox"] } },
+  { name: "webkit", use: { ...devices["Desktop Safari"] } },
+  { name: "mobile-webkit", use: { ...devices["iPhone 15"] } },
+];
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -14,10 +36,9 @@ export default defineConfig({
     baseURL,
     trace: "on-first-retry",
   },
-  projects: [
-    { name: "mobile", use: { ...devices["Pixel 7"], ...localBrowser } },
-    { name: "desktop", use: { ...devices["Desktop Chrome"], ...localBrowser } },
-  ],
+  projects: releaseGate
+    ? [...routineProjects, ...releaseGateProjects]
+    : routineProjects,
   webServer: process.env.E2E_EXTERNAL_SERVER
     ? undefined
     : {

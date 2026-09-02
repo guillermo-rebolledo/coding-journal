@@ -1,7 +1,10 @@
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { buttonVariants } from "@/components/ui/button-variants";
+import { DeletedAccountNotice } from "@/components/deleted-account-notice";
 import { SiteHeader } from "@/components/site-header";
+import { trustDocuments } from "@/content/trust";
 
 /**
  * Landing — frame 1j of the look-and-feel reference
@@ -53,6 +56,9 @@ export default function HomePage() {
     <div className="min-h-screen bg-background text-foreground">
       <SiteHeader />
       <main>
+        <Suspense fallback={null}>
+          <DeletedAccountNotice />
+        </Suspense>
         <section className="mx-auto grid max-w-[76rem] gap-12 px-4 py-16 m3-expanded:grid-cols-[1.05fr_0.95fr] m3-expanded:items-start sm:px-6 sm:py-24">
           <div className="min-w-0">
             <p className="text-m3-label-lg text-balance text-m3-on-surface-variant">
@@ -72,7 +78,14 @@ export default function HomePage() {
                 Start your journal
               </Link>
               <p className="mt-3 text-m3-body-sm text-m3-on-surface-variant">
-                Read-only access. You choose the repositories.
+                Read-only access. You choose the repositories. Read{" "}
+                <Link
+                  href="/data-access"
+                  className="rounded-m3-xs underline underline-offset-2"
+                >
+                  what access is used for
+                </Link>{" "}
+                before you authorize anything.
               </p>
             </div>
           </div>
@@ -142,8 +155,24 @@ export default function HomePage() {
           </div>
         </section>
       </main>
-      <footer className="border-t border-m3-outline-variant px-4 py-8 text-center text-m3-body-sm text-m3-on-surface-variant sm:px-6">
-        Coding Journal is open source and made for thoughtful work.
+      <footer className="border-t border-m3-outline-variant px-4 py-8 sm:px-6">
+        <div className="mx-auto flex max-w-[76rem] flex-col gap-3 text-m3-body-sm text-m3-on-surface-variant m3-expanded:flex-row m3-expanded:items-center m3-expanded:justify-between">
+          <p>Coding Journal is open source and made for thoughtful work.</p>
+          <nav
+            aria-label="Trust pages"
+            className="flex flex-wrap items-center gap-x-6"
+          >
+            {trustDocuments.map((trustDocument) => (
+              <Link
+                key={trustDocument.slug}
+                href={`/${trustDocument.slug}`}
+                className="flex min-h-11 items-center rounded-m3-xs hover:underline focus-visible:underline"
+              >
+                {trustDocument.navLabel}
+              </Link>
+            ))}
+          </nav>
+        </div>
       </footer>
     </div>
   );

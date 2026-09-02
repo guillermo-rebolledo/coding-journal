@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import { journalOnboarding } from "@/db/auth-schema";
-import { getE2EAccessMode } from "@/lib/e2e-fixtures";
+import { getE2EOnboardingProgress, isE2EJournalUser } from "@/lib/e2e-fixtures";
 import type { IanaTimeZone } from "@/lib/time-zone";
 
 export type GitHubAccessMode = "best-effort" | "app";
@@ -19,16 +19,11 @@ const emptyOnboarding: JournalOnboarding = {
 
 export async function getJournalOnboarding(
   userId: string,
+  /** Only read for fixture users, whose onboarding progress lives in a cookie. */
+  requestHeaders: Headers | null = null,
 ): Promise<JournalOnboarding> {
-  if (
-    process.env.NODE_ENV !== "production" &&
-    process.env.E2E_AUTH_MODE === "true" &&
-    userId.startsWith("e2e-")
-  ) {
-    return {
-      timeZone: "America/Mexico_City",
-      githubAccessMode: getE2EAccessMode(userId),
-    };
+  if (isE2EJournalUser(userId)) {
+    return getE2EOnboardingProgress(userId, requestHeaders);
   }
 
   return (

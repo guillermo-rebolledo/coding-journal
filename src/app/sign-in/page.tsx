@@ -4,6 +4,7 @@ import Link from "next/link";
 import { BrandMark } from "@/components/brand-mark";
 import { GitHubSignInButton } from "@/components/github-sign-in-button";
 import { ThemeMenu } from "@/components/theme-menu";
+import { trustDocuments } from "@/content/trust";
 
 export const metadata: Metadata = {
   title: "Sign in",
@@ -77,6 +78,20 @@ export default async function SignInPage({
           Basic profile and email only. Provider tokens stay on the server and
           are encrypted before storage.
         </p>
+        <nav
+          aria-label="Trust pages"
+          className="mt-4 flex flex-wrap items-center gap-x-5 text-m3-body-sm text-m3-on-surface-variant"
+        >
+          {trustDocuments.map((trustDocument) => (
+            <Link
+              key={trustDocument.slug}
+              href={`/${trustDocument.slug}`}
+              className="flex min-h-11 items-center rounded-m3-xs underline underline-offset-2"
+            >
+              {trustDocument.navLabel}
+            </Link>
+          ))}
+        </nav>
       </section>
     </main>
   );

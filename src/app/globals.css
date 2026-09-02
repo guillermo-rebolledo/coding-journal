@@ -202,6 +202,9 @@ body {
   --text-m3-title-sm--line-height: var(--m3-title-sm-line);
   --text-m3-title-sm--letter-spacing: var(--m3-title-sm-tracking);
   --text-m3-title-sm--font-weight: var(--m3-weight-medium);
+  --text-m3-body-editorial: var(--m3-body-editorial-size);
+  --text-m3-body-editorial--line-height: var(--m3-body-editorial-line);
+  --text-m3-body-editorial--letter-spacing: var(--m3-body-lg-tracking);
   --text-m3-body-lg: var(--m3-body-lg-size);
   --text-m3-body-lg--line-height: var(--m3-body-lg-line);
   --text-m3-body-lg--letter-spacing: var(--m3-body-lg-tracking);
@@ -435,6 +438,10 @@ body {
   --m3-title-sm-size: 0.875rem;
   --m3-title-sm-line: 1.25rem;
   --m3-title-sm-tracking: 0.00625rem;
+  /* Editorial reading size, used only by the trust pages (frame 1m): a
+     deliberately larger measure than the app, for long-form read once. */
+  --m3-body-editorial-size: 1.0625rem;
+  --m3-body-editorial-line: 1.75rem;
   --m3-body-lg-size: 1rem;
   --m3-body-lg-line: 1.5rem;
   --m3-body-lg-tracking: 0.03125rem;

@@ -87,6 +87,16 @@ function RepositoryAccessStep({
         separate choice that lets Coding Journal read activity from only the
         repositories you select.
       </p>
+      <p className="mt-3 text-m3-body-md text-m3-on-surface-variant">
+        <Link
+          href="/data-access"
+          className="rounded-m3-xs underline underline-offset-2"
+        >
+          What each permission is used for
+        </Link>{" "}
+        — read-only, scoped to what you pick, and revocable on GitHub at any
+        time.
+      </p>
 
       <div className="mt-8 grid gap-4">
         <article className="rounded-m3-xl bg-m3-primary-container p-6 text-m3-on-primary-container sm:p-7">
@@ -556,7 +566,7 @@ export default async function JournalPage({
   if (!session) redirect("/sign-in?next=%2Fjournal");
 
   const [onboarding, installations, query] = await Promise.all([
-    getJournalOnboarding(session.user.id),
+    getJournalOnboarding(session.user.id, requestHeaders),
     getGitHubInstallations(session.user.id),
     searchParams,
   ]);

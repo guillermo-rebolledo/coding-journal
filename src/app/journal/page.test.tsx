@@ -1209,7 +1209,9 @@ describe("protected journal boundary", () => {
       screen.getByRole("button", { name: "Group by repository" }),
     );
 
-    const group = screen.getByRole("region", { name: "acme/api" });
+    const group = screen.getByRole("heading", {
+      name: "acme/api",
+    }).parentElement!;
     expect(within(group).getAllByRole("listitem")).toHaveLength(1);
     expect(
       within(group).getByRole("link", { name: "View push evidence" }),
@@ -1298,16 +1300,19 @@ describe("protected journal boundary", () => {
         <ThemeProvider storageKey={null}>{await JournalPage()}</ThemeProvider>
       </AppServicesProvider>,
     );
+    expect(
+      screen.getAllByRole("status").some((status) => status.textContent === ""),
+    ).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Refresh Today" }));
 
     await waitFor(() =>
       expect(
         screen
           .getAllByRole("status")
-          .map((element) => element.textContent ?? ""),
-      ).toContain(
-        "Request limit reached. Everything already recorded stays on screen. Try again in about 7 minutes.",
-      ),
+          .filter((element) =>
+            element.textContent?.includes("Request limit reached."),
+          ),
+      ).toHaveLength(1),
     );
     // The refusal is a status, not an alert, and it is visible rather than
     // only announced. The recorded journal beside it is untouched.

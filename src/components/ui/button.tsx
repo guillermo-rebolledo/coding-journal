@@ -114,12 +114,13 @@ function Button({
       {...props}
     >
       {/*
-        While loading, the label is wrapped so it can be hidden as a unit —
-        `[&>*]:invisible` would miss a plain text label, which is the common
-        case. `display: contents` means the wrapper generates no box, so the
-        button's own flex layout and gap still apply to the label and its icons
-        exactly as before, and `visibility` is inherited, so hiding the wrapper
-        hides the text node too.
+        While loading, the label is wrapped so it can be made transparent as a
+        unit — selecting child elements would miss a plain text label, which is
+        the common case. Opacity keeps the label in the accessibility tree;
+        `visibility: hidden` would erase the button's accessible name.
+        `display: contents` means the wrapper generates no box, so the button's
+        own flex layout and gap still apply to the label and its icons exactly
+        as before.
 
         It is only there while loading. Some of the library's own geometry
         (the split button's icon sizing) selects direct children of a button,
@@ -127,7 +128,7 @@ function Button({
         order to serve the one state that needs it.
       */}
       {loading ? (
-        <span data-slot="button-content" className="invisible contents">
+        <span data-slot="button-content" className="contents opacity-0">
           {children}
         </span>
       ) : (

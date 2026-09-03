@@ -20,6 +20,7 @@ export type GitHubPageResult = {
 
 export type GitHubReadClient = {
   authenticatedUser(): Promise<JsonObject>;
+  userInstallations(): Promise<JsonObject[]>;
   eventPages(login: string): Promise<GitHubPageResult>;
   gistListings(since: Date): Promise<{
     owned: JsonObject[];
@@ -123,6 +124,30 @@ export function createGitHubHttpReadClient(
       const actor = await object("/user");
       if (!actor) throw new Error("Invalid GitHub actor response");
       return actor;
+    },
+
+    async userInstallations() {
+      const items: JsonObject[] = [];
+      let total = Number.POSITIVE_INFINITY;
+      for (let page = 1; items.length < total; page += 1) {
+        const response = await object(
+          `/user/installations?per_page=${generalPageSize}&page=${page}`,
+        );
+        const installations = readObjectArray(response, "installations");
+        const reportedTotal = readNumber(response, "total_count");
+        if (
+          installations === null ||
+          reportedTotal === null ||
+          !Number.isSafeInteger(reportedTotal) ||
+          reportedTotal < 0
+        ) {
+          throw new Error("Invalid GitHub installations response");
+        }
+        total = reportedTotal;
+        items.push(...installations);
+        if (installations.length < generalPageSize) break;
+      }
+      return items;
     },
 
     async eventPages(login) {
@@ -249,6 +274,7 @@ export function createGitHubHttpReadClient(
 
 export type InMemoryGitHubState = {
   actor: JsonObject;
+  userInstallations?: JsonObject[];
   events?: JsonObject[];
   eventsDegraded?: boolean;
   gists?: JsonObject[];
@@ -270,6 +296,7 @@ export function createInMemoryGitHubReadClient(
 ): GitHubReadClient {
   return {
     authenticatedUser: async () => state.actor,
+    userInstallations: async () => state.userInstallations ?? [],
     eventPages: async () => ({
       items: state.events ?? [],
       degraded: state.eventsDegraded ?? false,

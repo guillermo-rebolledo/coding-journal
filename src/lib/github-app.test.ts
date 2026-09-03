@@ -18,6 +18,7 @@ describe("GitHub installation API boundary", () => {
       .mockResolvedValueOnce(
         githubResponse({
           id: 42,
+          app_slug: "coding-journal",
           account: { id: 84, login: "example-org", type: "Organization" },
           repository_selection: "selected",
           permissions: { contents: "read", metadata: "read" },
@@ -29,6 +30,7 @@ describe("GitHub installation API boundary", () => {
       getUserGitHubInstallation(
         "server-token",
         "42",
+        "coding-journal",
         createGitHubHttpReadClient("server-token", fetchImplementation),
       ),
     ).resolves.toEqual({
@@ -57,6 +59,7 @@ describe("GitHub installation API boundary", () => {
       .mockResolvedValueOnce(
         githubResponse({
           id: 7,
+          app_slug: "coding-journal",
           account: { id: 9, login: "ada", type: "User" },
           repository_selection: "all",
           permissions: { metadata: "read" },
@@ -67,6 +70,7 @@ describe("GitHub installation API boundary", () => {
     const result = await getUserGitHubInstallation(
       "server-token",
       "7",
+      "coding-journal",
       createGitHubHttpReadClient("server-token", fetchImplementation),
     );
 
@@ -78,6 +82,7 @@ describe("GitHub installation API boundary", () => {
     const mismatchedIdentity = vi.fn<typeof fetch>().mockResolvedValue(
       githubResponse({
         id: 99,
+        app_slug: "coding-journal",
         account: { id: 9, login: "ada", type: "User" },
         repository_selection: "all",
         permissions: { metadata: "read" },
@@ -86,6 +91,7 @@ describe("GitHub installation API boundary", () => {
     const elevatedPermissions = vi.fn<typeof fetch>().mockResolvedValue(
       githubResponse({
         id: 7,
+        app_slug: "coding-journal",
         account: { id: 9, login: "ada", type: "User" },
         repository_selection: "all",
         permissions: { administration: "read", contents: "write" },
@@ -96,6 +102,7 @@ describe("GitHub installation API boundary", () => {
       getUserGitHubInstallation(
         "token",
         "7",
+        "coding-journal",
         createGitHubHttpReadClient("token", mismatchedIdentity),
       ),
     ).resolves.toBeNull();
@@ -103,6 +110,7 @@ describe("GitHub installation API boundary", () => {
       getUserGitHubInstallation(
         "token",
         "7",
+        "coding-journal",
         createGitHubHttpReadClient("token", elevatedPermissions),
       ),
     ).resolves.toBeNull();
@@ -110,6 +118,7 @@ describe("GitHub installation API boundary", () => {
     const securityPermissions = vi.fn<typeof fetch>().mockResolvedValue(
       githubResponse({
         id: 7,
+        app_slug: "coding-journal",
         account: { id: 9, login: "ada", type: "User" },
         repository_selection: "all",
         permissions: { metadata: "read", vulnerability_alerts: "read" },
@@ -119,6 +128,7 @@ describe("GitHub installation API boundary", () => {
       getUserGitHubInstallation(
         "token",
         "7",
+        "coding-journal",
         createGitHubHttpReadClient("token", securityPermissions),
       ),
     ).resolves.toBeNull();
@@ -133,8 +143,31 @@ describe("GitHub installation API boundary", () => {
       getUserGitHubInstallation(
         "token",
         "7",
+        "coding-journal",
         createGitHubHttpReadClient("token", fetchImplementation),
       ),
     ).resolves.toBeNull();
+  });
+
+  it("rejects an installation that belongs to another GitHub App", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      githubResponse({
+        id: 7,
+        app_slug: "another-app",
+        account: { id: 9, login: "ada", type: "User" },
+        repository_selection: "all",
+        permissions: { metadata: "read" },
+      }),
+    );
+
+    await expect(
+      getUserGitHubInstallation(
+        "token",
+        "7",
+        "coding-journal",
+        createGitHubHttpReadClient("token", fetchImplementation),
+      ),
+    ).resolves.toBeNull();
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
   });
 });

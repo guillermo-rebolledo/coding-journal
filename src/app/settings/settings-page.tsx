@@ -1,8 +1,12 @@
 import Link from "next/link";
 
-import { deleteAccount } from "@/app/settings/actions";
+import {
+  connectExistingGitHubAppInstallation,
+  deleteAccount,
+} from "@/app/settings/actions";
 import { LimitNotice } from "@/components/journal/limit-notice";
 import { GitHubAccessOverview } from "@/components/github-access-overview";
+import { GitHubConnectionNotice } from "@/components/github-connection-notice";
 import { AppShell } from "@/components/journal/app-shell";
 import {
   ListSurface,
@@ -13,6 +17,7 @@ import { PalettePicker } from "@/components/palette-picker";
 import { ThemeModePicker } from "@/components/theme-mode-picker";
 import { DestructiveConfirmation } from "@/components/journal/destructive-confirmation";
 import type { GitHubConnection } from "@/lib/github-connection";
+import { readGitHubConnectionOutcome } from "@/lib/github-connection-status";
 import { rateLimitPolicyMessage } from "@/lib/rate-limit";
 import type { JournalOnboarding } from "@/lib/journal";
 import type { JournalSession } from "@/lib/session";
@@ -56,7 +61,9 @@ export async function renderSettingsPage(
     redirect,
   }: SettingsPageDependencies,
 ) {
-  const limited = (await searchParams)?.limited === "deletion";
+  const query = await searchParams;
+  const limited = query?.limited === "deletion";
+  const githubStatus = readGitHubConnectionOutcome(query?.github);
   const session = await getSession(requestHeaders);
   if (!session) return redirect("/sign-in?next=%2Fsettings");
 
@@ -95,9 +102,11 @@ export async function renderSettingsPage(
           description="Review exactly what GitHub has granted. Coding Journal never claims coverage outside these installations."
           className="mt-10"
         >
+          <GitHubConnectionNotice status={githubStatus} className="mb-3" />
           <GitHubAccessOverview
             accessMode={onboarding.githubAccessMode}
             installations={installations}
+            connectExistingInstallation={connectExistingGitHubAppInstallation}
           />
         </SectionGroup>
 

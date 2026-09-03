@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ListSurface, SettingsRow } from "@/components/journal/section-list";
+import { Button } from "@/components/ui/button";
 import { buttonVariants } from "@/components/ui/button-variants";
 import {
   describeMissingActivity,
@@ -68,9 +69,11 @@ function getInstallationStatus(installation: GitHubConnectionView) {
 export function GitHubAccessOverview({
   accessMode,
   installations,
+  connectExistingInstallation,
 }: {
   accessMode: GitHubAccessMode | null;
   installations: GitHubConnectionView[];
+  connectExistingInstallation: () => Promise<void>;
 }) {
   const hasInstallation = installations.some(
     (installation) => installation.status === "active",
@@ -125,13 +128,31 @@ export function GitHubAccessOverview({
         />
       )}
 
+      {!hasInstallation ? (
+        <SettingsRow
+          label="Existing installation"
+          supporting="Already installed? Check GitHub for an installation accessible to your signed-in identity. Coding Journal will verify it without changing repository access."
+          action={
+            <form action={connectExistingInstallation}>
+              <Button type="submit" variant="outline">
+                Check existing installation
+              </Button>
+            </form>
+          }
+        />
+      ) : null}
+
       <SettingsRow
         label={
           hasInstallation
             ? "Add another installation"
             : "Install the GitHub App"
         }
-        supporting="Grant read-only access to another account or organization, or change the repositories GitHub exposes."
+        supporting={
+          hasInstallation
+            ? "Grant read-only access to another account or organization, or change the repositories GitHub exposes."
+            : "GitHub may show Configure when the App is already installed. You can return here and check the existing installation without changing its repositories."
+        }
         action={
           <Link
             href="/api/github/install?from=settings"

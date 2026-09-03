@@ -1,13 +1,6 @@
 import type { GitHubInstallationDetails } from "@/lib/github-app";
+import type { GitHubConnectionOutcome } from "@/lib/github-connection-status";
 import type { JournalSession } from "@/lib/session";
-
-type GitHubCallbackStatus =
-  | "connected"
-  | "invalid-callback"
-  | "invalid-installation"
-  | "invalid-state"
-  | "pending"
-  | "reauthorize";
 
 /**
  * The boundaries this route reaches. They are parameters rather than module
@@ -42,7 +35,7 @@ export type CallbackDependencies = {
 function redirectWithStatus(
   requestUrl: URL,
   path: string,
-  status: GitHubCallbackStatus,
+  status: GitHubConnectionOutcome,
 ) {
   const destination = new URL(path, requestUrl);
   destination.searchParams.set("github", status);
@@ -114,7 +107,15 @@ export function createGitHubCallbackRoute({
         );
       }
 
-      await savePendingInstallation(session.user.id, accountId);
+      try {
+        await savePendingInstallation(session.user.id, accountId);
+      } catch {
+        return redirectWithStatus(
+          requestUrl,
+          state.returnTo,
+          "connection-failed",
+        );
+      }
       return redirectWithStatus(requestUrl, state.returnTo, "pending");
     }
 
@@ -123,14 +124,36 @@ export function createGitHubCallbackRoute({
       return redirectWithStatus(requestUrl, state.returnTo, "invalid-callback");
     }
 
-    const accessToken = await getAccessToken(request.headers, session.user.id);
+    let accessToken: string | null;
+    try {
+      accessToken = await getAccessToken(request.headers, session.user.id);
+    } catch {
+      return redirectWithStatus(
+        requestUrl,
+        state.returnTo,
+        "connection-failed",
+      );
+    }
     if (!accessToken) {
       return redirectWithStatus(requestUrl, state.returnTo, "reauthorize");
     }
 
-    const installation = await getInstallation(accessToken, installationId);
+    let installation: GitHubInstallationDetails | null;
+    try {
+      installation = await getInstallation(accessToken, installationId);
+    } catch {
+      return redirectWithStatus(requestUrl, state.returnTo, "unavailable");
+    }
     if (!installation) {
-      await disconnectInstallation(session.user.id, installationId);
+      try {
+        await disconnectInstallation(session.user.id, installationId);
+      } catch {
+        return redirectWithStatus(
+          requestUrl,
+          state.returnTo,
+          "connection-failed",
+        );
+      }
       return redirectWithStatus(
         requestUrl,
         state.returnTo,
@@ -138,7 +161,15 @@ export function createGitHubCallbackRoute({
       );
     }
 
-    await saveInstallation(session.user.id, installation);
+    try {
+      await saveInstallation(session.user.id, installation);
+    } catch {
+      return redirectWithStatus(
+        requestUrl,
+        state.returnTo,
+        "connection-failed",
+      );
+    }
     return redirectWithStatus(requestUrl, state.returnTo, "connected");
   };
 }

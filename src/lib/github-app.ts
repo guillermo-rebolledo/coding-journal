@@ -35,6 +35,7 @@ function isReadOnlyPermissionSet(permissions: Record<string, string>) {
 export async function getUserGitHubInstallation(
   accessToken: string,
   installationId: string,
+  configuredAppSlug: string,
   client: GitHubReadClient = createGitHubHttpReadClient(accessToken),
 ): Promise<GitHubInstallationDetails | null> {
   const installation = await client.installation(installationId);
@@ -45,9 +46,11 @@ export async function getUserGitHubInstallation(
   const accountType = readString(account, "type");
   const repositorySelection = readString(installation, "repository_selection");
   const permissions = readStringRecord(installation, "permissions") ?? {};
+  const appSlug = readString(installation, "app_slug");
 
   if (
     readIdentifier(installation, "id") !== installationId ||
+    appSlug !== configuredAppSlug ||
     accountId === null ||
     accountLogin === null ||
     (accountType !== "User" && accountType !== "Organization") ||

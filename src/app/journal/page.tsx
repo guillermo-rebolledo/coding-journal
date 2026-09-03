@@ -13,7 +13,10 @@ export const dynamic = "force-dynamic";
 export default async function JournalPage({
   searchParams = Promise.resolve({}),
 }: {
-  searchParams?: Promise<{ setup?: string }>;
+  searchParams?: Promise<{
+    setup?: string;
+    github?: string | string[];
+  }>;
 } = {}) {
   const requestHeaders = await headers();
   const adapters = chooseJournalRequestAdapters(requestHeaders);

@@ -1,4 +1,5 @@
 import { getUserGitHubInstallation } from "@/lib/github-app";
+import { getRequiredEnv } from "@/lib/env";
 import {
   consumeGitHubInstallationState,
   disconnectGitHubInstallation,
@@ -14,7 +15,12 @@ export const GET = createGitHubCallbackRoute({
   getSession: getJournalSession,
   consumeState: consumeGitHubInstallationState,
   getAccessToken: getGitHubUserAccessToken,
-  getInstallation: getUserGitHubInstallation,
+  getInstallation: (accessToken, installationId) =>
+    getUserGitHubInstallation(
+      accessToken,
+      installationId,
+      getRequiredEnv("GITHUB_APP_SLUG"),
+    ),
   saveInstallation: saveGitHubInstallation,
   savePendingInstallation: savePendingGitHubInstallation,
   disconnectInstallation: disconnectGitHubInstallation,

@@ -1,6 +1,13 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
-import type { GitHubInstallationDetails } from "@/lib/github-app";
+import {
+  getUserGitHubInstallation,
+  type GitHubInstallationDetails,
+} from "@/lib/github-app";
+import { readIdentifier } from "@/lib/github-activity";
+import type { GitHubReadClient } from "@/lib/github-read-client";
+import type { GitHubUserAccess } from "@/lib/github-user-token";
+import { readString } from "@/lib/json-payload";
 import {
   consumeInstallationState,
   deletePendingInstallation,
@@ -30,6 +37,20 @@ export type InstallationStore = {
   upsertActiveInstallation: typeof upsertActiveInstallation;
 };
 
+export type InstallationAssociationStore = Pick<
+  InstallationStore,
+  | "deletePendingInstallation"
+  | "setGitHubAccessMode"
+  | "upsertActiveInstallation"
+>;
+
+export class GitHubInstallationSaveError extends Error {
+  constructor() {
+    super("GitHub installation connection could not be saved");
+    this.name = "GitHubInstallationSaveError";
+  }
+}
+
 const productionStore: InstallationStore = {
   consumeInstallationState,
   deletePendingInstallation,
@@ -40,6 +61,9 @@ const productionStore: InstallationStore = {
   setGitHubAccessMode,
   upsertActiveInstallation,
 };
+
+export const githubInstallationAssociationStore: InstallationAssociationStore =
+  productionStore;
 
 function hashInstallationState(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -87,7 +111,7 @@ export async function consumeGitHubInstallationState(
 export async function saveGitHubInstallation(
   userId: string,
   details: GitHubInstallationDetails,
-  store: InstallationStore = productionStore,
+  store: InstallationAssociationStore = productionStore,
 ) {
   await store.deletePendingInstallation(userId, details.accountId);
   await store.upsertActiveInstallation(userId, details);
@@ -101,6 +125,52 @@ export async function savePendingGitHubInstallation(
 ) {
   await store.deletePendingInstallation(userId, accountId);
   await store.insertPendingInstallation(userId, accountId);
+}
+
+export async function associateExistingGitHubInstallations(
+  userId: string,
+  userAccess: GitHubUserAccess,
+  configuredAppSlug: string,
+  client: GitHubReadClient,
+  store: InstallationAssociationStore = productionStore,
+) {
+  const actor = await client.authenticatedUser();
+  if (readIdentifier(actor, "id") !== userAccess.accountId) {
+    return { identityVerified: false, connectedCount: 0, rejectedCount: 0 };
+  }
+
+  const accessible = await client.userInstallations();
+  let connectedCount = 0;
+  let rejectedCount = 0;
+
+  for (const candidate of accessible) {
+    if (readString(candidate, "app_slug") !== configuredAppSlug) continue;
+    const installationId = readIdentifier(candidate, "id");
+    if (!installationId) {
+      rejectedCount += 1;
+      continue;
+    }
+
+    const details = await getUserGitHubInstallation(
+      userAccess.accessToken,
+      installationId,
+      configuredAppSlug,
+      client,
+    );
+    if (!details) {
+      rejectedCount += 1;
+      continue;
+    }
+
+    try {
+      await saveGitHubInstallation(userId, details, store);
+    } catch {
+      throw new GitHubInstallationSaveError();
+    }
+    connectedCount += 1;
+  }
+
+  return { identityVerified: true, connectedCount, rejectedCount };
 }
 
 export type StoredGitHubInstallation = Awaited<

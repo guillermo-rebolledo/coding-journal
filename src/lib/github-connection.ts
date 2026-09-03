@@ -7,6 +7,7 @@ import {
 } from "@/lib/github-installation";
 import { getGitHubUserAccessToken } from "@/lib/github-user-token";
 import type { GitHubConnectionView } from "@/lib/github-completeness";
+import { getRequiredEnv } from "@/lib/env";
 
 function displayAsUnavailable(
   installation: StoredGitHubInstallation,
@@ -47,6 +48,7 @@ export async function refreshGitHubConnections(
       const details = await getUserGitHubInstallation(
         accessToken,
         installation.installationId!,
+        getRequiredEnv("GITHUB_APP_SLUG"),
       );
       if (details) {
         await saveGitHubInstallation(userId, details);

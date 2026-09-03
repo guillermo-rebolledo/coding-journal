@@ -14,11 +14,22 @@ import {
   type E2EOnboardingStage,
 } from "@/lib/journal-fixture-adapters";
 import { refreshGitHubConnections } from "@/lib/github-connection";
+import type { GitHubInstallationDetails } from "@/lib/github-app";
 import { JournalNotFoundError } from "@/lib/journal-errors";
 import { getRequiredEnv } from "@/lib/env";
 import { githubActivityRepository } from "@/lib/github-activity-repository";
-import { getGitHubInstallations } from "@/lib/github-installation";
-import { getGitHubUserAccessToken } from "@/lib/github-user-token";
+import {
+  getGitHubInstallations,
+  githubInstallationAssociationStore,
+} from "@/lib/github-installation";
+import {
+  createGitHubHttpReadClient,
+  createInMemoryGitHubReadClient,
+} from "@/lib/github-read-client";
+import {
+  getGitHubUserAccess,
+  getGitHubUserAccessToken,
+} from "@/lib/github-user-token";
 import {
   chooseBestEffortMode,
   getJournalOnboarding,
@@ -71,6 +82,67 @@ export function chooseJournalRequestAdapters(requestHeaders: Headers) {
     return {
       fixture: true as const,
       session: async () => fixtureSession,
+      githubUserAccess: async () => ({
+        accessToken: "fixture-token",
+        accountId: "7",
+      }),
+      createGitHubClient: (accessToken: string) => {
+        void accessToken;
+        return createInMemoryGitHubReadClient({
+          actor: { id: 7, login: "ada" },
+          userInstallations: [
+            { id: 42, app_slug: getRequiredEnv("GITHUB_APP_SLUG") },
+          ],
+          installations: {
+            "42": {
+              id: 42,
+              app_slug: getRequiredEnv("GITHUB_APP_SLUG"),
+              account: {
+                id: 84,
+                login: "example-org",
+                type: "Organization",
+              },
+              repository_selection: "selected",
+              permissions: {
+                actions: "read",
+                contents: "read",
+                deployments: "read",
+                discussions: "read",
+                metadata: "read",
+                organization_projects: "read",
+                packages: "read",
+              },
+            },
+          },
+          installationRepositories: {
+            "42": [{ id: 1 }, { id: 2 }, { id: 3 }],
+          },
+        });
+      },
+      installationAssociationStore: {
+        deletePendingInstallation: async (
+          userId: string,
+          accountId: string,
+        ) => {
+          void userId;
+          void accountId;
+        },
+        upsertActiveInstallation: async (
+          userId: string,
+          details: GitHubInstallationDetails,
+        ) => {
+          void userId;
+          void details;
+        },
+        setGitHubAccessMode: async () => {
+          const store = await cookies();
+          store.set(E2E_SESSION_COOKIE, "partial", {
+            path: "/",
+            httpOnly: true,
+            sameSite: "lax",
+          });
+        },
+      },
       onboarding: {
         read: async (_userId: string, headers: Headers | null) =>
           getE2EOnboardingProgress(fixtureUserId, headers),
@@ -130,6 +202,9 @@ export function chooseJournalRequestAdapters(requestHeaders: Headers) {
   return {
     fixture: false as const,
     session: getJournalSession,
+    githubUserAccess: getGitHubUserAccess,
+    createGitHubClient: createGitHubHttpReadClient,
+    installationAssociationStore: githubInstallationAssociationStore,
     onboarding: {
       read: getJournalOnboarding,
       saveTimeZone: saveJournalTimeZone,

@@ -2,16 +2,57 @@
 
 import { describe, expect, it, vi } from "vitest";
 
+import type { JsonValue } from "@/lib/json-payload";
 import {
   GitHubRequestError,
   createGitHubHttpReadClient,
 } from "@/lib/github-read-client";
 
-function response(body: unknown, status = 200, headers?: HeadersInit) {
+function response(body: JsonValue, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(body), { status, headers });
 }
 
 describe("GitHub HTTP read adapter", () => {
+  it("lists every GitHub App installation accessible to the signed-in user", async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      id: index + 1,
+      app_slug: "coding-journal",
+    }));
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        response({ total_count: 101, installations: firstPage }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          total_count: 101,
+          installations: [{ id: 101, app_slug: "coding-journal" }],
+        }),
+      );
+
+    const installations = await createGitHubHttpReadClient(
+      "secret-token",
+      request,
+    ).userInstallations();
+
+    expect(installations).toHaveLength(101);
+    expect(request).toHaveBeenNthCalledWith(
+      1,
+      "https://api.github.com/user/installations?per_page=100&page=1",
+      expect.objectContaining({
+        cache: "no-store",
+        headers: expect.objectContaining({
+          Authorization: "Bearer secret-token",
+        }),
+      }),
+    );
+    expect(request).toHaveBeenNthCalledWith(
+      2,
+      "https://api.github.com/user/installations?per_page=100&page=2",
+      expect.any(Object),
+    );
+  });
+
   it("owns headers and stops event pagination on the first short page", async () => {
     const request = vi
       .fn<typeof fetch>()

@@ -249,6 +249,29 @@ test("Settings keeps GitHub access guidance within the viewport", async ({
   await expect(
     page.getByRole("link", { name: "Install GitHub App" }),
   ).toHaveAttribute("href", "/api/github/install?from=settings");
+  await expect(
+    page.getByRole("button", { name: "Check existing installation" }),
+  ).toBeVisible();
+  await expect(page.getByText(/GitHub may show Configure/)).toBeVisible();
+
+  await page
+    .getByRole("button", { name: "Check existing installation" })
+    .click();
+  await expect(page).toHaveURL(/\/settings\?github=connected$/);
+  await expect(page.getByText("GitHub App connected")).toBeVisible();
+  await expect(page.getByText("Partial access", { exact: true })).toBeVisible();
+  await expect(page.getByText("3 selected repositories")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Install GitHub App" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Manage on GitHub" }),
+  ).toBeVisible();
+
+  await page.getByRole("link", { name: "Today" }).click();
+  await expect(page).toHaveURL("/journal");
+  await expect(page.getByText("Partial access", { exact: true })).toBeVisible();
+  await expect(page.getByText("3 selected repositories")).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(

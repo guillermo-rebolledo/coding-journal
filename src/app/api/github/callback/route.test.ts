@@ -163,6 +163,119 @@ describe("GitHub App installation callback", () => {
     expect(githubBoundary.getUserToken).not.toHaveBeenCalled();
   });
 
+  it("keeps an existing installation connected after a GitHub update callback", async () => {
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
+    consumeState.mockResolvedValue({ returnTo: "/settings" });
+    githubBoundary.getUserToken.mockResolvedValue("server-token");
+    githubBoundary.getInstallation.mockResolvedValue({
+      installationId: "42",
+      accountId: "84",
+      accountLogin: "example-org",
+      accountType: "Organization",
+      repositorySelection: "all",
+      repositoryCount: 8,
+      permissions: { contents: "read", metadata: "read" },
+    });
+
+    const response = await GET(
+      new Request(
+        "https://journal.example/api/github/callback?state=valid&setup_action=update&installation_id=42",
+      ),
+    );
+
+    expect(neonBoundary.upsertActiveInstallation).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({ installationId: "42" }),
+    );
+    expect(response.headers.get("location")).toBe(
+      "https://journal.example/settings?github=connected",
+    );
+  });
+
+  it("asks for reauthorization when the callback cannot resolve a user token", async () => {
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
+    consumeState.mockResolvedValue({ returnTo: "/settings" });
+    githubBoundary.getUserToken.mockResolvedValue(null);
+
+    const response = await GET(
+      new Request(
+        "https://journal.example/api/github/callback?state=valid&setup_action=install&installation_id=42",
+      ),
+    );
+
+    expect(response.headers.get("location")).toBe(
+      "https://journal.example/settings?github=reauthorize",
+    );
+    expect(neonBoundary.upsertActiveInstallation).not.toHaveBeenCalled();
+  });
+
+  it("reports a connection failure when token storage is unavailable", async () => {
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
+    consumeState.mockResolvedValue({ returnTo: "/settings" });
+    githubBoundary.getUserToken.mockRejectedValue(
+      new Error("token store down"),
+    );
+
+    const response = await GET(
+      new Request(
+        "https://journal.example/api/github/callback?state=valid&setup_action=install&installation_id=42",
+      ),
+    );
+
+    expect(response.headers.get("location")).toBe(
+      "https://journal.example/settings?github=connection-failed",
+    );
+    expect(neonBoundary.upsertActiveInstallation).not.toHaveBeenCalled();
+  });
+
+  it("reports GitHub unavailability when installation verification fails", async () => {
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
+    consumeState.mockResolvedValue({ returnTo: "/settings" });
+    githubBoundary.getUserToken.mockResolvedValue("server-token");
+    githubBoundary.getInstallation.mockRejectedValue(
+      new Error("GitHub unavailable"),
+    );
+
+    const response = await GET(
+      new Request(
+        "https://journal.example/api/github/callback?state=valid&setup_action=install&installation_id=42",
+      ),
+    );
+
+    expect(response.headers.get("location")).toBe(
+      "https://journal.example/settings?github=unavailable",
+    );
+    expect(neonBoundary.upsertActiveInstallation).not.toHaveBeenCalled();
+  });
+
+  it("reports a connection failure when installation storage fails", async () => {
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
+    consumeState.mockResolvedValue({ returnTo: "/settings" });
+    githubBoundary.getUserToken.mockResolvedValue("server-token");
+    githubBoundary.getInstallation.mockResolvedValue({
+      installationId: "42",
+      accountId: "7",
+      accountLogin: "ada",
+      accountType: "User",
+      repositorySelection: "all",
+      repositoryCount: 1,
+      permissions: { contents: "read", metadata: "read" },
+    });
+    neonBoundary.upsertActiveInstallation.mockRejectedValue(
+      new Error("database down"),
+    );
+
+    const response = await GET(
+      new Request(
+        "https://journal.example/api/github/callback?state=valid&setup_action=install&installation_id=42",
+      ),
+    );
+
+    expect(response.headers.get("location")).toBe(
+      "https://journal.example/settings?github=connection-failed",
+    );
+  });
+
   it("rejects malformed callbacks without changing connection state", async () => {
     authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
     consumeState.mockResolvedValue({

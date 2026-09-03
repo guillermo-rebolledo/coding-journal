@@ -109,7 +109,12 @@ const activityStores = (): TodayJournalStores => ({
 });
 
 function JournalPage(
-  options: { searchParams?: Promise<{ setup?: string }> } = {},
+  options: {
+    searchParams?: Promise<{
+      setup?: string;
+      github?: string | string[];
+    }>;
+  } = {},
 ) {
   return renderJournalPage(options.searchParams ?? Promise.resolve({}), {
     requestHeaders: new Headers(),
@@ -351,6 +356,29 @@ describe("protected journal boundary", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "Review repository access" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows an actionable GitHub callback outcome on Today", async () => {
+    authBoundary.getSession.mockResolvedValue(journalSession("user-1"));
+    journalBoundary.getOnboarding.mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "best-effort",
+    });
+
+    render(
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>
+          {await JournalPage({
+            searchParams: Promise.resolve({ github: "invalid-state" }),
+          })}
+        </ThemeProvider>
+      </AppServicesProvider>,
+    );
+
+    expect(screen.getByText("Installation link expired")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Start the connection again from Settings/),
     ).toBeInTheDocument();
   });
 

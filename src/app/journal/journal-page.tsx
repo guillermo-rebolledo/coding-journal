@@ -6,6 +6,7 @@ import { JournalRefresh } from "@/app/journal/journal-refresh";
 import type { RefreshActionResult } from "@/app/journal/refresh-action";
 import { TimeZoneStep } from "@/app/journal/time-zone-step";
 import { AppShell } from "@/components/journal/app-shell";
+import { GitHubConnectionNotice } from "@/components/github-connection-notice";
 import { JournalNarrative } from "@/components/journal/journal-narrative";
 import { MetricOverview } from "@/components/journal/metric-overview";
 import { StateBlock } from "@/components/journal/state-block";
@@ -13,6 +14,7 @@ import { StatusChip } from "@/components/journal/status-chip";
 import { Button } from "@/components/ui/button";
 import { buttonVariants } from "@/components/ui/button-variants";
 import type { StoredGitHubInstallation } from "@/lib/github-installation";
+import { readGitHubConnectionOutcome } from "@/lib/github-connection-status";
 import { getGitHubJournalCompleteness } from "@/lib/github-completeness";
 import type { JournalOnboarding } from "@/lib/journal";
 import type { TodayJournal } from "@/lib/github-reconciliation";
@@ -408,7 +410,10 @@ export type JournalPageDependencies = {
 };
 
 export async function renderJournalPage(
-  searchParams: Promise<{ setup?: string }>,
+  searchParams: Promise<{
+    setup?: string;
+    github?: string | string[];
+  }>,
   {
     requestHeaders,
     getSession,
@@ -442,9 +447,11 @@ export async function renderJournalPage(
   const summary = todayRead?.narrative ?? null;
 
   const onboardingStep = !onboarding.timeZone || !onboarding.githubAccessMode;
+  const githubStatus = readGitHubConnectionOutcome(query.github);
 
   return (
     <AppShell current="today" navigation={!onboardingStep}>
+      <GitHubConnectionNotice status={githubStatus} className="mb-6" />
       {!onboarding.timeZone ? (
         <TimeZoneStep />
       ) : !onboarding.githubAccessMode || query.setup === "repositories" ? (

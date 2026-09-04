@@ -14,6 +14,17 @@ export type JournalHistoryItem = {
   correctionCount: number;
 };
 
+/**
+ * Activity already stored for a closed day whose immutable journal has not
+ * been created yet. Keeping this separate from `JournalHistoryItem` prevents a
+ * waiting day from looking linkable or finalized before either is true.
+ */
+export type PendingHistoryDay = {
+  localDate: string;
+  eventCount: number;
+  repositoryCount: number;
+};
+
 export type HistoricalJournal = JournalHistoryItem & {
   metrics: ActivityMetrics | null;
   narrative: SummaryOutput | null;
@@ -25,6 +36,10 @@ export type HistoricalJournal = JournalHistoryItem & {
 /** The complete persistence seam for listing, reading and mutating history. */
 export type JournalHistoryStore = {
   list(userId: string): Promise<JournalHistoryItem[]>;
+  listPending(
+    userId: string,
+    beforeLocalDate: string,
+  ): Promise<PendingHistoryDay[]>;
   read(userId: string, localDate: string): Promise<HistoricalJournal | null>;
   retry(
     userId: string,

@@ -3,11 +3,13 @@ import Link from "next/link";
 import { AppShell } from "@/components/journal/app-shell";
 import { StateBlock } from "@/components/journal/state-block";
 import { StatusChip } from "@/components/journal/status-chip";
+import type { JournalOnboarding } from "@/lib/journal";
 import type {
   JournalHistoryItem,
   JournalHistoryStore,
 } from "@/lib/journal-history";
 import type { JournalSession } from "@/lib/session";
+import { getLocalDate } from "@/lib/time-zone";
 
 function displayDate(localDate: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -44,8 +46,13 @@ function statusLabel(day: JournalHistoryItem) {
 export type HistoryPageDependencies = {
   requestHeaders: Headers;
   getSession: (requestHeaders: Headers) => Promise<JournalSession | null>;
-  store: Pick<JournalHistoryStore, "list">;
+  getOnboarding: (
+    userId: string,
+    requestHeaders: Headers,
+  ) => Promise<JournalOnboarding>;
+  store: Pick<JournalHistoryStore, "list" | "listPending">;
   redirect: (destination: string) => never;
+  now?: () => Date;
 };
 
 /**
@@ -59,12 +66,23 @@ export type HistoryPageDependencies = {
 export async function renderJournalHistoryPage({
   requestHeaders,
   getSession,
+  getOnboarding,
   store,
   redirect,
+  now = () => new Date(),
 }: HistoryPageDependencies) {
   const session = await getSession(requestHeaders);
   if (!session) return redirect("/sign-in?next=%2Fjournal%2Fhistory");
-  const history = await store.list(session.user.id);
+  const [onboarding, history] = await Promise.all([
+    getOnboarding(session.user.id, requestHeaders),
+    store.list(session.user.id),
+  ]);
+  const todayLocalDate = onboarding.timeZone
+    ? getLocalDate(now(), onboarding.timeZone).iso
+    : null;
+  const pendingDays = todayLocalDate
+    ? await store.listPending(session.user.id, todayLocalDate)
+    : [];
 
   const months = history.reduce<
     Array<{ label: string; days: JournalHistoryItem[] }>
@@ -88,8 +106,41 @@ export async function renderJournalHistoryPage({
           correction, never merged into the record.
         </p>
 
-        {history.length ? (
+        {history.length || pendingDays.length ? (
           <div className="mt-9 grid gap-8">
+            {pendingDays.length ? (
+              <section aria-label="Waiting for final processing">
+                <h2 className="text-m3-title-sm text-m3-on-surface-variant">
+                  Waiting for final processing
+                </h2>
+                <p className="mt-2 text-m3-body-sm text-m3-on-surface-variant">
+                  Activity is safely recorded. These days become linkable after
+                  final processing completes.
+                </p>
+                <ol className="mt-3 divide-y divide-m3-outline-variant overflow-hidden rounded-m3-sm bg-m3-surface-container-low">
+                  {pendingDays.map((day) => (
+                    <li
+                      key={day.localDate}
+                      className="flex min-h-14 flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 sm:px-5"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-m3-title-sm text-m3-on-surface">
+                          {displayDate(day.localDate)}
+                        </span>
+                        <span className="block text-m3-body-sm text-m3-on-surface-variant">
+                          {day.eventCount}{" "}
+                          {day.eventCount === 1 ? "event" : "events"}
+                          {day.repositoryCount
+                            ? ` · ${day.repositoryCount} ${day.repositoryCount === 1 ? "repository" : "repositories"}`
+                            : ""}
+                        </span>
+                      </span>
+                      <StatusChip tone="neutral">Waiting</StatusChip>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ) : null}
             {months.map((month) => (
               <section key={month.label} aria-label={month.label}>
                 <h2 className="text-m3-title-sm text-m3-on-surface-variant">
@@ -137,8 +188,9 @@ export async function renderJournalHistoryPage({
             size="expressive"
             className="mt-9"
           >
-            A journal moves here after its local day closes and final processing
-            finishes. Today stays on the Today page until then.
+            History shows closed journals after final processing, not live
+            GitHub activity. Today stays on the Today page; a completed day
+            appears here after its local day closes and processing finishes.
           </StateBlock>
         )}
       </div>

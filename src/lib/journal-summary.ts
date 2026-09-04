@@ -200,6 +200,7 @@ export type SummaryResult =
         | "budget-exhausted"
         | "input-too-large"
         | "queue-busy"
+        | "provider-disabled"
         | "invalid-output"
         | "provider-error";
       retryAt?: Date;
@@ -221,6 +222,7 @@ const summaryUnavailableMessages: Record<SummaryUnavailableReason, string> = {
     "Narrative generation is temporarily paused by a service limit.",
   "queue-busy":
     "Narrative generation is temporarily paused by a service limit.",
+  "provider-disabled": "Narratives are not enabled for this deployment.",
   "invalid-output": "The narrative provider returned an invalid response.",
   "provider-error": "The narrative provider is unavailable right now.",
 };
@@ -580,7 +582,7 @@ export async function generateJournalSummary({
   localDate: string;
   activities: ActivityRecord[];
   store: SummaryStore;
-  provider: SummaryProvider;
+  provider: SummaryProvider | null;
   now?: Date;
   model?: string;
   limits?: Partial<{
@@ -597,6 +599,12 @@ export async function generateJournalSummary({
 
   const cached = await store.findBySnapshotHash(userId, snapshot.hash);
   if (cached) return { status: "available", summary: cached, cached: true };
+
+  // Narratives are optional. Keep cached narratives readable when generation
+  // is later disabled, but do not claim quota or call a provider when no key
+  // is configured. This refusal is intentionally non-retryable so factual
+  // journal finalization can continue without an AI dependency.
+  if (!provider) return { status: "unavailable", reason: "provider-disabled" };
 
   const configured = {
     ...summaryLimitConfiguration,

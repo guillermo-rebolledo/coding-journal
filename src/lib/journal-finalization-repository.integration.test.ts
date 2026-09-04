@@ -162,6 +162,66 @@ describe("journal finalization repository with Postgres", () => {
     );
   });
 
+  it("lists stored closed-day activity that has not entered finalization", async () => {
+    const userId = "pending-history-user";
+    await database.insert(user).values({
+      id: userId,
+      name: "Grace Hopper",
+      email: "pending-history@example.com",
+      emailVerified: true,
+    });
+    await database.insert(githubActivity).values([
+      {
+        id: "pending-history-one",
+        userId,
+        ...initialActivity,
+        localDate: "2026-09-02",
+        deduplicationKey: "pending-history:one",
+        repositoryId: "one",
+      },
+      {
+        id: "pending-history-two",
+        userId,
+        ...initialActivity,
+        localDate: "2026-09-02",
+        deduplicationKey: "pending-history:two",
+        repositoryId: "two",
+      },
+      {
+        id: "pending-history-today",
+        userId,
+        ...initialActivity,
+        localDate: "2026-09-03",
+        deduplicationKey: "pending-history:today",
+      },
+      {
+        id: "pending-history-scheduled",
+        userId,
+        ...initialActivity,
+        localDate: "2026-09-01",
+        deduplicationKey: "pending-history:scheduled",
+      },
+    ]);
+    await repository.schedule(
+      {
+        userId,
+        localDate: "2026-09-01",
+        timeZone: "America/Mexico_City",
+      },
+      new Date("2026-09-03T12:00:00Z"),
+    );
+
+    await expect(repository.listPending(userId, "2026-09-03")).resolves.toEqual(
+      [
+        {
+          localDate: "2026-09-02",
+          eventCount: 2,
+          repositoryCount: 2,
+        },
+      ],
+    );
+  });
+
   it("allows a recoverable failure to be explicitly retried", async () => {
     const candidate = {
       userId: "history-user",

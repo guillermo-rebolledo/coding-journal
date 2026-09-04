@@ -1,6 +1,16 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  lt,
+  sql,
+} from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { db } from "@/db";
@@ -26,6 +36,7 @@ import type {
   HistoricalJournal,
   JournalHistoryItem,
   JournalHistoryStore,
+  PendingHistoryDay,
 } from "@/lib/journal-history";
 import { getFinalizationDueAt, getLocalDate } from "@/lib/time-zone";
 
@@ -307,6 +318,58 @@ export function createJournalFinalizationRepository<
     );
   }
 
+  /**
+   * A failed scheduler used to make recorded activity indistinguishable from
+   * a new account on History. Read the retained activity ledger as a second,
+   * explicitly non-finalized state so the page can say what is waiting without
+   * pretending an immutable journal already exists.
+   */
+  async function listPending(
+    userId: string,
+    beforeLocalDate: string,
+  ): Promise<PendingHistoryDay[]> {
+    const [activities, finalizations] = await Promise.all([
+      database.query.githubActivity.findMany({
+        columns: { localDate: true, repositoryId: true },
+        where: and(
+          eq(githubActivity.userId, userId),
+          eq(githubActivity.attributed, true),
+          lt(githubActivity.localDate, beforeLocalDate),
+        ),
+      }),
+      database.query.journalFinalization.findMany({
+        columns: { localDate: true },
+        where: eq(journalFinalization.userId, userId),
+      }),
+    ]);
+    const finalizedDates = new Set(
+      finalizations.map((finalization) => finalization.localDate),
+    );
+    const days = new Map<
+      string,
+      { eventCount: number; repositories: Set<string> }
+    >();
+
+    for (const activity of activities) {
+      if (finalizedDates.has(activity.localDate)) continue;
+      const day = days.get(activity.localDate) ?? {
+        eventCount: 0,
+        repositories: new Set<string>(),
+      };
+      day.eventCount += 1;
+      day.repositories.add(activity.repositoryId);
+      days.set(activity.localDate, day);
+    }
+
+    return [...days.entries()]
+      .sort(([left], [right]) => right.localeCompare(left))
+      .map(([localDate, day]) => ({
+        localDate,
+        eventCount: day.eventCount,
+        repositoryCount: day.repositories.size,
+      }));
+  }
+
   async function redactNarrative(
     userId: string,
     localDate: string,
@@ -334,6 +397,7 @@ export function createJournalFinalizationRepository<
     fail,
     retry,
     list,
+    listPending,
     read,
     redactNarrative,
   } satisfies FinalizationStore & JournalHistoryStore;

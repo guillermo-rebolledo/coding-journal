@@ -174,6 +174,34 @@ describe("journal finalization application boundary", () => {
     });
   });
 
+  it("freezes a factual day without a narrative when the provider is disabled", async () => {
+    const repository = store({ claim: vi.fn().mockResolvedValue(true) });
+    const work = finalizationWork(true);
+
+    await processJournalFinalization(
+      {
+        version: 1,
+        userId: "user-1",
+        localDate: "2026-08-31",
+        timeZone: "America/Mexico_City",
+      },
+      1,
+      repository,
+      work.reconcile,
+      async () => ({ status: "unavailable", reason: "provider-disabled" }),
+      new Date("2026-09-01T12:00:00Z"),
+    );
+
+    expect(repository.finalize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user-1",
+        localDate: "2026-08-31",
+        narrative: null,
+      }),
+    );
+    expect(repository.fail).not.toHaveBeenCalled();
+  });
+
   it("acknowledges a duplicate job without repeating final work", async () => {
     const repository = store({ claim: vi.fn().mockResolvedValue(false) });
     const work = finalizationWork(true);

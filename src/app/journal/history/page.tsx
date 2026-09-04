@@ -15,6 +15,7 @@ export default async function JournalHistoryPage() {
   return renderJournalHistoryPage({
     requestHeaders,
     getSession: adapters.session,
+    getOnboarding: adapters.onboarding.read,
     store: adapters.finalization,
     redirect,
   });

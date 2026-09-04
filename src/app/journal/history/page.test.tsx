@@ -20,8 +20,15 @@ import { journalSession } from "~test/session-fixture";
 const authBoundary = {
   getSession: vi.fn<(headers: Headers) => Promise<JournalSession | null>>(),
 };
+const onboardingBoundary = {
+  read: vi.fn().mockResolvedValue({
+    timeZone: "America/Mexico_City",
+    githubAccessMode: "best-effort" as const,
+  }),
+};
 const historyBoundary = {
   list: vi.fn<JournalFinalizationRepository["list"]>(),
+  listPending: vi.fn<JournalFinalizationRepository["listPending"]>(),
   read: vi.fn<JournalFinalizationRepository["read"]>(),
 };
 const navigation = {
@@ -46,8 +53,10 @@ function JournalHistoryPage() {
   return renderJournalHistoryPage({
     requestHeaders: new Headers(),
     getSession: authBoundary.getSession,
+    getOnboarding: onboardingBoundary.read,
     store: historyBoundary,
     redirect,
+    now: () => new Date("2026-09-03T12:00:00Z"),
   });
 }
 
@@ -90,6 +99,10 @@ describe("journal history browsing", () => {
     authBoundary.getSession
       .mockReset()
       .mockResolvedValue(journalSession("user-1"));
+    onboardingBoundary.read.mockReset().mockResolvedValue({
+      timeZone: "America/Mexico_City",
+      githubAccessMode: "best-effort",
+    });
     historyBoundary.list.mockReset().mockResolvedValue([
       {
         localDate: "2026-08-31",
@@ -100,6 +113,7 @@ describe("journal history browsing", () => {
         correctionCount: 1,
       },
     ]);
+    historyBoundary.listPending.mockReset().mockResolvedValue([]);
     historyBoundary.read.mockReset().mockResolvedValue({
       localDate: "2026-08-31",
       timeZone: "America/Mexico_City",
@@ -146,6 +160,32 @@ describe("journal history browsing", () => {
     expect(
       screen.getByRole("link", { name: /Monday, August 31/ }),
     ).toHaveAttribute("href", "/journal/history/2026-08-31");
+  });
+
+  it("shows recorded closed-day activity while finalization is pending", async () => {
+    historyBoundary.list.mockResolvedValue([]);
+    historyBoundary.listPending.mockResolvedValue([
+      {
+        localDate: "2026-09-02",
+        eventCount: 12,
+        repositoryCount: 3,
+      },
+    ]);
+
+    render(
+      <AppServicesProvider services={services}>
+        <ThemeProvider storageKey={null}>
+          {await JournalHistoryPage()}
+        </ThemeProvider>
+      </AppServicesProvider>,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Waiting for final processing" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("12 events · 3 repositories")).toBeInTheDocument();
+    expect(screen.getByText("Waiting")).toBeInTheDocument();
+    expect(screen.queryByText("No finalized days yet")).not.toBeInTheDocument();
   });
 
   it("opens a frozen day with completeness, narrative, evidence, and corrections", async () => {

@@ -50,7 +50,7 @@ const consumer = createFinalizationConsumer({
           localDate,
           activities,
           store: journalSummaryRepository,
-          provider: openAiSummaryProvider,
+          provider: process.env.OPENAI_API_KEY ? openAiSummaryProvider : null,
           now,
         }),
       now,

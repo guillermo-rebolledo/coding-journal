@@ -220,7 +220,7 @@ describe("journal summary application boundary", () => {
     };
 
     const first = await generateJournalSummary(input);
-    const second = await generateJournalSummary(input);
+    const second = await generateJournalSummary({ ...input, provider: null });
 
     expect(first.status).toBe("available");
     expect(second).toMatchObject({ status: "available", cached: true });
@@ -292,6 +292,27 @@ describe("journal summary application boundary", () => {
     });
 
     expect(result).toEqual({ status: "unavailable", reason: "provider-error" });
+  });
+
+  it("keeps summaries optional when no provider is configured", async () => {
+    const store = memoryStore();
+    const claimSlot = vi.spyOn(store, "claimSlot");
+
+    const result = await generateJournalSummary({
+      userId: "user-1",
+      localDate: "2026-09-01",
+      activities: [activity()],
+      store,
+      provider: null,
+      now: new Date("2026-09-01T16:00:00Z"),
+    });
+
+    expect(result).toEqual({
+      status: "unavailable",
+      reason: "provider-disabled",
+    });
+    expect(claimSlot).not.toHaveBeenCalled();
+    expect(store.summaries).toHaveLength(0);
   });
 
   it.each([

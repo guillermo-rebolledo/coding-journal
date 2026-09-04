@@ -179,6 +179,7 @@ export function chooseJournalRequestAdapters(requestHeaders: Headers) {
       },
       finalization: {
         list: async () => getE2EJournalHistory(),
+        listPending: async () => [],
         read: async (_userId: string, localDate: string) =>
           getE2EHistoricalJournal(localDate),
         retry: async () => null,
@@ -236,7 +237,7 @@ export function chooseJournalRequestAdapters(requestHeaders: Headers) {
           localDate,
           activities,
           store: journalSummaryRepository,
-          provider: openAiSummaryProvider,
+          provider: process.env.OPENAI_API_KEY ? openAiSummaryProvider : null,
           now,
         }),
     },

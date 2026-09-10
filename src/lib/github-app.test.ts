@@ -17,11 +17,16 @@ describe("GitHub installation API boundary", () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
         githubResponse({
-          id: 42,
-          app_slug: "coding-journal",
-          account: { id: 84, login: "example-org", type: "Organization" },
-          repository_selection: "selected",
-          permissions: { contents: "read", metadata: "read" },
+          total_count: 1,
+          installations: [
+            {
+              id: 42,
+              app_slug: "coding-journal",
+              account: { id: 84, login: "example-org", type: "Organization" },
+              repository_selection: "selected",
+              permissions: { contents: "read", metadata: "read" },
+            },
+          ],
         }),
       )
       .mockResolvedValueOnce(githubResponse({ total_count: 3 }));
@@ -44,7 +49,7 @@ describe("GitHub installation API boundary", () => {
     });
     expect(fetchImplementation).toHaveBeenNthCalledWith(
       1,
-      "https://api.github.com/user/installations/42",
+      "https://api.github.com/user/installations?per_page=100&page=1",
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: "Bearer server-token",
@@ -58,11 +63,16 @@ describe("GitHub installation API boundary", () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
         githubResponse({
-          id: 7,
-          app_slug: "coding-journal",
-          account: { id: 9, login: "ada", type: "User" },
-          repository_selection: "all",
-          permissions: { metadata: "read" },
+          total_count: 1,
+          installations: [
+            {
+              id: 7,
+              app_slug: "coding-journal",
+              account: { id: 9, login: "ada", type: "User" },
+              repository_selection: "all",
+              permissions: { metadata: "read" },
+            },
+          ],
         }),
       )
       .mockResolvedValueOnce(githubResponse({ total_count: 12 }));
@@ -81,20 +91,30 @@ describe("GitHub installation API boundary", () => {
   it("does not accept spoofed installation ids or elevated permissions", async () => {
     const mismatchedIdentity = vi.fn<typeof fetch>().mockResolvedValue(
       githubResponse({
-        id: 99,
-        app_slug: "coding-journal",
-        account: { id: 9, login: "ada", type: "User" },
-        repository_selection: "all",
-        permissions: { metadata: "read" },
+        total_count: 1,
+        installations: [
+          {
+            id: 99,
+            app_slug: "coding-journal",
+            account: { id: 9, login: "ada", type: "User" },
+            repository_selection: "all",
+            permissions: { metadata: "read" },
+          },
+        ],
       }),
     );
     const elevatedPermissions = vi.fn<typeof fetch>().mockResolvedValue(
       githubResponse({
-        id: 7,
-        app_slug: "coding-journal",
-        account: { id: 9, login: "ada", type: "User" },
-        repository_selection: "all",
-        permissions: { administration: "read", contents: "write" },
+        total_count: 1,
+        installations: [
+          {
+            id: 7,
+            app_slug: "coding-journal",
+            account: { id: 9, login: "ada", type: "User" },
+            repository_selection: "all",
+            permissions: { administration: "read", contents: "write" },
+          },
+        ],
       }),
     );
 
@@ -117,11 +137,16 @@ describe("GitHub installation API boundary", () => {
 
     const securityPermissions = vi.fn<typeof fetch>().mockResolvedValue(
       githubResponse({
-        id: 7,
-        app_slug: "coding-journal",
-        account: { id: 9, login: "ada", type: "User" },
-        repository_selection: "all",
-        permissions: { metadata: "read", vulnerability_alerts: "read" },
+        total_count: 1,
+        installations: [
+          {
+            id: 7,
+            app_slug: "coding-journal",
+            account: { id: 9, login: "ada", type: "User" },
+            repository_selection: "all",
+            permissions: { metadata: "read", vulnerability_alerts: "read" },
+          },
+        ],
       }),
     );
     await expect(
@@ -137,7 +162,7 @@ describe("GitHub installation API boundary", () => {
   it("treats an installation hidden from the user as unavailable", async () => {
     const fetchImplementation = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(githubResponse({ message: "Not Found" }, 404));
+      .mockResolvedValue(githubResponse({ total_count: 0, installations: [] }));
 
     await expect(
       getUserGitHubInstallation(
@@ -152,11 +177,16 @@ describe("GitHub installation API boundary", () => {
   it("rejects an installation that belongs to another GitHub App", async () => {
     const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
       githubResponse({
-        id: 7,
-        app_slug: "another-app",
-        account: { id: 9, login: "ada", type: "User" },
-        repository_selection: "all",
-        permissions: { metadata: "read" },
+        total_count: 1,
+        installations: [
+          {
+            id: 7,
+            app_slug: "another-app",
+            account: { id: 9, login: "ada", type: "User" },
+            repository_selection: "all",
+            permissions: { metadata: "read" },
+          },
+        ],
       }),
     );
 

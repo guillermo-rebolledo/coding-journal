@@ -119,35 +119,37 @@ export function createGitHubHttpReadClient(
     return body.filter((entry): entry is JsonObject => isJsonObject(entry));
   }
 
+  async function userInstallations() {
+    const items: JsonObject[] = [];
+    let total = Number.POSITIVE_INFINITY;
+    for (let page = 1; items.length < total; page += 1) {
+      const response = await object(
+        `/user/installations?per_page=${generalPageSize}&page=${page}`,
+      );
+      const installations = readObjectArray(response, "installations");
+      const reportedTotal = readNumber(response, "total_count");
+      if (
+        installations === null ||
+        reportedTotal === null ||
+        !Number.isSafeInteger(reportedTotal) ||
+        reportedTotal < 0
+      ) {
+        throw new Error("Invalid GitHub installations response");
+      }
+      total = reportedTotal;
+      items.push(...installations);
+      if (installations.length < generalPageSize) break;
+    }
+    return items;
+  }
+
   return {
+    userInstallations,
+
     async authenticatedUser() {
       const actor = await object("/user");
       if (!actor) throw new Error("Invalid GitHub actor response");
       return actor;
-    },
-
-    async userInstallations() {
-      const items: JsonObject[] = [];
-      let total = Number.POSITIVE_INFINITY;
-      for (let page = 1; items.length < total; page += 1) {
-        const response = await object(
-          `/user/installations?per_page=${generalPageSize}&page=${page}`,
-        );
-        const installations = readObjectArray(response, "installations");
-        const reportedTotal = readNumber(response, "total_count");
-        if (
-          installations === null ||
-          reportedTotal === null ||
-          !Number.isSafeInteger(reportedTotal) ||
-          reportedTotal < 0
-        ) {
-          throw new Error("Invalid GitHub installations response");
-        }
-        total = reportedTotal;
-        items.push(...installations);
-        if (installations.length < generalPageSize) break;
-      }
-      return items;
     },
 
     async eventPages(login) {
@@ -267,8 +269,16 @@ export function createGitHubHttpReadClient(
       return { items, degraded: true };
     },
 
-    installation: (installationId) =>
-      object(`/user/installations/${encodeURIComponent(installationId)}`, true),
+    // GitHub exposes no single-installation endpoint to a user token; the
+    // list is the only way to prove the signed-in identity can see it.
+    async installation(installationId) {
+      const installations = await userInstallations();
+      return (
+        installations.find(
+          (entry) => String(readNumber(entry, "id")) === installationId,
+        ) ?? null
+      );
+    },
   };
 }
 
